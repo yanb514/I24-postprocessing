@@ -16,7 +16,7 @@ import cv2
 # read data
 def read_data(file_name):  
 #     path = pathlib.Path().absolute().joinpath('tracking_outputs',file_name)
-    df = pd.read_csv(file_name, skiprows = 9)
+    df = pd.read_csv(file_name, skiprows = 0)
     df = df.rename(columns={"GPS lat of bbox bottom center": "lat", "GPS long of bbox bottom center": "lon", 'Object ID':'ID'})
     # df = df.loc[df['Timestamp'] >= 0]
     return df
