@@ -1,7 +1,7 @@
 # I24-trajectory-generation
 
 Before running this notebook, please do the following
-1. Download the data that Derek shared with you (https://vanderbilt.box.com/s/sgb996yj09bmev6yhc7slf053nz74p9q)
+1. Download the 3D bbox trajectory data at https://vanderbilt.box.com/s/sgb996yj09bmev6yhc7slf053nz74p9q
 2. Download camera_calibration_points csv file. Click "raw" and save as csv (https://github.com/DerekGloudemans/I24-video-processing/blob/main/config/camera_calibration_points_I24_validation_system.csv)
 and add to your local repository such that the directory looks like
 
@@ -15,10 +15,9 @@ YOUR LOCAL FOLDER
 └───I24-data-generation
     │   README.md
     |   utils.py
+    |   I24_visualization.ipynb
     |   I24_xxx.ipynb
     |   ...
-
-
 ```
 
 As for the roadmap, for the short term we can:
