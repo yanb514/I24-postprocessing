@@ -4,7 +4,7 @@ import numpy as np
 import pathlib
 import math
 import os
-from numpy import arctan2,random,sin,cos,degrees, arcsin
+from numpy import arctan2,random,sin,cos,degrees, arcsin, radians,arccos
 from bs4 import BeautifulSoup
 from IPython.display import IFrame
 import gmplot 
@@ -471,13 +471,13 @@ def draw_map(df, latcenter, loncenter, nO):
     return jupyter_display(map_name)
 
 # draw rectangles from 3D box on map
-def draw_map_box(df, latcenter, loncenter, nO, lats, lngs):
+def draw_map_box(Y, latcenter, loncenter, nO, lats, lngs):
     
     map_name = "test.html"
     gmap = gmplot.GoogleMapPlotter(latcenter, loncenter, nO) 
 
     # get the bottom 4 points gps coords
-    Y = np.array(df[['bbrlat','bbrlon','fbrlat','fbrlon','fbllat','fbllon','bbllat','bbllon']])
+    # Y = np.array(df[['bbrlat','bbrlon','fbrlat','fbrlon','fbllat','fbllon','bbllat','bbllon']])
     for i in range(len(Y)):
         coord = Y[i,:]
         coord = np.reshape(coord,(-1,2)).tolist()
@@ -569,16 +569,65 @@ def calc_y(df, A, B):
     return df
 
 def calc_xy(df, A, B):
-    df = calc_y(df, A, B)
-    lat1, lon1 = A
-    for pt in ['fbr','fbl','bbr','bbl']:
-        pt_lats = np.array(df[[pt+'lat']])
-        pt_lons = np.array(df[[pt+'lon']])
-        toA = haversine_distance(lat1, lon1, pt_lats, pt_lons)
-        toAB = np.array(df[[pt+'_y']])
-        df[pt+'_x'] = np.sqrt(toA**2-toAB**2)
-    return df
+# TODO: not assume flat earth, using cross track distance
+# use trigonometry 
+	df = calc_y(df, A, B)
+	lat1, lon1 = A
+	for pt in ['fbr','fbl','bbr','bbl']:
+		pt_lats = np.array(df[[pt+'lat']])
+		pt_lons = np.array(df[[pt+'lon']])
+		toA = haversine_distance(lat1, lon1, pt_lats, pt_lons)
+		toAB = np.array(df[[pt+'_y']])
+		df[pt+'_x'] = np.sqrt(toA**2-toAB**2)
+	return df
+	
+	# use cross-track and along-track distance
+	# R = 6371*1000 # in meter6378137
+	# lat1, lon1 = A
+	# lat2, lon2 = B
+	#convert to n-vector https://en.wikipedia.org/wiki/N-vector
+	# nA = np.array([cos(radians(lat1))*cos(radians(lon1)), cos(radians(lat1))*sin(radians(lon1)), sin(radians(lat1))]).T
+	# nB = np.array([cos(radians(lat2))*cos(radians(lon2)), cos(radians(lat2))*sin(radians(lon2)), sin(radians(lat2))]).T
+	# print(nA.shape)
+	# c = np.cross(nA, nB)
+	# c = c/np.linalg.norm(c)
+	
+	# theta_12 = bearing(lat1, lon1, lat2, lon2)
+	# for pt in ['fbr','fbl','bbr','bbl']:
+		# pt_lats = np.array(df[[pt+'lat']])
+		# pt_lons = np.array(df[[pt+'lon']])
+		##cross-track distance (y) - this one results in too small distance
+		# omega_13 = haversine_distance(lat1, lon1, pt_lats, pt_lons)/R 
+		# theta_13 = bearing(lat1, lon1, pt_lats, pt_lons)
+		# cross_track = arcsin(sin(omega_13)*sin(theta_13-theta_12))*R
+		##along-track distance (x)
+		# along_track = np.arccos(cos(omega_13)/cos(cross_track/R))*R
+		# df[pt+'_y'] = np.absolute(cross_track)
+		# df[pt+'_x'] = along_track
+	# return df
 
+def road_to_gps(Y, A, B):
+# TODO: make this bidirectional
+# https://stackoverflow.com/questions/7222382/get-lat-long-given-current-point-distance-and-bearing
+	R = 6371
+	lat1, lon1 = A
+	lat2, lon2 = B
+	Ygps = np.zeros(Y.shape)
+	gamma_ab = bearing(lat1,lon1,lat2,lon2)
+	lat1 = np.radians(lat1)
+	lon1 = np.radians(lon1)
+	for i in range(int(Y.shape[1]/2)):
+		xs = Y[:,2*i]/1000
+		ys = Y[:,2*i+1]/1000
+		AC = np.sqrt(xs**2+ys**2)
+		CAB = np.absolute(np.arctan(ys/xs))
+		gamma_ac = gamma_ab-CAB
+		lat3 = arcsin(sin(lat1)*cos(AC/R) + cos(lat1)*sin(AC/R)*cos(gamma_ac))
+		lon3 = lon1 + arctan2(sin(gamma_ac)*sin(AC/R)*cos(lat1), cos(AC/R)-sin(lat1)*sin(lat3))
+		Ygps[:,2*i] = degrees(lat3)
+		Ygps[:,2*i+1] = degrees(lon3)
+	return Ygps
+		
 def assign_lane(df, startpts, endpts):
     pts = np.array(df[['lat','lon']])
     laneID = []
