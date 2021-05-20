@@ -14,9 +14,9 @@ import cv2
 
 
 # read data
-def read_data(file_name):  
+def read_data(file_name, skiprows = 0):  
 #     path = pathlib.Path().absolute().joinpath('tracking_outputs',file_name)
-    df = pd.read_csv(file_name, skiprows = 0)
+    df = pd.read_csv(file_name, skiprows = skiprows)
     df = df.rename(columns={"GPS lat of bbox bottom center": "lat", "GPS long of bbox bottom center": "lon", 'Object ID':'ID'})
     # df = df.loc[df['Timestamp'] >= 0]
     return df
@@ -89,6 +89,19 @@ def calc_vel(Y, timestamps):
 	vy = calc_velx(cy, timestamps)
 	v = np.sqrt(vx**2+vy**2)
 	return vx,vy,v
+
+def calc_positions(cx,cy,theta,w,l):
+	# compute positions
+	xa = cx + w/2*sin(theta)
+	ya = cy - w/2*cos(theta)
+	xb = xa + l*cos(theta)
+	yb = ya + l*sin(theta)
+	xc = xb - w*sin(theta)
+	yc = yb + w*cos(theta)
+	xd = xa - w*sin(theta)
+	yd = ya + w*cos(theta)
+	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1) 
+	return Yre
 	
 def calc_theta(Y,timestamps):
 	vx,vy,v = calc_vel(Y,timestamps)
