@@ -26,20 +26,18 @@ def read_new_data(file_name):
 	return df
 	
 def nan_helper(y):
-	"""Helper to handle indices and logical indices of NaNs.
+	n = len(y)
+	nans = np.isnan(y)
+	x = lambda z: z.nonzero()[0]
+	z = np.polyfit(x(~nans), y[~nans], 1)
+	p = np.poly1d(z)
+	y[nans]=p(x(nans))
+	return y
+	
+def nan_helper_orig(y):
 
-	Input:
-		- y, 1d numpy array with possible NaNs
-	Output:
-		- nans, logical indices of NaNs
-		- index, a function, with signature indices= index(logical_indices),
-		  to convert logical indices of NaNs to 'equivalent' indices
-	Example:
-		>>> # linear interpolation of NaNs
-		>>> nans, x= nan_helper(y)
-		>>> y[nans]= np.interp(x(nans), x(~nans), y[~nans])
-	"""
 	return np.isnan(y), lambda z: z.nonzero()[0]
+
 	
 def haversine_distance(lat1, lon1, lat2, lon2):
 	r = 6371
@@ -245,6 +243,58 @@ def naive_filter(df):
 			df_new = pd.concat([df_new, group])
 	return df_new
 
+def naive_filter_3D(df):
+	groups = df.groupby('ID')
+	new_df = pd.DataFrame()
+	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+	
+	for ID, g in groups:
+		if (len(g)<1):
+			print('length less than 1')
+			continue
+		Y = np.array(g[pts])
+		Y = Y.astype("float")
+		if g['direction'].values[0]== '+':
+			for i in range(len(Y)):
+				xsort = np.sort(Y[i,[0,2,4,6]])
+				ysort = np.sort(Y[i,[1,3,5,7]])
+				Y[i,:] = [xsort[0],ysort[0],xsort[2],ysort[1],xsort[3],ysort[2],xsort[1],ysort[3]]
+
+		if g['direction'].values[0]== '-':
+			for i in range(len(Y)):
+				if (Y[i,3]<Y[i,5]):	 # flip left and right
+					Y[i,[2,3]],Y[i,[4,5]] = Y[i,[4,5]],Y[i,[2,3]]
+				if (Y[i,1]<Y[i,7]):
+					Y[i,[0,1]],Y[i,[6,7]] = Y[i,[6,7]],Y[i,[0,1]]
+				if (Y[i,6]>Y[i,4]): # flip front and back
+					Y[i,[6,7]],Y[i,[4,5]] = Y[i,[4,5]],Y[i,[6,7]]
+				if (Y[i,0]>Y[i,2]):
+					Y[i,[0,1]],Y[i,[2,3]] = Y[i,[2,3]],Y[i,[0,1]]
+		
+		# filter outlier based on width	
+		w1 = np.abs(Y[:,3]-Y[:,5])
+		w2 = np.abs(Y[:,1]-Y[:,7])
+		outliers = np.logical_or(w1>5, w2>5)
+		Y[outliers,:] = np.nan
+				
+		# filter outlier based on length
+		l1 = np.abs(Y[:,0]-Y[:,2])
+		m1 = np.nanmean(l1)
+		s1 = np.nanstd(l1)
+		outliers =  abs(l1 - m1) > 2 * s1
+		Y[outliers,:] = np.nan
+		
+		for i in range(len(pts)):
+			# g[pts[i]] = Y[:,i]
+			col_name = pts[i]
+			# g.assign({col_name: pd.Series(Y[:,i])})
+			g[col_name]=Y[:,i]
+
+		new_df = pd.concat([new_df, g])
+	return new_df
+			
+	
+	
 def predict_n_steps(n, group, dt):
 #	  lat_v_avg = np.mean(group.lat_vel.values)
 #	  lon_v_avg = np.mean(group.lon_vel.values)
