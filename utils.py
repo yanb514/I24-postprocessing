@@ -65,7 +65,7 @@ def euclidean_distance(lat1, lon1, lat2, lon2):
 	dy = r*(lat2-lat1)
 	d = np.sqrt(dx**2+dy**2)
 	# d = r*np.sqrt((lat2-lat1)**2+(cos(theta)**2*(lon2-lon1)**2))
-	return d
+	return d,dx,dy
 	
 # path compression
 def find(parent, i):
@@ -307,16 +307,13 @@ def naive_filter_3D(df):
 		Y[outliers,:] = np.nan
 		
 		isnan = np.isnan(np.sum(Y,axis=-1))
-		# print('total outlier:',np.count_nonzero(isnan))
 		Ygps[isnan,:] = np.nan
 		
 		for i in range(len(pts)):
-			# g[pts[i]] = Y[:,i]
-			# col_name = pts[i]
-			# g.assign({col_name: pd.Series(Y[:,i])})
-			g[pts[i]]=Y[:,i]
-			g[pts_gps[i]]=Ygps[:,i]
-
+			# g[pts[i]]=Y[:,i]
+			# g[pts_gps[i]]=Ygps[:,i]
+			g.loc[:,pts[i]] = Y[:,i]
+			g.loc[:,pts_gps[i]] = Ygps[:,i]
 		new_df = pd.concat([new_df, g])
 	return new_df
 			
@@ -592,6 +589,10 @@ def draw_map_box(Y, latcenter, loncenter, nO, lats, lngs):
 		coord_tuple = [tuple(pt) for pt in coord]
 		rectangle = zip(*coord_tuple) #create lists of x and y values
 		gmap.polygon(*rectangle)	
+	lats = lats[~np.isnan(lats)]
+	lngs = lngs[~np.isnan(lngs)]
+	print(lats[0],lngs[0])
+	print(Y[0,2], Y[0,3])
 	
 	gmap.scatter(lats, lngs, color='red', size=1, marker=True)
 	gmap.scatter(Y[:,2], Y[:,3],color='red', size=0.1, marker=False)
@@ -648,32 +649,18 @@ def pt_to_line_dist_gps(lat1, lon1, lat2, lon2, lat3, lon3):
 	# min_distance = arcsin(sin(omega_13)*sin(theta_13-theta_12))*R
 	
 	# use trigonometry
-	toA = haversine_distance(lat1, lon1, lat3, lon3)
-	toB = haversine_distance(lat2, lon2, lat3, lon3)
-	AB = haversine_distance(lat1, lon1, lat2, lon2)
+	toA,_,_ = euclidean_distance(lat1, lon1, lat3, lon3)
+	toB,_,_ = euclidean_distance(lat2, lon2, lat3, lon3)
+	AB,_,_ = euclidean_distance(lat1, lon1, lat2, lon2)
 	s = (toA+toB+AB)/2
 	area = (s*(s-toA)*(s-toB)*(s-AB)) ** 0.5
 	min_distance = area*2/AB
 	return min_distance
 	
 def bearing(lat1, lon1, lat2, lon2):
-# https://www.movable-type.co.uk/scripts/latlong.html
-	dl = lon1 - lon2
-	y = sin(dl) * cos(lat2)
-	x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dl)
-	return arctan2(y,x)
-	 
-# def calc_y(df, A, B):
-	# # calculate the distance from each point to line AB
-	# # pt in lat and lng, calc the distance from pt to line AB
-	# lat1, lon1 = A
-	# lat2, lon2 = B
-	# for pt in ['fbr','fbl','bbr','bbl']:
-		# pt_lats = np.array(df[[pt+'lat']])
-		# pt_lons = np.array(df[[pt+'lon']])
-		# toAB = pt_to_line_dist_gps(lat1, lon1, lat2, lon2, pt_lats, pt_lons)
-		# df[pt+'_y'] = toAB
-	# return df
+# TODO: check north bound direction
+	AB,dx,dy = euclidean_distance(lat1, lon1, lat2, lon2)
+	return np.pi-np.arctan2(np.abs(dx),np.abs(dy))
 	
 def get_x_direction(df):
 	groups = df.groupby('ID')
@@ -685,10 +672,8 @@ def get_x_direction(df):
 			group = group.assign(direction='0')
 			continue
 		if (bbrx[~np.isnan(bbrx)][-1]-bbrx[~np.isnan(bbrx)][0]>0):
-			# group['direction'] = '+'
 			group = group.assign(direction='+')
 		elif (bbrx[~np.isnan(bbrx)][-1]-bbrx[~np.isnan(bbrx)][0]<0):
-			# group['direction'] = '-'
 			group = group.assign(direction='-')
 		else:
 			group = group.assign(direction='0')
@@ -696,7 +681,6 @@ def get_x_direction(df):
 	return df_new
 	
 def gps_to_road_df(df, A, B):
-# TODO: not assume flat earth, using cross track distance
 # TODO: consider traffic in the other direction
 # use trigonometry 
 	lat1, lon1 = A
@@ -714,11 +698,11 @@ def gps_to_road_df(df, A, B):
 
 	
 def gps_to_road(Ygps,A,B):
-	# use cross-track and along-track distance
+	# use equal-rectangle approximation
 	R = 6371*1000 # in meter6378137
 	lat1, lon1 = A
 	lat2, lon2 = B
-	AB = euclidean_distance(lat1,lon1,lat2,lon2)
+	AB,_,_ = euclidean_distance(lat1,lon1,lat2,lon2)
 	# convert to n-vector https://en.wikipedia.org/wiki/N-vector
 	Y = np.empty(Ygps.shape)
 	
@@ -726,7 +710,7 @@ def gps_to_road(Ygps,A,B):
 	for i in range(int(Ygps.shape[1]/2)):
 		pt_lats = Ygps[:,2*i]
 		pt_lons = Ygps[:,2*i+1]
-		AC = euclidean_distance(lat1,lon1,pt_lats,pt_lons)
+		AC,_,_ = euclidean_distance(lat1,lon1,pt_lats,pt_lons)
 		# cross-track: toAB
 		toAB = pt_to_line_dist_gps(lat1, lon1, lat2, lon2, pt_lats, pt_lons)
 		#along-track distance (x)
@@ -738,24 +722,37 @@ def gps_to_road(Ygps,A,B):
 def road_to_gps(Y, A, B):
 # TODO: make this bidirectional
 # https://stackoverflow.com/questions/7222382/get-lat-long-given-current-point-distance-and-bearing
-	R = 6371
+	R = 6371000
 	lat1, lon1 = A
 	lat2, lon2 = B
 	Ygps = np.zeros(Y.shape)
 	gamma_ab = bearing(lat1,lon1,lat2,lon2)
+	gamma_dc = gamma_ab - np.pi/2
 	lat1 = np.radians(lat1)
 	lon1 = np.radians(lon1)
 	for i in range(int(Y.shape[1]/2)):
-		xs = Y[:,2*i]/1000
-		ys = Y[:,2*i+1]/1000
-		AC = np.sqrt(xs**2+ys**2)
-		CAB = np.absolute(np.arctan(ys/xs))
-		gamma_ac = gamma_ab-CAB
-		lat3 = arcsin(sin(lat1)*cos(AC/R) + cos(lat1)*sin(AC/R)*cos(gamma_ac))
-		lon3 = lon1 + arctan2(sin(gamma_ac)*sin(AC/R)*cos(lat1), cos(AC/R)-sin(lat1)*sin(lat3))
-		Ygps[:,2*i] = degrees(lat3)
-		Ygps[:,2*i+1] = degrees(lon3)
+		xs = Y[:,2*i]
+		ys = Y[:,2*i+1]
+		latD, lonD = destination_given_distance_bearing(lat1, lon1, xs, gamma_ab)
+		latC, lonC = destination_given_distance_bearing(latD, lonD, ys, gamma_dc)
+		Ygps[:,2*i] = degrees(latC)
+		Ygps[:,2*i+1] = degrees(lonC)
 	return Ygps
+	
+	
+	
+def destination_given_distance_bearing(lat1, lon1, d, bearing):
+	'''
+	find the destination lat and lng given distance and bearing from the start point
+	https://www.movable-type.co.uk/scripts/latlong.html
+	lat1, lon1: start point gps coordinates
+	d: distance from the start point
+	bearing: bearing from the start point
+	'''
+	R = 6371000
+	lat2 = arcsin(sin(lat1)*cos(d/R)+cos(lat1)*sin(d/R)*cos(bearing))
+	lon2 = lon1 + arctan2(sin(bearing)*sin(d/R)*cos(lat1), cos(d/R)-sin(lat1)*sin(lat2))
+	return lat2, lon2
 		
 def assign_lane(df, startpts, endpts):
 	pts = np.array(df[['lat','lon']])
@@ -788,6 +785,13 @@ def img_to_gps(df, camera_id, file_name):
 		df = pd.concat([df, pd.DataFrame(ptgps,columns=[pt+'lat', pt+'lon'])], axis=1)
 	return df
 
-def calc_timestamp(df, fps):
-	df['Timestamp'] = df['Frame #']/fps
-	return df
+def get_xy_minmax(df):
+# for plotting
+	Y = np.array(df[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
+	notNan = ~np.isnan(np.sum(Y,axis=-1))
+	Yx = Y[:,[0,2,4,6]]
+	Yy = Y[:,[1,3,5,7]]
+	return Yx[notNan,:].min(),Yx[notNan,:].max(),Yy[notNan,:].min(),Yy[notNan,:].max()
+	
+	
+	
