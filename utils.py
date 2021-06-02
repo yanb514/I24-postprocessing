@@ -11,7 +11,9 @@ import gmplot
 from sklearn import linear_model
 from sklearn.metrics import r2_score
 import cv2
-
+import warnings
+import sys
+warnings.simplefilter ('default')
 
 # read data
 def read_data(file_name, skiprows = 0):	 
@@ -45,10 +47,26 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 	phi2 = np.radians(lat2)
 	delta_phi = np.radians(lat2 - lat1)
 	delta_lambda = np.radians(lon2 - lon1)
-	a = np.sin(delta_phi / 2)**2 + np.cos(phi1) * np.cos(phi2) *   np.sin(delta_lambda / 2)**2
+	try:
+		a = np.sin(delta_phi / 2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(delta_lambda / 2)**2
+	except RuntimeWarning:
+		print('error here')
 	res = r * (2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a)))
 	return res * 1000 # km to m
 
+def euclidean_distance(lat1, lon1, lat2, lon2):
+# https://math.stackexchange.com/questions/29157/how-do-i-convert-the-distance-between-two-lat-long-points-into-feet-meters
+	r = 6371000
+	lat1,lon1 = np.radians([lat1, lon1])
+	lat2 = np.radians(lat2)
+	lon2 = np.radians(lon2)
+	theta = (lat1+lat2)/2
+	dx = r*cos(theta)*(lon2-lon1)
+	dy = r*(lat2-lat1)
+	d = np.sqrt(dx**2+dy**2)
+	# d = r*np.sqrt((lat2-lat1)**2+(cos(theta)**2*(lon2-lon1)**2))
+	return d
+	
 # path compression
 def find(parent, i):
 	if (parent[i] != i):
@@ -247,48 +265,57 @@ def naive_filter_3D(df):
 	groups = df.groupby('ID')
 	new_df = pd.DataFrame()
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+	pts_gps = ['bbrlat','bbrlon', 'fbrlat','fbrlon','fbllat','fbllon','bbllat', 'bbllon']
 	
 	for ID, g in groups:
 		if (len(g)<1):
 			print('length less than 1')
 			continue
 		Y = np.array(g[pts])
+		Ygps = np.array(g[pts_gps])
 		Y = Y.astype("float")
-		if g['direction'].values[0]== '+':
-			for i in range(len(Y)):
-				xsort = np.sort(Y[i,[0,2,4,6]])
-				ysort = np.sort(Y[i,[1,3,5,7]])
-				Y[i,:] = [xsort[0],ysort[0],xsort[2],ysort[1],xsort[3],ysort[2],xsort[1],ysort[3]]
+		xsort = np.sort(Y[:,[0,2,4,6]])
+		ysort = np.sort(Y[:,[1,3,5,7]])
+		try:
+			if g['direction'].values[0]== '+':
+				for i in range(len(Y)):
+					Y[i,:] = [xsort[i,0],ysort[i,0],xsort[i,2],ysort[i,1],
+					xsort[i,3],ysort[i,2],xsort[i,1],ysort[i,3]]
 
-		if g['direction'].values[0]== '-':
-			for i in range(len(Y)):
-				if (Y[i,3]<Y[i,5]):	 # flip left and right
-					Y[i,[2,3]],Y[i,[4,5]] = Y[i,[4,5]],Y[i,[2,3]]
-				if (Y[i,1]<Y[i,7]):
-					Y[i,[0,1]],Y[i,[6,7]] = Y[i,[6,7]],Y[i,[0,1]]
-				if (Y[i,6]>Y[i,4]): # flip front and back
-					Y[i,[6,7]],Y[i,[4,5]] = Y[i,[4,5]],Y[i,[6,7]]
-				if (Y[i,0]>Y[i,2]):
-					Y[i,[0,1]],Y[i,[2,3]] = Y[i,[2,3]],Y[i,[0,1]]
+			if g['direction'].values[0]== '-':
+				for i in range(len(Y)):
+					Y[i,:] = [xsort[i,2],ysort[i,2],xsort[i,0],ysort[i,3],
+					xsort[i,1],ysort[i,0],xsort[i,3],ysort[i,1]]
+		
+		except np.any(xsort<0) or np.any(ysort<0):
+			print('Negative x or y coord, please redefine reference point A and B')
+			sys.exit(1)
 		
 		# filter outlier based on width	
 		w1 = np.abs(Y[:,3]-Y[:,5])
 		w2 = np.abs(Y[:,1]-Y[:,7])
 		outliers = np.logical_or(w1>5, w2>5)
+		# print('width outlier:',np.count_nonzero(outliers))
 		Y[outliers,:] = np.nan
-				
+		
 		# filter outlier based on length
 		l1 = np.abs(Y[:,0]-Y[:,2])
 		m1 = np.nanmean(l1)
 		s1 = np.nanstd(l1)
-		outliers =  abs(l1 - m1) > 2 * s1
+		outliers =	abs(l1 - m1) > 2 * s1
+		# print('length outlier:',np.count_nonzero(outliers))
 		Y[outliers,:] = np.nan
+		
+		isnan = np.isnan(np.sum(Y,axis=-1))
+		# print('total outlier:',np.count_nonzero(isnan))
+		Ygps[isnan,:] = np.nan
 		
 		for i in range(len(pts)):
 			# g[pts[i]] = Y[:,i]
-			col_name = pts[i]
+			# col_name = pts[i]
 			# g.assign({col_name: pd.Series(Y[:,i])})
-			g[col_name]=Y[:,i]
+			g[pts[i]]=Y[:,i]
+			g[pts_gps[i]]=Ygps[:,i]
 
 		new_df = pd.concat([new_df, g])
 	return new_df
@@ -636,17 +663,17 @@ def bearing(lat1, lon1, lat2, lon2):
 	x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dl)
 	return arctan2(y,x)
 	 
-def calc_y(df, A, B):
-	# calculate the distance from each point to line AB
-	# pt in lat and lng, calc the distance from pt to line AB
-	lat1, lon1 = A
-	lat2, lon2 = B
-	for pt in ['fbr','fbl','bbr','bbl']:
-		pt_lats = np.array(df[[pt+'lat']])
-		pt_lons = np.array(df[[pt+'lon']])
-		toAB = pt_to_line_dist_gps(lat1, lon1, lat2, lon2, pt_lats, pt_lons)
-		df[pt+'_y'] = toAB
-	return df
+# def calc_y(df, A, B):
+	# # calculate the distance from each point to line AB
+	# # pt in lat and lng, calc the distance from pt to line AB
+	# lat1, lon1 = A
+	# lat2, lon2 = B
+	# for pt in ['fbr','fbl','bbr','bbl']:
+		# pt_lats = np.array(df[[pt+'lat']])
+		# pt_lons = np.array(df[[pt+'lon']])
+		# toAB = pt_to_line_dist_gps(lat1, lon1, lat2, lon2, pt_lats, pt_lons)
+		# df[pt+'_y'] = toAB
+	# return df
 	
 def get_x_direction(df):
 	groups = df.groupby('ID')
@@ -668,65 +695,44 @@ def get_x_direction(df):
 		df_new = pd.concat([df_new, group])
 	return df_new
 	
-def calc_xy(df, A, B):
+def gps_to_road_df(df, A, B):
 # TODO: not assume flat earth, using cross track distance
+# TODO: consider traffic in the other direction
 # use trigonometry 
-	df = calc_y(df, A, B)
 	lat1, lon1 = A
-	for pt in ['fbr','fbl','bbr','bbl']:
-		pt_lats = np.array(df[[pt+'lat']])
-		pt_lons = np.array(df[[pt+'lon']])
-		toA = haversine_distance(lat1, lon1, pt_lats, pt_lons)
-		toAB = np.array(df[[pt+'_y']])
-		df[pt+'_x'] = np.sqrt(toA**2-toAB**2)
+	lat2, lon2 = B
+	Y_gps =	 np.array(df[['bbrlat','bbrlon','fbrlat','fbrlon','fbllat','fbllon','bbllat','bbllon']])
+	Y = gps_to_road(Y_gps, A,B)
+	# write Y to df
+	i = 0
+	for pt in ['bbr','fbr','fbl','bbl']:
+		df[pt+'_x'] = Y[:,2*i]
+		df[pt+'_y'] = Y[:,2*i+1]
+		i = i+1
 	return df
 	
-	# use cross-track and along-track distance
-	# R = 6371*1000 # in meter6378137
-	# lat1, lon1 = A
-	# lat2, lon2 = B
-	#convert to n-vector https://en.wikipedia.org/wiki/N-vector
-	# nA = np.array([cos(radians(lat1))*cos(radians(lon1)), cos(radians(lat1))*sin(radians(lon1)), sin(radians(lat1))]).T
-	# nB = np.array([cos(radians(lat2))*cos(radians(lon2)), cos(radians(lat2))*sin(radians(lon2)), sin(radians(lat2))]).T
-	# print(nA.shape)
-	# c = np.cross(nA, nB)
-	# c = c/np.linalg.norm(c)
-	
-	# theta_12 = bearing(lat1, lon1, lat2, lon2)
-	# for pt in ['fbr','fbl','bbr','bbl']:
-		# pt_lats = np.array(df[[pt+'lat']])
-		# pt_lons = np.array(df[[pt+'lon']])
-		##cross-track distance (y) - this one results in too small distance
-		# omega_13 = haversine_distance(lat1, lon1, pt_lats, pt_lons)/R 
-		# theta_13 = bearing(lat1, lon1, pt_lats, pt_lons)
-		# cross_track = arcsin(sin(omega_13)*sin(theta_13-theta_12))*R
-		##along-track distance (x)
-		# along_track = np.arccos(cos(omega_13)/cos(cross_track/R))*R
-		# df[pt+'_y'] = np.absolute(cross_track)
-		# df[pt+'_x'] = along_track
-	# return df
+
 	
 def gps_to_road(Ygps,A,B):
 	# use cross-track and along-track distance
 	R = 6371*1000 # in meter6378137
 	lat1, lon1 = A
 	lat2, lon2 = B
+	AB = euclidean_distance(lat1,lon1,lat2,lon2)
 	# convert to n-vector https://en.wikipedia.org/wiki/N-vector
+	Y = np.empty(Ygps.shape)
 	
-	theta_12 = bearing(lat1, lon1, lat2, lon2)
+	# use euclidean_distance
 	for i in range(int(Ygps.shape[1]/2)):
-		pt_lats = Y[:,2*i]
-		pt_lons = Y[:,2*i+1]
-		#cross-track distance (y) - this one results in too small distance
-		omega_13 = haversine_distance(lat1, lon1, pt_lats, pt_lons)/R 
-		theta_13 = bearing(lat1, lon1, pt_lats, pt_lons)
-		cross_track = arcsin(sin(omega_13)*sin(theta_13-theta_12))*R
+		pt_lats = Ygps[:,2*i]
+		pt_lons = Ygps[:,2*i+1]
+		AC = euclidean_distance(lat1,lon1,pt_lats,pt_lons)
+		# cross-track: toAB
+		toAB = pt_to_line_dist_gps(lat1, lon1, lat2, lon2, pt_lats, pt_lons)
 		#along-track distance (x)
-		along_track = np.arccos(cos(omega_13)/cos(cross_track/R))*R
-		# df[pt+'_y'] = np.absolute(cross_track)
-		# df[pt+'_x'] = along_track
+		along_track = np.sqrt(AC**2-toAB**2)
 		Y[:,2*i] = along_track
-		Y[:,2*i+1] = np.absolute(cross_track)
+		Y[:,2*i+1] = toAB
 	return Y
 	
 def road_to_gps(Y, A, B):
@@ -770,7 +776,7 @@ def calc_homography_matrix(camera_id, file_name):
 	M = cv2.getPerspectiveTransform(xy_pts,gps_pts)
 	return M
 
-def calc_rr_coords(df, camera_id, file_name):
+def img_to_gps(df, camera_id, file_name):
 	# vectorized
 	M = calc_homography_matrix(camera_id,file_name)
 	for pt in ['fbr','fbl','bbr','bbl']:
