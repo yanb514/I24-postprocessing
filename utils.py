@@ -11,6 +11,7 @@ import gmplot
 from sklearn import linear_model
 from sklearn.metrics import r2_score
 import cv2
+import csv
 import warnings
 import sys
 warnings.simplefilter ('default')
@@ -18,7 +19,7 @@ warnings.simplefilter ('default')
 # read data
 def read_data(file_name, skiprows = 0):	 
 #	  path = pathlib.Path().absolute().joinpath('tracking_outputs',file_name)
-	df = pd.read_csv(file_name, skiprows = skiprows,error_bad_lines=False)
+	df = pd.read_csv(file_name, skiprows = skiprows,error_bad_lines=False,index_col = 0)
 	df = df.rename(columns={"GPS lat of bbox bottom center": "lat", "GPS long of bbox bottom center": "lon", 'Object ID':'ID'})
 	# df = df.loc[df['Timestamp'] >= 0]
 	return df
@@ -460,3 +461,190 @@ def plot_track(D):
 	plt.show() 
 	return
 	
+def plot_3D_csv(sequence,label_file,framerate = 30):	
+	colors = (np.random.rand(100,3)*255)
+	downsample = 2
+	
+	outfile = label_file.split("_track_outputs_3D.csv")[0] + "_3D.mp4"
+	out = cv2.VideoWriter(outfile,cv2.VideoWriter_fourcc(*'mp4v'), framerate, (3840,2160))
+	cap= cv2.VideoCapture(sequence)
+	
+	frame_labels = {}
+	with open(label_file,"r") as f:
+		read = csv.reader(f)
+		HEADERS = True
+		for row in read:
+			
+			if not HEADERS:
+				frame_idx = int(row[0])
+				
+				if frame_idx not in frame_labels.keys():
+					frame_labels[frame_idx] = [row]
+				else:
+					frame_labels[frame_idx].append(row)
+					
+			if HEADERS and len(row) > 0:
+				if row[0][0:5] == "Frame":
+					HEADERS = False # all header lines have been read at this point
+	
+	ret,frame = cap.read()
+	frame_idx = 0
+	while ret:
+		
+		print("\rWriting frame {}".format(frame_idx),end = '\r', flush = True)	
+		
+		# get all boxes for current frame
+		try:
+			cur_frame_labels = frame_labels[frame_idx]
+		except:
+			cur_frame_labels = []
+			
+		for row in cur_frame_labels:
+			obj_idx = int(row[2])
+			obj_class = row[3]
+			label = "{} {}".format(obj_class,obj_idx)
+			color = colors[obj_idx%100]
+			color = (0,0,255)
+			bbox2d = np.array(row[4:8]).astype(float)  
+			if len(row) == 46: # has 3D bbox, rectified data
+				try:
+					bbox = np.array(row[13:29]).astype(float).astype(int).reshape(8,2) #* downsample
+				except:
+					# if there was a previous box for this object, use it instead
+					try:
+						NOMATCH = True
+						prev = 1
+						while prev < 4 and NOMATCH:
+							for row in frame_labels[frame_idx -prev]: 
+								if int(row[2]) == obj_idx:
+									bbox = np.array(row[13:29]).astype(float).astype(int).reshape(8,2) * downsample
+									x_offset = (bbox2d[2] - bbox2d[0])/2.0 - (float(row[4]) + float(row[6]))/2.0 
+									y_offset = (bbox2d[3] - bbox2d[1])/2.0 - (float(row[5]) + float(row[7]))/2.0 
+									shift = np.zeros([8,2])
+									shift[:,0] += x_offset
+									shift[:,1] += y_offset
+									bbox += shift
+									NOMATCH = False
+									break
+								else:
+									prev += 1
+					except:
+						bbox = []
+				
+				# get rid of bboxes that lie outside of a bbox factor x larger than 2d bbox
+				factor = 3
+				for point in bbox:
+					if point[0] < bbox2d[0] - (bbox2d[2] - bbox2d[0])/factor:
+						bbox = []
+						break
+					if point[1] < bbox2d[1] - (bbox2d[3] - bbox2d[1])/factor:
+						bbox = []
+						break
+					if point[0] > bbox2d[2] + (bbox2d[2] - bbox2d[0])/factor:
+						bbox = []
+						break
+					if point[1] > bbox2d[3] + (bbox2d[3] - bbox2d[1])/factor:
+						bbox = []
+						break
+					
+				
+				frame = plot_3D_ordered(frame, bbox,color = color)
+			
+			
+			color = (255,0,0)
+			# frame = cv2.rectangle(frame,(int(bbox2d[0]),int(bbox2d[1])),(int(bbox2d[2]),int(bbox2d[3])),color,2)
+			frame = cv2.putText(frame,"{}".format(label),(int(bbox2d[0]),int(bbox2d[1] - 10)),cv2.FONT_HERSHEY_PLAIN,2,(0,0,0),3)
+			frame = cv2.putText(frame,"{}".format(label),(int(bbox2d[0]),int(bbox2d[1] - 10)),cv2.FONT_HERSHEY_PLAIN,2,(255,255,255),1)
+		
+		# lastly, add frame number in top left
+		frame_label = "{}: frame {}".format(sequence.split("/")[-1],frame_idx)
+		frame = cv2.putText(frame,frame_label,(0,50),cv2.FONT_HERSHEY_PLAIN,2,(255,255,255),2)
+
+		out.write(frame)
+		
+		frame_show = cv2.resize(frame.copy(),(1920,1080))
+		
+		cv2.imshow("frame",frame_show)
+		key = cv2.waitKey(1)
+		if key == ord('q'):
+			cv2.destroyAllWindows()
+			break
+			
+		# get next frame
+		ret,frame = cap.read()
+		frame_idx += 1
+
+		if frame_idx > 2050:
+			break
+		
+	cap.release()
+	out.release()
+	
+	print("Finished writing {}".format(outfile))
+	
+def plot_3D_ordered(frame,box,color = None,label = None):
+	"""
+	Plots 3D points as boxes, drawing only line segments that point towards vanishing points
+	"""
+	if len(box) == 0:
+		return frame
+	
+	DRAW = [[0,1,1,0,1,0,0,0], #bfl
+			[0,0,0,1,0,1,0,0], #bfr
+			[0,0,0,1,0,0,1,1], #bbl
+			[0,0,0,0,0,0,1,1], #bbr
+			[0,0,0,0,0,1,1,0], #tfl
+			[0,0,0,0,0,0,0,1], #tfr
+			[0,0,0,0,0,0,0,1], #tbl
+			[0,0,0,0,0,0,0,0]] #tbr
+	
+	DRAW_BASE = [[0,1,1,1,0,0,0,0], #bfl
+			[0,0,1,1,0,0,0,0], #bfr
+			[0,0,0,1,0,0,0,0], #bbl
+			[0,0,0,0,0,0,0,0], #bbr
+			[0,0,0,0,0,0,0,0], #tfl
+			[0,0,0,0,0,0,0,0], #tfr
+			[0,0,0,0,0,0,0,0], #tbl
+			[0,0,0,0,0,0,0,0]] #tbr
+	
+	if color is None:
+		color = (100,255,100)
+		
+	for a in range(len(box)):
+		ab = box[a]
+		for b in range(a,len(box)):
+			bb = box[b]
+			if DRAW_BASE[a][b] == 1:
+				frame = cv2.line(frame,(int(ab[0]),int(ab[1])),(int(bb[0]),int(bb[1])),color,2)
+			# if DRAW_BASE[a][b] == 1:
+			#	  frame = cv2.line(frame,(int(ab[0]),int(ab[1])),(int(bb[0]),int(bb[1])),color,2)
+	
+	size = 4
+	# color = (0,0,255)
+	color = (0,0,0)
+	frame = cv2.circle(frame,(int(box[0][0]),int(box[0][1])),size,color,-1)
+	# color = (0,100,255)
+	frame = cv2.circle(frame,(int(box[1][0]),int(box[1][1])),size,color,-1)
+	# color = (0,175,255)
+	frame = cv2.circle(frame,(int(box[2][0]),int(box[2][1])),size,color,-1)
+	# color = (0,255,255)
+	frame = cv2.circle(frame,(int(box[3][0]),int(box[3][1])),size,color,-1)
+	# color = (255,0,0)
+	# frame = cv2.circle(frame,(int(box[4][0]),int(box[4][1])),size,color,-1)
+	# color = (255,100,0)
+	# frame = cv2.circle(frame,(int(box[5][0]),int(box[5][1])),size,color,-1)
+	# color = (255,175,0)
+	# frame = cv2.circle(frame,(int(box[6][0]),int(box[6][1])),size,color,-1)
+	# color = (255,255,0)
+	# frame = cv2.circle(frame,(int(box[7][0]),int(box[7][1])),size,color,-1)
+	
+	if label is not None:
+		left = min([point[0] for point in box])
+		top	 = min([point[1] for point in box])
+		frame = cv2.putText(frame,"{}".format(label),(int(left),int(top - 10)),cv2.FONT_HERSHEY_PLAIN,1,(0,0,0),3)
+		frame = cv2.putText(frame,"{}".format(label),(int(left),int(top - 10)),cv2.FONT_HERSHEY_PLAIN,1,(255,255,255),1)
+
+		
+	
+	return frame	
+		
