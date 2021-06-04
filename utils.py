@@ -18,7 +18,7 @@ warnings.simplefilter ('default')
 # read data
 def read_data(file_name, skiprows = 0):	 
 #	  path = pathlib.Path().absolute().joinpath('tracking_outputs',file_name)
-	df = pd.read_csv(file_name, skiprows = skiprows)
+	df = pd.read_csv(file_name, skiprows = skiprows,error_bad_lines=False)
 	df = df.rename(columns={"GPS lat of bbox bottom center": "lat", "GPS long of bbox bottom center": "lon", 'Object ID':'ID'})
 	# df = df.loc[df['Timestamp'] >= 0]
 	return df
@@ -26,6 +26,11 @@ def read_data(file_name, skiprows = 0):
 def read_new_data(file_name):
 	df = pd.read_csv(file_name)
 	return df
+
+def find_camera_id(file_name):
+	start = file_name.find('record_')+7
+	end = file_name.find('_000', start)
+	return file_name[start:end]
 	
 def nan_helper(y):
 	n = len(y)
@@ -37,7 +42,6 @@ def nan_helper(y):
 	return y
 	
 def nan_helper_orig(y):
-
 	return np.isnan(y), lambda z: z.nonzero()[0]
 
 	
@@ -78,20 +82,6 @@ def compress(parent, groupList):
 		find(parent, i)
 	return parent 
 
-
-# calculate average speed of an object
-def calc_velocity(df):
-	if (len(df)<=1):
-		return # do nothing
-#	  lat_dist = df.loc[df.index[-1],'lat']-df.loc[df.index[0],'lat']
-#	  lon_dist = df.loc[df.index[-1],'lon']-df.loc[df.index[0],'lon']
-#	  timestep = df.loc[df.index[-1],'Timestamp'] - df.loc[group.index[0],'Timestamp']	
-	lat_dist = df.lat.values[-1] - df.lat.values[0]
-	lon_dist = df.lon.values[-1] - df.lon.values[0]
-	timestep = df.Timestamp.values[-1] - df.Timestamp.values[0]
-	df['lat_vel'] = lat_dist/timestep
-	df['lon_vel'] = lon_dist/timestep
-	return df
 
 # calculate average speed of an object (in m/s)
 def calc_velocity_mps(df):
@@ -145,377 +135,77 @@ def calc_theta(Y,timestamps):
 	
 def calc_steering(Y,timestamps):
 # approximate because l is not the distance between axis
+# TODO: finish this
 	theta = calc_theta(Y,timestamps)
 	thetadot
 	tan_phi = thetadot*v/l
 	return arctan(tan_phi)
-# calculate the distance traveled
-def calc_distance(df, filename):
-	startpts, endpts = get_lane_info(filename)
-	if 'lane' not in df:
-		df = assign_lane(df, startpts, endpts)
-	distance = []
-	for i in range(len(df)):
-		start = startpts[df.lane.values[i]]
-		distance.append(haversine_distance(df.lat.values[i], df.lon.values[i], start[0], start[1]))
-	df['distance'] = distance
+
+def reorder_points(df):
+	'''
+		make sure points in the road-plane do not flip
+	'''
+	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+	Y = np.array(df[pts])
+	Y = Y.astype("float")
+	xsort = np.sort(Y[:,[0,2,4,6]])
+	ysort = np.sort(Y[:,[1,3,5,7]])
+	try:
+		if df['direction'].values[0]== 1:
+			Y = np.array([xsort[:,0],ysort[:,0],xsort[:,2],ysort[:,1],
+			xsort[:,3],ysort[:,2],xsort[:,1],ysort[:,3]]).T
+		else:
+			Y = np.array([xsort[:,2],ysort[:,2],xsort[:,0],ysort[:,3],
+			xsort[:,1],ysort[:,0],xsort[:,3],ysort[:,1]]).T
+	except np.any(xsort<0) or np.any(ysort<0):
+		print('Negative x or y coord, please redefine reference point A and B')
+		sys.exit(1)
+
+	df.loc[:,pts] = Y
 	return df
 
-# metafile for the start and end points of each lane for each file
-def get_lane_info(filename):
-	if 'p2c4' in str(filename):
-		startpts = np.array([[36.00348, -86.60806],
-					 [36.00346, -86.60810],
-					 [36.003441, -86.60813],
-					 [36.003415, -86.60818],
-					 [36.00282, -86.60768],
-					 [36.00279, -86.60774]
-					])
-
-		endpts = np.array([[36.00295, -86.60749],
-					 [36.00293, -86.60754],
-					 [36.00291, -86.607575],
-					 [36.002885, -86.6076],
-					 [36.0033, -86.6082],
-					 [36.00323, -86.6082]
-					])
-	elif 'p3c6' in str(filename):
-		startpts = np.array([[36.001777, -86.606115],
-					 [36.001765, -86.606154],
-					 [36.001751, -86.606196],
-					 [36.001738, -86.606235],
-					 [36.000145, -86.604334],
-					 [36.000121, -86.604366],
-					 [36.000105, -86.604397],
-					 [36.000084, -86.604429]
-					])
-
-		endpts = np.array([[36.000354, -86.604256],
-					 [36.000319, -86.604287],
-					 [36.000256, -86.604268],
-					 [36.000224, -86.604283],
-					 [36.001669, -86.606354],
-					 [36.001666, -86.606400],
-					 [36.001661, -86.606452],
-					 [36.001646, -86.606495]
-					])
-		return startpts, endpts
-	else:
-		print('lane info not provided') #TODO
-		return
-
-# calculate average traveling direction
-def calc_direction(df):
-	if (len(df)<=1):
-		return # do nothing
-#	  lat_dist = df.loc[df.index[-1],'lat']-df.loc[df.index[0],'lat']
-#	  lon_dist = df.loc[df.index[-1],'lon']-df.loc[df.index[0],'lon']
-	lat_dist = df.lat.values[-1] - df.lat.values[0]
-	lon_dist = df.lon.values[-1] - df.lon.values[0]
-	df['direction'] = lon_dist/lat_dist
-	return df
-
-def calc_bearing(df):
-	# https://towardsdatascience.com/calculating-the-bearing-between-two-geospatial-coordinates-66203f57e4b4
-	alat = df.lat.values[0]
-	blat = df.lat.values[-1]
-	alon = df.lon.values[0]
-	blon = df.lon.values[-1]
-
-	dl = blon - alon
-	X = cos(blat) * sin(dl)
-	Y = cos(alat) * sin(blat) - sin(alat) * cos(blat) * cos(dl)
-
-	df['bearing'] = degrees(arctan2(X,Y))
-	return df
-
-def get_bearing_bounds(df):
-	# only two major directions. Select those two bearing ranges and extract their bounds (4 bin edges based on histogram)
-	hist, bin_edges = np.histogram(df.bearing.values)
-	top_two = hist.argsort()[-2:][::-1]
-	top_two.sort()
-	return [bin_edges[top_two[0]], bin_edges[top_two[0]+1], bin_edges[top_two[1]], bin_edges[top_two[1] + 1]]
-
-def calc_dynamics_all(df, filename):
-	groups = df.groupby('ID')
-	groupList = list(groups.groups)
-	df_new = pd.DataFrame()
-	for key, group in groups:
-		if (len(group) > 1):
-			group = calc_bearing(group)
-			group = calc_velocity_mps(group)
-			group = calc_distance(group, filename)
-			df_new = pd.concat([df_new, group])
-	return df_new
-
-
-def naive_filter(df):
-	# select based on proper bearings
-	b = get_bearing_bounds(df)
-	df = df.loc[(df['bearing']>=b[0]) & (df['bearing']<=b[1]) | (df['bearing']>=b[2]) & (df['bearing']<=b[3])]
-
-	groups = df.groupby('ID')
-	df_new = pd.DataFrame()
-	for key,group in groups:
-		if (len(group) > 1):
-			df_new = pd.concat([df_new, group])
-	return df_new
-
-def naive_filter_3D(df):
-	groups = df.groupby('ID')
-	new_df = pd.DataFrame()
+def filter_width_length(df):
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
 	pts_gps = ['bbrlat','bbrlon', 'fbrlat','fbrlon','fbllat','fbllon','bbllat', 'bbllon']
 	
-	for ID, g in groups:
-		if (len(g)<1):
-			print('length less than 1')
-			continue
-		Y = np.array(g[pts])
-		Ygps = np.array(g[pts_gps])
-		Y = Y.astype("float")
-		xsort = np.sort(Y[:,[0,2,4,6]])
-		ysort = np.sort(Y[:,[1,3,5,7]])
-		try:
-			if g['direction'].values[0]== '+':
-				for i in range(len(Y)):
-					Y[i,:] = [xsort[i,0],ysort[i,0],xsort[i,2],ysort[i,1],
-					xsort[i,3],ysort[i,2],xsort[i,1],ysort[i,3]]
+	Y = np.array(df[pts])
+	Ygps = np.array(df[pts_gps])
+	Y = Y.astype("float")
+	# filter outlier based on width	
+	w1 = np.abs(Y[:,3]-Y[:,5])
+	w2 = np.abs(Y[:,1]-Y[:,7])
+	outliers = np.logical_or(w1>5, w2>5)
+	# print('width outlier:',np.count_nonzero(outliers))
+	Y[outliers,:] = np.nan
+	
+	# filter outlier based on length
+	l1 = np.abs(Y[:,0]-Y[:,2])
+	m1 = np.nanmean(l1)
+	s1 = np.nanstd(l1)
+	outliers =	abs(l1 - m1) > 2 * s1
+	# print('length outlier:',np.count_nonzero(outliers))
+	Y[outliers,:] = np.nan
+	
+	isnan = np.isnan(np.sum(Y,axis=-1))
+	Ygps[isnan,:] = np.nan
+	
+	# write into df
+	df.loc[:,pts] = Y
+	df.loc[:,pts_gps] = Ygps
+	return df
+	
+def naive_filter_3D(df):
 
-			if g['direction'].values[0]== '-':
-				for i in range(len(Y)):
-					Y[i,:] = [xsort[i,2],ysort[i,2],xsort[i,0],ysort[i,3],
-					xsort[i,1],ysort[i,0],xsort[i,3],ysort[i,1]]
+	# filter out direction==0
+	df = df.groupby("ID").filter(lambda x: x['direction'].values[0] != 0)
+	# reorder points
+	df = df.groupby("ID").apply(reorder_points).reset_index(drop=True)
+	# filter out-of-bound length and width
+	df = df.groupby("ID").apply(filter_width_length).reset_index(drop=True)
+	
+	return df
+	
 		
-		except np.any(xsort<0) or np.any(ysort<0):
-			print('Negative x or y coord, please redefine reference point A and B')
-			sys.exit(1)
-		
-		# filter outlier based on width	
-		w1 = np.abs(Y[:,3]-Y[:,5])
-		w2 = np.abs(Y[:,1]-Y[:,7])
-		outliers = np.logical_or(w1>5, w2>5)
-		# print('width outlier:',np.count_nonzero(outliers))
-		Y[outliers,:] = np.nan
-		
-		# filter outlier based on length
-		l1 = np.abs(Y[:,0]-Y[:,2])
-		m1 = np.nanmean(l1)
-		s1 = np.nanstd(l1)
-		outliers =	abs(l1 - m1) > 2 * s1
-		# print('length outlier:',np.count_nonzero(outliers))
-		Y[outliers,:] = np.nan
-		
-		isnan = np.isnan(np.sum(Y,axis=-1))
-		Ygps[isnan,:] = np.nan
-		
-		for i in range(len(pts)):
-			# g[pts[i]]=Y[:,i]
-			# g[pts_gps[i]]=Ygps[:,i]
-			g.loc[:,pts[i]] = Y[:,i]
-			g.loc[:,pts_gps[i]] = Ygps[:,i]
-		new_df = pd.concat([new_df, g])
-	return new_df
-			
-	
-	
-def predict_n_steps(n, group, dt):
-#	  lat_v_avg = np.mean(group.lat_vel.values)
-#	  lon_v_avg = np.mean(group.lon_vel.values)
-	lat_v_avg = group.lat_vel.values[0]
-	lon_v_avg = group.lon_vel.values[0]
-	last = group.loc[group.index[-1]]
-	lat_pred = [last.lat]
-	lon_pred = [last.lon]
-	time = [last.Timestamp]
-	
-	for i in range(n):
-		lat_pred.append(lat_pred[i] + dt*lat_v_avg)
-		lon_pred.append(lon_pred[i] + dt*lon_v_avg)
-		time.append(time[-1] + dt)
-	return np.append(group.Timestamp.values, time[1:]), np.append(group.lat.values, lat_pred[1:]), np.append(group.lon.values, lon_pred[1:])
-
-def predict_distance(n,group,dt):
-	last = group.loc[group.index[-1]]
-	distance = [last.distance]
-	# mps = group.mps.values[0]
-	mps = 30
-	time = [last.Timestamp]
-	for i in range(n):
-		distance.append(distance[i] + dt*mps)
-		time.append(time[-1] + dt)
-	return time[1:], distance[1:]
-	# return np.append(group.Timestamp.values, time[1:]), np.append(group.distance, distance[1:])
-
-
-def overlap(group1, group2, n, dt):
-	# check of the next n steps of group1 trajectry will overlap with any of group2's trajectory
-	time, lat_pred, lon_pred = predict_n_steps(n, group1, dt)
-	subgroup2 = group2.loc[(group2['Timestamp'] >= time[0]-dt/2) & (group2['Timestamp'] <= time[-1]+dt/2)]
-
-	if len(subgroup2)<=1:
-		return 999
-	lat_rs = np.interp(subgroup2.Timestamp.values, time, lat_pred)
-	lon_rs = np.interp(subgroup2.Timestamp.values, time, lon_pred)
-	dist = []
-	for i in range(len(subgroup2)):
-		dist.append(haversine_distance(lat_rs[i], lon_rs[i], subgroup2.lat.values[i], subgroup2.lon.values[i]))
-	dist = np.sum(np.absolute(dist))/len(subgroup2)
-	return dist
-
-def overlap_distance(group1, group2, n, dt):
-	# check of the next n steps of group1 trajectry will overlap with any of group2's trajectory
-	# return the MSE
-	time, distance = predict_distance(n, group1, dt)
-	subgroup2 = group2.loc[(group2['Timestamp'] >= time[0]-dt/2) & (group2['Timestamp'] <= time[-1]+dt/2)]
-
-	if len(subgroup2)<=1:
-		return 999
-	dist_rs = np.interp(subgroup2.Timestamp.values, time, distance)
-	# print('group1: {:-1} group2:{:-1}'.format(group1.ID.values[0], group2.ID.values[0]))
-	# print(dist_rs)
-	
-	error = 0
-	for i in range(len(subgroup2)):
-		error += abs(subgroup2.distance.values[i]-dist_rs[i])
-	mae = error/len(subgroup2)
-	# print(mae)
-	return mae
-
-
-# calculate velocity and direction information
-def calc_velocity_direction(df):
-	groups = df.groupby('ID')
-	groupList = list(groups.groups)
-	df_new = pd.DataFrame()
-	for key, group in groups:
-		if (len(group) > 1):
-			calc_velocity(group)
-			calc_direction(group)
-			df_new = pd.concat([df_new, group])
-	return df_new
-
-
-# stitch connected objects together
-# make some location prediction of an object based on its past trajectory
-# check if the predicted trajectory overlaps with the measurement of another object at the same time frame 
-# if overlaps, combine the two objects
-
-def find_parent(dfall, tm, tp, thresh):
-	groups = dfall.groupby('ID')
-	groupList = list(groups.groups)
-	
-	# initialize all the objects to disjoint sets: parent=itself (a dictoinary)
-	# parent stores the first-appeared object ID that one object is connect with
-	# e.g., parent[obj2] = obj1 means that obj2 is connected with obj1, and thus should be combined
-	parent = {}
-	for g in groupList:
-		parent[g] = g
-
-	# updated = 0
-	for i in range(len(groupList)-1):
-		a = groupList[i]
-		ga = groups.get_group(a)
-	#	  if parent[a] == a: # if this object is not connected with others
-		neighbors = find_neighbors_lr(dfall, ga, tm, tp)
-			
-		for b in neighbors:
-			gb = groups.get_group(b)
-			# if (a==84):
-			#	  print(b)
-			#	  print(overlap_lr(ga,gb))
-			#	  predb = lr.predict(gb.Timestamp.values.reshape(-1,1))
-			#	  plt.plot(gb.Timestamp.values, predb)
-			#	  plt.scatter(gb.Timestamp.values, gb.distance.values, label=str(b))
-			#	  # print(np.sum(np.absolute(predb-gb.distance.values)/len(predb)))
-			#	  print(np.absolute(predb.reshape(-1,1)-gb.distance.values.reshape(-1,1)))
-			#	  plt.legend(fontsize = 10)
-			if (overlap_lr(ga,gb) <= thresh):
-			# if (overlap_distance(ga,gb, n, dt) <= 6):
-				parent[b] = a
-				# updated = updated + 1
-		
-		# plt.show()
-	# path compression: the parent of any object should be the ID that appeared first 
-	parent = compress(parent, groupList)
-	# print('Modified the ID of {:-1} / {:-1} objects'.format(updated, len(dfall['ID'].unique())))	
-	return parent
-
-
-# find the neighbors (in the same time range and travel the same direction)
-def find_neighbors(dfall, df, n, dt):
-	time, distance = predict_distance(n, df, dt)
-	subgroup = dfall.loc[(dfall['Timestamp'] >= time[0]-dt/2) & (dfall['Timestamp'] <= time[-1]+dt/2) & (dfall['bearing'] >= df['bearing'].values[0] - 30) & (dfall['bearing'] <= df['bearing'].values[0] + 30) &(dfall['lane'] <= 2) &(dfall['lane'] >= max(0,df['lane'].values[0] - 1))]	 
-	return subgroup["ID"].unique()
-
-
-def fit_lr(df):
-	lr = linear_model.LinearRegression()
-	X = df.Timestamp.values.reshape(-1,1)
-	y = df.distance.values.reshape(-1,1)
-	lr.fit(X, y)
-	return lr
-
-def overlap_lr(group1, group2): 
-	lr = fit_lr(group1)
-	pred_dist = lr.predict(group2.Timestamp.values.reshape(-1,1))
-	# MAE fit
-	mae = np.sum(np.absolute(pred_dist.reshape(-1,1)-group2.distance.values.reshape(-1,1)))/len(pred_dist)
-	print(mae)
-	return mae
-
-	# R-squared
-	# r2 = r2_score(group2.distance.values,pred_dist)
-	# return r2
-
-# find the neighbors (in the same time range and travel the same direction)
-def find_neighbors_lr(dfall, df, tm, tp):
-	st = df.Timestamp.values[0] + tm
-	et = df.Timestamp.values[-1]+tp # predict (et-st) sec into the future
-	subgroup = dfall.loc[(dfall['Timestamp'] > st) & (dfall['Timestamp'] < et) & (dfall['bearing'] >= df['bearing'].values[0] - 30) & (dfall['bearing'] <= df['bearing'].values[0] + 30) &(dfall['lane'] <= 2) &(dfall['lane'] >= max(0,df['lane'].values[0] - 1))]	  
-	return subgroup["ID"].unique()
-
-# change objects'ID to be the same with their parents
-def assignID(df, parent):
-	
-	groups = df.groupby('ID')
-	groupList = list(groups.groups)
-	
-	new_df = pd.DataFrame()
-
-	for g in groupList:
-		p = parent[g]
-		group = groups.get_group(g)
-		if (g != p): 
-			par = groups.get_group(p)
-			group = group.assign(ID=par.loc[par.index[0],'ID'])
-		new_df = pd.concat([new_df, group])
-		
-	return new_df
-
-def stitch(file_name, n, dt):
-	
-	print('Reading '+str(file_name))
-	df = read_data(file_name)
-
-	# calculate and add velocity and direction information
-	print('Calculating velocity and bearing ...')
-	df = calc_dynamics_all(df)
-	
-	print('Naive filtering')
-	df = naive_filter(df)
-
-	print('Finding parent ...')
-	parent = find_parent(df, n, dt)
-	
-	print('Assigning IDs ...')
-	new_df = assignID(df, parent)
-	
-	print('Original algorithm counts {:-1} unique cars'.format(len(df['ID'].unique().tolist())))
-	print('After stitching counts {:-1} unique cars'.format(len(new_df['ID'].unique().tolist())))
-	
-	return new_df
-
 
 
  # for visualization
@@ -575,13 +265,17 @@ def draw_map(df, latcenter, loncenter, nO):
 	return jupyter_display(map_name)
 
 # draw rectangles from 3D box on map
-def draw_map_box(Y, latcenter, loncenter, nO, lats, lngs):
+def draw_map_box(Y, nO, lats, lngs):
 	
 	map_name = "test.html"
-	gmap = gmplot.GoogleMapPlotter(latcenter, loncenter, nO) 
+	notNan = ~np.isnan(np.sum(Y,axis=-1))
+	Y = Y[notNan,:]
+	gmap = gmplot.GoogleMapPlotter(Y[0,0], Y[0,1], nO) 
 
 	# get the bottom 4 points gps coords
 	# Y = np.array(df[['bbrlat','bbrlon','fbrlat','fbrlon','fbllat','fbllon','bbllat','bbllon']])
+	
+
 	for i in range(len(Y)):
 		coord = Y[i,:]
 		coord = np.reshape(coord,(-1,2)).tolist()
@@ -591,11 +285,9 @@ def draw_map_box(Y, latcenter, loncenter, nO, lats, lngs):
 		gmap.polygon(*rectangle)	
 	lats = lats[~np.isnan(lats)]
 	lngs = lngs[~np.isnan(lngs)]
-	print(lats[0],lngs[0])
-	print(Y[0,2], Y[0,3])
-	
 	gmap.scatter(lats, lngs, color='red', size=1, marker=True)
 	gmap.scatter(Y[:,2], Y[:,3],color='red', size=0.1, marker=False)
+
 	gmap.draw(map_name)
 
 	insertapikey(map_name)
@@ -603,52 +295,8 @@ def draw_map_box(Y, latcenter, loncenter, nO, lats, lngs):
 
 
 
-def lineseg_dists(p, a, b):
-	"""Cartesian distance from point to line segment
-
-	Edited to support arguments as series, from:
-	https://stackoverflow.com/a/54442561/11208892
-
-	Args:
-		- p: np.array of single point, shape (2,) or 2D array, shape (x, 2)
-		- a: np.array of shape (x, 2), start points
-		- b: np.array of shape (x, 2), end points
-	"""
-	# normalized tangent vectors
-	d_ba = b - a
-	d = np.divide(d_ba, (np.hypot(d_ba[:, 0], d_ba[:, 1])
-						   .reshape(-1, 1)))
-
-	# signed parallel distance components
-	# rowwise dot products of 2D vectors
-	s = np.multiply(a - p, d).sum(axis=1)
-	t = np.multiply(p - b, d).sum(axis=1)
-
-	# clamped parallel distance
-	h = np.maximum.reduce([s, t, np.zeros(len(s))])
-
-	# perpendicular distance component
-	# rowwise cross products of 2D vectors	
-	d_pa = p - a
-	c = d_pa[:, 0] * d[:, 1] - d_pa[:, 1] * d[:, 0]
-
-	return np.hypot(h, c)
-
-# calculate the distance from p3 to a line defined by p1 and p2
-def pt_to_line_dist(p1,p2,p3):
-	d = np.abs(np.cross(p2-p1,p3-p1)/np.linalg.norm(p2-p1))
-	return d
-
 def pt_to_line_dist_gps(lat1, lon1, lat2, lon2, lat3, lon3):
 	# distance from point (lat3, lon3) to a line defined by p1 and p2
-	# use cross track distance
-	# R = 6371*1000 # in meter6378137
-	# omega_13 = haversine_distance(lat1, lon1, lat3, lon3)/R 
-	# theta_13 = bearing(lat1, lon1, lat3, lon3)
-	# theta_12 = bearing(lat1, lon1, lat2, lon2)
-	# min_distance = arcsin(sin(omega_13)*sin(theta_13-theta_12))*R
-	
-	# use trigonometry
 	toA,_,_ = euclidean_distance(lat1, lon1, lat3, lon3)
 	toB,_,_ = euclidean_distance(lat2, lon2, lat3, lon3)
 	AB,_,_ = euclidean_distance(lat1, lon1, lat2, lon2)
@@ -663,22 +311,20 @@ def bearing(lat1, lon1, lat2, lon2):
 	return np.pi-np.arctan2(np.abs(dx),np.abs(dy))
 	
 def get_x_direction(df):
-	groups = df.groupby('ID')
-	groupList = list(groups.groups)
-	df_new = pd.DataFrame()
-	for ID, group in groups:
-		bbrx = group['bbr_x'].values
-		if (len(bbrx[~np.isnan(bbrx)])<1):
-			group = group.assign(direction='0')
-			continue
-		if (bbrx[~np.isnan(bbrx)][-1]-bbrx[~np.isnan(bbrx)][0]>0):
-			group = group.assign(direction='+')
-		elif (bbrx[~np.isnan(bbrx)][-1]-bbrx[~np.isnan(bbrx)][0]<0):
-			group = group.assign(direction='-')
-		else:
-			group = group.assign(direction='0')
-		df_new = pd.concat([df_new, group])
-	return df_new
+	return df.groupby("ID").apply(ffill_direction).reset_index(drop=True)
+
+def ffill_direction(df):
+	bbrx = df['bbr_x'].values
+	notnan = ~np.isnan(bbrx)
+	bbrx = bbrx[notnan]
+	if (len(bbrx)<=1):
+		df = df.assign(direction=0)
+	else:
+		sign = np.sign(bbrx[-1]-bbrx[0])
+		df = df.assign(direction = sign)
+	return df
+
+
 	
 def gps_to_road_df(df, A, B):
 # TODO: consider traffic in the other direction
@@ -694,8 +340,6 @@ def gps_to_road_df(df, A, B):
 		df[pt+'_y'] = Y[:,2*i+1]
 		i = i+1
 	return df
-	
-
 	
 def gps_to_road(Ygps,A,B):
 	# use equal-rectangle approximation
@@ -740,7 +384,6 @@ def road_to_gps(Y, A, B):
 	return Ygps
 	
 	
-	
 def destination_given_distance_bearing(lat1, lon1, d, bearing):
 	'''
 	find the destination lat and lng given distance and bearing from the start point
@@ -753,20 +396,11 @@ def destination_given_distance_bearing(lat1, lon1, d, bearing):
 	lat2 = arcsin(sin(lat1)*cos(d/R)+cos(lat1)*sin(d/R)*cos(bearing))
 	lon2 = lon1 + arctan2(sin(bearing)*sin(d/R)*cos(lat1), cos(d/R)-sin(lat1)*sin(lat2))
 	return lat2, lon2
-		
-def assign_lane(df, startpts, endpts):
-	pts = np.array(df[['lat','lon']])
-	laneID = []
-	for i in range(pts.shape[0]):
-		dists = lineseg_dists(pts[i], startpts, endpts)
-		laneID.append(np.argmin(dists))
-	df['lane'] = laneID
-	return df
-
 
 def calc_homography_matrix(camera_id, file_name):
 	c = pd.read_csv(file_name)
-	camera = c.loc[c['Camera']==camera_id]
+	camera = c.loc[c['Camera'].str.lower()==camera_id.lower()]
+
 	gps_pts = camera[['GPS Lat','GPS Long']].to_numpy(dtype ='float32')
 	xy_pts = camera[['Camera X','Camera Y']].to_numpy(dtype ='float32')
 	# transform from pixel coords to gps coords
@@ -777,14 +411,27 @@ def img_to_gps(df, camera_id, file_name):
 	# vectorized
 	M = calc_homography_matrix(camera_id,file_name)
 	for pt in ['fbr','fbl','bbr','bbl']:
-		ps = np.array(df[[pt+'x', pt+'y']])
-		ps1 = np.vstack((np.transpose(ps), np.ones((1,len(ps)))))
-		pds = M.dot(ps1)
-		pds = pds / pds[-1,:][np.newaxis, :]
-		ptgps = np.transpose(pds[0:2,:])
+		ps = np.array(df[[pt+'x', pt+'y']]) # get pixel coords
+		ps1 = np.vstack((np.transpose(ps), np.ones((1,len(ps))))) # add ones to standardize
+		pds = M.dot(ps1) # convert to gps unnormalized
+		pds = pds / pds[-1,:][np.newaxis, :] # gps normalized s.t. last row is 1
+		ptgps = np.transpose(pds[0:2,:]) # only use the first two rows
 		df = pd.concat([df, pd.DataFrame(ptgps,columns=[pt+'lat', pt+'lon'])], axis=1)
 	return df
 
+def gps_to_img(df, camera_id, file_name):
+	# vectorized
+	M = calc_homography_matrix(camera_id, file_name)
+	Minv = np.linalg.inv(M)
+	for pt in ['fbr','fbl','bbr','bbl']:
+		ptgps = np.array(df[[pt+'lat', pt+'lon']]) 
+		pds = np.vstack((np.transpose(ptgps), np.ones((1,len(ptgps)))))
+		pds = Minv.dot(pds)
+		ps1 = pds / pds[-1,:][np.newaxis, :]
+		ps = np.transpose(ps1[0:2,:])
+		df.loc[:,[pt+'x',pt+'y']] = ps
+	return df
+	
 def get_xy_minmax(df):
 # for plotting
 	Y = np.array(df[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
@@ -793,5 +440,23 @@ def get_xy_minmax(df):
 	Yy = Y[:,[1,3,5,7]]
 	return Yx[notNan,:].min(),Yx[notNan,:].max(),Yy[notNan,:].min(),Yy[notNan,:].max()
 	
-	
+def plot_track(D):
+	fig, ax = plt.subplots(figsize=(15,1))
+
+	for i in range(len(D)):
+		coord = D[i,:]
+		coord = np.reshape(coord,(-1,2)).tolist()
+		coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+		xs, ys = zip(*coord) #lon, lat as x, y
+		plt.plot(xs,ys,label='t=0' if i==0 else '',alpha=i/len(D),c='black')
+
+		plt.scatter(D[i,2],D[i,3],color='black',alpha=i/len(D))
+
+	ax = plt.gca()
+	plt.xlabel('meter')
+	plt.ylabel('meter')
+	plt.legend()
+	ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y)
+	plt.show() 
+	return
 	
