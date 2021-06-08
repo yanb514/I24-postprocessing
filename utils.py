@@ -17,9 +17,9 @@ import sys
 warnings.simplefilter ('default')
 
 # read data
-def read_data(file_name, skiprows = 0):	 
+def read_data(file_name, skiprows = 0, index_col = False):	 
 #	  path = pathlib.Path().absolute().joinpath('tracking_outputs',file_name)
-	df = pd.read_csv(file_name, skiprows = skiprows,error_bad_lines=False,index_col = 0)
+	df = pd.read_csv(file_name, skiprows = skiprows,error_bad_lines=False,index_col = index_col)
 	df = df.rename(columns={"GPS lat of bbox bottom center": "lat", "GPS long of bbox bottom center": "lon", 'Object ID':'ID'})
 	# df = df.loc[df['Timestamp'] >= 0]
 	return df

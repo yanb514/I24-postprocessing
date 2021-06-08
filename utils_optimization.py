@@ -285,7 +285,7 @@ def create_synth_data(n):
 	theta = np.random.normal(0, .02, theta.shape) + theta
 	w = np.ones(n)*2 + np.random.normal(0, .2, n) 
 	l = np.ones(n)*4 + np.random.normal(0, .4, n) 
-	x = np.linspace(0,100,n)
+	x = np.linspace(0,n,n) # assume 30fps and 30m/s, then 1 frame = 1m
 	x = np.random.normal(0, .1, x.shape) + x
 	y = np.ones(n)
 	xa = x + w/2*sin(theta)
@@ -319,7 +319,7 @@ def create_true_data(n):
 	Y = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
 	return timestamps,Y
 	
-def receding_horizon_opt(Y,timestamps,w,l,n,lam1,lam2,lam3,lam4,lam5,PH,IH):
+def receding_horizon_opt(Y,timestamps,w,l,n,PH,IH):
 	'''
 	re-write the batch optimization (opt1 and op2) into mini-batch optimization to save computational time
 	n: number of frames, assuming 30 fps
@@ -327,22 +327,34 @@ def receding_horizon_opt(Y,timestamps,w,l,n,lam1,lam2,lam3,lam4,lam5,PH,IH):
 	IH: implementation horizon
 	
 	'''
+	# optimization parameters
+	lam1 = 1 # modification of measurement	
+	lam2 = 1 # acceleration
+	lam3 = 0 # jerk
+	lam4 = 10 # theta
+	lam5 = 1 # omega
+
 	Yre = np.empty((0,8))
 	a_arr = np.empty((0,0))
 	x_arr = np.empty((0,0))
 	v_arr = np.empty((0,0))
 	theta_arr = np.empty((0,0))
+	
 	for i in range(0,n-IH,IH):
+		print(i,'/',n)
 		Y1 = Y[i:min(i+PH,n),:]
 		N = len(Y1)
 		notNan = ~np.isnan(np.sum(Y1,axis=-1))
 		Y1 = Y1[notNan,:]
-		ts = timestamps[i:i+PH]
+		ts = timestamps[i:min(i+PH,n)]
 		dt = np.diff(ts)
-
+		
 		a0 = np.zeros((N))
 		theta0 = np.zeros((N))
-		v0 = (Y1[-1,0]-Y1[0,0])/(ts[notNan][-1]-ts[notNan][0])
+		try:
+			v0 = v_arr[-1]
+		except:
+			v0 =(Y1[-1,0]-Y1[0,0])/(ts[notNan][-1]-ts[notNan][0])
 		x0 = (Y1[0,0]+Y1[0,6])/2
 		y0 = (Y1[0,1]+Y1[0,7])/2
 		X0 = np.concatenate((a0.T, theta0.T, \
@@ -356,10 +368,10 @@ def receding_horizon_opt(Y,timestamps,w,l,n,lam1,lam2,lam3,lam4,lam5,PH,IH):
 		# extract results
 		Yre1, x,y,v,a,theta,omega = unpack2(res,N,dt,w,l)
 		Yre = np.vstack([Yre,Yre1[:N if i+PH>=n else IH,:]])
-		a_arr = np.concatenate((a_arr,a[:N if i+PH>=n else IH,:]))
-		x_arr = np.concatenate((x_arr,x[:N if i+PH>=n else IH,:]))
-		v_arr = np.concatenate((v_arr,v[:N if i+PH>=n else IH,:]))
-		theta_arr = np.concatenate((theta_arr,theta[:N if i+PH>=n else IH,:]))
+		a_arr = np.append(a_arr,a[:N if i+PH>=n else IH])
+		x_arr = np.append(x_arr,x[:N if i+PH>=n else IH])
+		v_arr = np.append(v_arr,v[:N if i+PH>=n else IH])
+		theta_arr = np.append(theta_arr,theta[:N if i+PH>=n else IH])
 	return Yre,a_arr,x_arr,v_arr,theta_arr
 	
 	
@@ -453,7 +465,13 @@ def unpack2(res,N,dt,w,l):
 	return Yre, x,y,v,a,theta,omega
 	
 	
-def estimate_dimensions(Y1, ts,lam1,lam2,lam3,lam4,lam5):
+def estimate_dimensions(Y1, ts):
+	# optimization parameters
+	lam1 = 1 # modification of measurement
+	lam2 = 1 # acceleration
+	lam3 = 0 # jerk
+	lam4 = 10 # theta
+	lam5 = 1 # omega
 	N = len(Y1)
 	notNan = ~np.isnan(np.sum(Y1,axis=-1))
 	Y1 = Y1[notNan,:]
