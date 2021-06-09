@@ -26,4 +26,4 @@ As for the roadmap, for the short term we can:
 3. Make an animation!
 4. Add multiple vehicles across different camera view.
 
-Meta for ``rectified_record_xxx.csv": 
+Meta for `rectified_record_xxx.csv`: 
