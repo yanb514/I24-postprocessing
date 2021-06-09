@@ -25,3 +25,5 @@ As for the roadmap, for the short term we can:
 2. Overlay a road drawing at the background (so that we know which lane the cars are at)
 3. Make an animation!
 4. Add multiple vehicles across different camera view.
+
+Meta for ``rectified_record_xxx.csv": 
