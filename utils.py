@@ -16,6 +16,10 @@ import warnings
 import sys
 warnings.simplefilter ('default')
 
+global A,B
+A = [36.004654, -86.609976] # south west side, so that x, y coords obey counterclockwise
+B = [36.002114, -86.607129]
+
 # read data
 def read_data(file_name, skiprows = 0, index_col = False):	 
 #	  path = pathlib.Path().absolute().joinpath('tracking_outputs',file_name)
@@ -327,13 +331,13 @@ def ffill_direction(df):
 
 
 	
-def gps_to_road_df(df, A, B):
+def gps_to_road_df(df):
 # TODO: consider traffic in the other direction
 # use trigonometry 
 	lat1, lon1 = A
 	lat2, lon2 = B
 	Y_gps =	 np.array(df[['bbrlat','bbrlon','fbrlat','fbrlon','fbllat','fbllon','bbllat','bbllon']])
-	Y = gps_to_road(Y_gps, A,B)
+	Y = gps_to_road(Y_gps)
 	# write Y to df
 	i = 0
 	for pt in ['bbr','fbr','fbl','bbl']:
@@ -342,7 +346,7 @@ def gps_to_road_df(df, A, B):
 		i = i+1
 	return df
 	
-def gps_to_road(Ygps,A,B):
+def gps_to_road(Ygps):
 	# use equal-rectangle approximation
 	R = 6371*1000 # in meter6378137
 	lat1, lon1 = A
