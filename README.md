@@ -25,3 +25,18 @@ As for the roadmap, for the short term we can:
 2. Overlay a road drawing at the background (so that we know which lane the cars are at)
 3. Make an animation!
 4. Add multiple vehicles across different camera view.
+
+Meta for `rectified_record_xxx.csv`: 
+1. `Frame #`: frame index
+2. `Timestamp`: Unix timestamp
+3. `ID`: unique vehicle ID
+4. `Object class`: vehicle type
+5. `BBox xmin/ymin/xmax/ymax`: 2D bounding box dimensions
+6. `fbrx/y`: the pixel coordinates of the front bottom right corner w.r.t. each vehicle's traveling direction
+7. `fblx/y`: ... front bottom left ...
+8. `bbrx/y`: ... back bottom right ...
+9. `bblx/y`: ... back bottom left ...
+10. We won't be needing all the top points (`*t**x/y`) for now.
+11. `fbrlat/lon`: the GPS coordinates (latitudes and longitudes) of the front bottom right corner
+12. `fbr_x/_y`: the road cooridates (w.r.t some surveyed points) of the front bottom right corner --> let's plot based on these coordinates
+13. `direction`: 1: south bound traffic; -1: north bound traffic
