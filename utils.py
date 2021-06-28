@@ -252,7 +252,17 @@ def jupyter_display(gmplot_filename):
 		f.write(f_string)
 	return IFrame(gmplot_filename, width=900, height=600)
 
+def draw_map_scatter(x,y):
+	
+	map_name = "test.html"
+	gmap = gmplot.GoogleMapPlotter(x[0], y[0], 100) 
 
+	gmap.scatter(x, y, s=.9, alpha=.8, c='red',marker = False)
+	gmap.draw(map_name)
+	
+	insertapikey(map_name)
+	return jupyter_display(map_name)
+	
 def draw_map(df, latcenter, loncenter, nO):
 	
 	map_name = "test.html"
@@ -445,8 +455,8 @@ def get_xy_minmax(df):
 	Yy = Y[:,[1,3,5,7]]
 	return Yx[notNan,:].min(),Yx[notNan,:].max(),Yy[notNan,:].min(),Yy[notNan,:].max()
 	
-def plot_track(D):
-	fig, ax = plt.subplots(figsize=(15,1))
+def plot_track(D,length,width):
+	fig, ax = plt.subplots(figsize=(length,width))
 
 	for i in range(len(D)):
 		coord = D[i,:]

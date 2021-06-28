@@ -16,6 +16,8 @@ B = [36.002114, -86.607129]
 def obj(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 	"""The cost function
 		X = [j,alpha,a0,v0,x0,y0,theta0,w,l]^T
+		penalize omega, a, jerk, theta and correction
+		slow and not so accurate
 	""" 
 	# unpack variables
 	j = X[:N]
@@ -123,6 +125,8 @@ def unpack(res,N,dt):
 def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 	"""The cost function
 		X = [a,theta,v0,x0,y0,w,l]^T
+		penalize only theta, correction and accel
+		pretty accurate and faster than previous formulation
 	""" 
 	# unpack variables
 	a = X[:N]
@@ -274,6 +278,9 @@ def rectify_single_camera(df):
 	# return Yre,v,a,theta,omega
 
 def rectify(df):
+'''
+	apply solving obj1 for each objects in the entire dataframe
+'''
 	# filter out len<2
 	df = df.groupby("ID").filter(lambda x: len(x)>=2)
 	df = df.groupby("ID").apply(rectify_single_camera).reset_index(drop=True)
