@@ -278,9 +278,9 @@ def rectify_single_camera(df):
 	# return Yre,v,a,theta,omega
 
 def rectify(df):
-'''
+	'''
 	apply solving obj1 for each objects in the entire dataframe
-'''
+	'''
 	# filter out len<2
 	df = df.groupby("ID").filter(lambda x: len(x)>=2)
 	df = df.groupby("ID").apply(rectify_single_camera).reset_index(drop=True)
