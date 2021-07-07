@@ -40,3 +40,7 @@ Meta for `rectified_record_xxx.csv`:
 11. `fbrlat/lon`: the GPS coordinates (latitudes and longitudes) of the front bottom right corner
 12. `fbr_x/_y`: the road cooridates (w.r.t some surveyed points) of the front bottom right corner --> let's plot based on these coordinates
 13. `direction`: 1: south bound traffic; -1: north bound traffic
+14. `acceleration`: acceleration in m/s^2
+15. `speed`: speed in m/s
+16. `x/y`: back center positions in road coordinates
+17. `theta`: angle between the travel direction and the positive x-axis. If direction = 1, theta is close to 0; if direction = -1, theta is close to pi.
