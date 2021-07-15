@@ -14,11 +14,14 @@ import cv2
 import csv
 import warnings
 import sys
+import re
+import glob
 warnings.simplefilter ('default')
 
 global A,B
 A = [36.004654, -86.609976] # south west side, so that x, y coords obey counterclockwise
 B = [36.002114, -86.607129]
+
 
 # read data
 def read_data(file_name, skiprows = 0, index_col = False):	 
@@ -32,10 +35,15 @@ def read_new_data(file_name):
 	df = pd.read_csv(file_name)
 	return df
 
-def find_camera_id(file_name):
-	start = file_name.find('record_')+7
-	end = file_name.find('_000', start)
-	return file_name[start:end]
+# def find_camera_id(file_name):
+	# start = file_name.find('record_')+7
+	# end = file_name.find('_000', start)
+	# return file_name[start:end]
+def p_frame_time(df):
+# polyfit frame wrt timestamps
+	z = np.polyfit(df['Frame #'].iloc[[0,-1]].values,df['Timestamp'].iloc[[0,-1]].values, 1)
+	p = np.poly1d(z)
+	return p
 	
 def nan_helper(y):
 	n = len(y)
@@ -171,10 +179,10 @@ def reorder_points(df):
 
 def filter_width_length(df):
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
-	pts_gps = ['bbrlat','bbrlon', 'fbrlat','fbrlon','fbllat','fbllon','bbllat', 'bbllon']
+	# pts_gps = ['bbrlat','bbrlon', 'fbrlat','fbrlon','fbllat','fbllon','bbllat', 'bbllon']
 	
 	Y = np.array(df[pts])
-	Ygps = np.array(df[pts_gps])
+	# Ygps = np.array(df[pts_gps])
 	Y = Y.astype("float")
 	# filter outlier based on width	
 	w1 = np.abs(Y[:,3]-Y[:,5])
@@ -192,25 +200,45 @@ def filter_width_length(df):
 	Y[outliers,:] = np.nan
 	
 	isnan = np.isnan(np.sum(Y,axis=-1))
-	Ygps[isnan,:] = np.nan
+	# Ygps[isnan,:] = np.nan
 	
 	# write into df
 	df.loc[:,pts] = Y
-	df.loc[:,pts_gps] = Ygps
+	# df.loc[:,pts_gps] = Ygps
 	return df
 	
 def naive_filter_3D(df):
-
 	# filter out direction==0
 	df = df.groupby("ID").filter(lambda x: x['direction'].values[0] != 0)
 	# reorder points
 	df = df.groupby("ID").apply(reorder_points).reset_index(drop=True)
 	# filter out-of-bound length and width
 	df = df.groupby("ID").apply(filter_width_length).reset_index(drop=True)
-	
 	return df
+
+def preprocess(file_path, tform_path):
+	print('Reading data...')
+	df = read_data(file_path,0)
+	print('Transform from image to road...')
+	camera_name = find_camera_name(file_path)
+	print(camera_name)
+	df = img_to_road(df, tform_path, camera_name)
+	# df = img_to_gps(df, camera_name.upper(), tform_path) # transform from pixel to gps coordinates
+	# print('Transform from gps to road...')
+	# df = gps_to_road_df(df)
 	
-		
+	print('Get x direction...')
+	df = get_x_direction(df)
+	print('Naive filter...')
+	df = naive_filter_3D(df)
+	print('Deleting unrelavent columns...')
+	df = df.drop(columns=['BBox xmin','BBox ymin','BBox xmax','BBox ymax','vel_x','vel_y','lat','lon'])
+	return df
+
+def find_camera_name(file_path):
+	camera_name_regex = re.compile(r'p(\d)*c(\d)*')
+	camera_name = camera_name_regex.search(str(file_path))
+	return camera_name.group()
 
 
  # for visualization
@@ -372,7 +400,7 @@ def gps_to_road(Ygps):
 		AC,_,_ = euclidean_distance(lat1,lon1,pt_lats,pt_lons)
 		# cross-track: toAB
 		toAB = pt_to_line_dist_gps(lat1, lon1, lat2, lon2, pt_lats, pt_lons)
-		#along-track distance (x)
+		# along-track distance (x)
 		along_track = np.sqrt(AC**2-toAB**2)
 		Y[:,2*i] = along_track
 		Y[:,2*i+1] = toAB
@@ -422,6 +450,33 @@ def calc_homography_matrix(camera_id, file_name):
 	M = cv2.getPerspectiveTransform(xy_pts,gps_pts)
 	return M
 
+def get_homography_matrix(camera_id, tform_path):
+	'''
+	camera_id: pxcx
+	read from Derek's new transformation file
+	'''
+	# find and read the csv file corresponding to the camera_id
+	tf_file = glob.glob(str(tform_path) + '/' + camera_id + "*.csv")
+	tf_file = tf_file[0]
+	tf = pd.read_csv(tf_file)
+	M = np.array(tf.iloc[-3:,0:3], dtype=float)
+	return M
+	
+def img_to_road(df,tform_path,camera_id):
+	'''
+	the images are downsampled
+	'''
+	M = get_homography_matrix(camera_id, tform_path)
+	for pt in ['fbr','fbl','bbr','bbl']:
+		img_pts = np.array(df[[pt+'x', pt+'y']]) # get pixel coords
+		img_pts = img_pts/2 # downsample image to correctly correspond to M
+		img_pts_1 = np.vstack((np.transpose(img_pts), np.ones((1,len(img_pts))))) # add ones to standardize
+		road_pts_un = M.dot(img_pts_1) # convert to gps unnormalized
+		road_pts_1 = road_pts_un / road_pts_un[-1,:][np.newaxis, :] # gps normalized s.t. last row is 1
+		road_pts = np.transpose(road_pts_1[0:2,:])/3.281 # only use the first two rows, convert from ft to m
+		df[[pt+'_x', pt+'_y']] = pd.DataFrame(road_pts, index=df.index)
+	return df
+	
 def img_to_gps(df, camera_id, file_name):
 	# vectorized
 	M = calc_homography_matrix(camera_id,file_name)
@@ -452,10 +507,167 @@ def get_xy_minmax(df):
 	Y = np.array(df[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
 	notNan = ~np.isnan(np.sum(Y,axis=-1))
 	Yx = Y[:,[0,2,4,6]]
+	# print(np.where(Yx[notNan,:]==Yx[notNan,:].min()))
 	Yy = Y[:,[1,3,5,7]]
 	return Yx[notNan,:].min(),Yx[notNan,:].max(),Yy[notNan,:].min(),Yy[notNan,:].max()
 	
-def plot_track(D,length,width):
+def extend_prediction(car,xmin,xmax):
+	'''
+	extend the dynamics of the vehicles that are still in view
+	'''
+	dir = car['direction'][0]
+
+	xlast = car['x'][-1]	
+	xfirst = car['x'][0]
+	
+	if (dir == 1) & (xlast < xmax):
+		car = forward_predict(car,xmin,xmax,'xmax')
+	if (dir == -1) & (xlast > xmin):
+		car = forward_predict(car,xmin,xmax,'xmin') # tested
+	if (dir == 1) & (xfirst > xmin):
+		car = back_predict(car,xmin,xmax,'xmin')
+	if (dir == -1) & (xfirst < xmax):
+		car = back_predict(car,xmin,xmax,'xmax') # tested, missing start point
+	return car
+		
+
+def forward_predict(car,xmin,xmax,target):
+	# lasts
+	ylast = car['y'].values[-1]
+	xlast = car['x'].values[-1]
+	vlast = car['speed'].values[-1]
+	thetalast = car['theta'].values[-1]
+	framelast = car['Frame #'].values[-1]
+	w = car['width'].values[-1]
+	l = car['length'].values[-1]
+	dir = car['direction'].values[-1]
+	dt = 1/30
+	x = []
+	
+	if target=='xmax':
+		while xlast < xmax: 
+			xlast = xlast + dir*vlast*dt
+			x.append(xlast)
+	else:
+		while xlast > xmin: # tested
+			xlast = xlast + dir*vlast*dt
+			x.append(xlast)
+	
+	x = np.array(x)
+	y = np.ones(x.shape) * ylast
+	theta = np.ones(x.shape) * thetalast
+	v = np.ones(x.shape) * vlast
+	tlast = car['Timestamp'].values[-1]
+	timestamps = np.linspace(tlast+dt, tlast+dt+dt*len(x), len(x), endpoint=False)
+
+	# compute positions
+	xa = x + w/2*sin(theta)
+	ya = y - w/2*cos(theta)
+	xb = xa + l*cos(theta)
+	yb = ya + l*sin(theta)
+	xc = xb - w*sin(theta)
+	yc = yb + w*cos(theta)
+	xd = xa - w*sin(theta)
+	yd = ya + w*cos(theta)
+	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)		
+	
+	frames = np.arange(framelast+1,framelast+1+len(x))
+	car_ext = {'Frame #': frames,
+				'x':x,
+				'y':y,
+				'bbr_x': xa,
+				'bbr_y': ya,
+				'fbr_x': xb,
+				'fbr_y': yb,
+				'fbl_x': xc,
+				'fbl_y': yc,
+				'bbl_x': xd, 
+				'bbl_y': yd,
+				'speed': vlast,
+				'theta': thetalast,
+				'width': w,
+				'length':l,
+				'ID': car['ID'].values[-1],
+				'direction': car['direction'].values[-1],
+				'acceleration': 0,
+				'Timestamp': timestamps
+				}
+	car_ext = pd.DataFrame.from_dict(car_ext)
+	return pd.concat([car, car_ext], sort=False, axis=0)
+
+def backward_predict(car,xmin,xmax,target):
+	'''
+	backward predict up until frame 0
+	'''
+	# first
+	framefirst = car['Frame #'].values[0]
+	if framefirst <= 1:
+		return car
+	yfirst = car['y'].values[0]
+	xfirst = car['x'].values[0]
+	vfirst = car['speed'].values[0]
+	thetafirst = car['theta'].values[0]
+	w = car['width'].values[-1]
+	l = car['length'].values[-1]
+	dt = 1/30
+	dir = car['direction'].values[-1]
+	x = []
+	
+	if target=='xmax': # dir=-1
+		while xfirst < xmax: 
+			xfirst = xfirst - dir*vfirst*dt
+			x.insert(0,xfirst)
+	else:
+		while xfirst > xmin: 
+			xfirst = xfirst - dir*vfirst*dt
+			x.insert(0,xfirst)
+	
+	x = np.array(x)
+	y = np.ones(x.shape) * yfirst
+	theta = np.ones(x.shape) * thetafirst
+	v = np.ones(x.shape) * vfirst
+	tfirst = car['Timestamp'].values[0]
+	timestamps = np.linspace(tfirst-dt-dt*len(x), tfirst-dt, len(x), endpoint=False)
+
+	# compute positions
+	xa = x + w/2*sin(theta)
+	ya = y - w/2*cos(theta)
+	xb = xa + l*cos(theta)
+	yb = ya + l*sin(theta)
+	xc = xb - w*sin(theta)
+	yc = yb + w*cos(theta)
+	xd = xa - w*sin(theta)
+	yd = ya + w*cos(theta)
+	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)		
+	
+	frames = np.arange(framefirst-len(x),framefirst)
+	pos_frames = frames>=0
+	# discard frame# < 0
+	car_ext = {'Frame #': frames[pos_frames],
+				'x':x[pos_frames],
+				'y':y[pos_frames],
+				'bbr_x': xa[pos_frames],
+				'bbr_y': ya[pos_frames],
+				'fbr_x': xb[pos_frames],
+				'fbr_y': yb[pos_frames],
+				'fbl_x': xc[pos_frames],
+				'fbl_y': yc[pos_frames],
+				'bbl_x': xd[pos_frames], 
+				'bbl_y': yd[pos_frames],
+				'speed': vfirst[pos_frames],
+				'theta': thetafirst[pos_frames],
+				'width': w,
+				'length':l,
+				'ID': car['ID'].values[0],
+				'direction': car['direction'].values[0],
+				'acceleration': 0,
+				'Timestamp': timestamps[pos_frames]
+				}
+	car_ext = pd.DataFrame.from_dict(car_ext)
+	print(len(car_ext))
+	return pd.concat([car_ext, car], sort=False, axis=0)
+	
+def plot_track(D,length=15,width=1):
 	fig, ax = plt.subplots(figsize=(length,width))
 
 	for i in range(len(D)):
@@ -466,12 +678,35 @@ def plot_track(D,length,width):
 		plt.plot(xs,ys,label='t=0' if i==0 else '',alpha=i/len(D),c='black')
 
 		plt.scatter(D[i,2],D[i,3],color='black',alpha=i/len(D))
-
 	ax = plt.gca()
 	plt.xlabel('meter')
 	plt.ylabel('meter')
+	# plt.xlim([50,60])
+	# plt.ylim([0,60])
 	plt.legend()
-	ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y)
+	# ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y)
+	plt.show() 
+	return
+	
+def plot_track_df(df,length=15,width=1):
+	D = np.array(df[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
+	fig, ax = plt.subplots(figsize=(length,width))
+
+	for i in range(len(D)):
+		coord = D[i,:]
+		coord = np.reshape(coord,(-1,2)).tolist()
+		coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+		xs, ys = zip(*coord) #lon, lat as x, y
+		plt.plot(xs,ys,label='t=0' if i==0 else '',alpha=i/len(D),c='black')
+
+		plt.scatter(D[i,2],D[i,3],color='black',alpha=i/len(D))
+	ax = plt.gca()
+	plt.xlabel('meter')
+	plt.ylabel('meter')
+	# plt.xlim([50,60])
+	# plt.ylim([0,60])
+	plt.legend()
+	# ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y)
 	plt.show() 
 	return
 	
@@ -661,4 +896,72 @@ def plot_3D_ordered(frame,box,color = None,label = None):
 		
 	
 	return frame	
+	
+# delete repeated measurmeents per frame per object
+del_repeat_meas = lambda x: x.head(1) if np.isnan(x['bbr_x'].values).all() else x[~np.isnan(x['bbr_x'].values)].head(1)
+
+def del_repeat_meas_per_frame(framesnap):
+    framesnap = framesnap.groupby('ID').apply(del_repeat_meas)
+    return framesnap
+	
+def preprocess_multi_camera(df):
+	df_new = df.groupby('Frame #').apply(del_repeat_meas_per_frame).reset_index(drop=True)
+	return df_new
+
+def post_process(df):
+	df = df.groupby("ID").apply(width_filter).reset_index(drop=True)
+	return df
+	
+def width_filter(car):
+# post processing only
+# filter out width that's wider than 2.59m
+# df is the df of each car
+	
+	w = car['width'].values[-1]
+	l = car['length'].values[-1]
+	notNan = np.count_nonzero(~np.isnan(np.sum(np.array(car[['bbr_x']]),axis=1)))
+	theta = car['theta'].values
+	dt=1/30
+	
+	if (w < 2.59) & (notNan == len(car)):
+		return car
+	else:
+		if w > 2.59:
+			w = 2.59
+		a = car['acceleration'].values
+		a = np.nan_to_num(a) # fill nan with zero
+		v = car['speed'].values
+		x = car['x'].values
+		y = car['y'].values
+		dir = car['direction'].values[0]
+		for i in range(1,len(car)):
+			v[i] = v[i-1] + a[i-1] * dt
+			x[i] = x[i-1] + dir*v[i-1] * dt
+			y[i] = y[i-1]
+		# compute new positions
+		xa = x + w/2*sin(theta)
+		ya = y - w/2*cos(theta)
+		xb = xa + l*cos(theta)
+		yb = ya + l*sin(theta)
+		xc = xb - w*sin(theta)
+		yc = yb + w*cos(theta)
+		xd = xa - w*sin(theta)
+		yd = ya + w*cos(theta)
 		
+		car['width'] = w
+		car['x'] = x
+		car['y'] = y
+		car['bbr_x'] = xa
+		car['bbr_y'] = ya
+		car['fbr_x']= xb
+		car['fbr_y']= yb
+		car['fbl_x']= xc
+		car['fbl_y']= yc
+		car['bbl_x']= xd
+		car['bbl_y']= yd
+		car['speed']= v
+		
+		return car
+	
+	
+	

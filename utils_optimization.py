@@ -216,7 +216,16 @@ def rectify_single_camera(df):
 	'''
 	df: a single track in one camera view
 	'''
-	# df = df_original.copy(deep=True)
+	# add nan as place holder for missing frames
+	print(df['ID'].iloc[0],flush=True)
+	new_frames = np.arange(df['Frame #'].iloc[0],df['Frame #'].iloc[-1]+1)
+	df = df.set_index('Frame #')
+	df = df.reindex(new_frames)
+	df['Frame #'] = df.index
+	
+	# impute missing timestamps
+	timestamps = df.Timestamp.values
+	dt = np.diff(timestamps)
 	# optimization parameters
 	lam1 = 1 # modification of measurement
 	lam2 = 1 # acceleration
@@ -224,14 +233,11 @@ def rectify_single_camera(df):
 	lam4 = 10 # theta
 	lam5 = 1 # omega
 	
-	# impute missing timestamps
-	timestamps = df['Timestamp'].values
-	timestamps= nan_helper(timestamps)
-	dt = np.diff(timestamps)
+
 
 	# get bottom 4 points coordinates
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
-	pts_gps = ['bbrlat','bbrlon', 'fbrlat','fbrlon','fbllat','fbllon','bbllat', 'bbllon']
+	# pts_gps = ['bbrlat','bbrlon', 'fbrlat','fbrlon','fbllat','fbllon','bbllat', 'bbllon']
 	Y1 = np.array(df[pts])
 		
 	# Euler forward dynamics
@@ -270,19 +276,27 @@ def rectify_single_camera(df):
 	Yre, x,y,v,a,theta,omega,w,l = unpack1(res,N,dt)
 
 	# write into df
-	Ygps = road_to_gps(Yre, A,B)
-
+	# Ygps = road_to_gps(Yre, A,B)
 	df.loc[:,pts] = Yre
-	df.loc[:,pts_gps] = Ygps
+	# df.loc[:,pts_gps] = Ygps
+	df['acceleration'] = a
+	df['speed'] = v
+	df['x'] = x
+	df['y'] = y
+	df['theta'] = theta
+	df['width'] = w
+	df['length'] =  l
+	# df['Timestamp'] = timestamps
+	
 	return df
-	# return Yre,v,a,theta,omega
 
-def rectify(df):
+def rectify(df,p):
 	'''
 	apply solving obj1 for each objects in the entire dataframe
 	'''
 	# filter out len<2
 	df = df.groupby("ID").filter(lambda x: len(x)>=2)
+	df['Timestamp'] = p(df['Frame #'])
 	df = df.groupby("ID").apply(rectify_single_camera).reset_index(drop=True)
 	return df
 	
