@@ -8,6 +8,7 @@ from numpy import arctan2,random,sin,cos,degrees, arcsin, radians,arccos
 from scipy.optimize import minimize,NonlinearConstraint,leastsq,fmin_slsqp,least_squares
 import numpy.linalg as LA
 from utils import *
+from tqdm import tqdm
 
 global A,B
 A = [36.004654, -86.609976] # south west side, so that x, y coords obey counterclockwise
@@ -211,19 +212,12 @@ def unpack1(res,N,dt):
 	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
 	return Yre, x,y,v,a,theta,omega,w,l
 	
-
+import sys
 def rectify_single_camera(df):
 	'''
 	df: a single track in one camera view
 	'''
-	# add nan as place holder for missing frames
-	print(df['ID'].iloc[0],flush=True)
-	new_frames = np.arange(df['Frame #'].iloc[0],df['Frame #'].iloc[-1]+1)
-	df = df.set_index('Frame #')
-	df = df.reindex(new_frames)
-	df['Frame #'] = df.index
 	
-	# impute missing timestamps
 	timestamps = df.Timestamp.values
 	dt = np.diff(timestamps)
 	# optimization parameters
@@ -232,8 +226,6 @@ def rectify_single_camera(df):
 	lam3 = 0 # jerk
 	lam4 = 10 # theta
 	lam5 = 1 # omega
-	
-
 
 	# get bottom 4 points coordinates
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
@@ -245,7 +237,8 @@ def rectify_single_camera(df):
 	notNan = ~np.isnan(np.sum(Y1,axis=-1))
 	Y1 = Y1[notNan,:]
 	if (len(Y1) <2):
-		print('track too short')
+		print('track too short: ', df['ID'].iloc[0])
+		df.loc[:,pts] = np.nan
 		return df
 	a0 = np.zeros((N))
 	v0 = (Y1[-1,0]-Y1[0,0])/(timestamps[notNan][-1]-timestamps[notNan][0])
@@ -290,14 +283,14 @@ def rectify_single_camera(df):
 	
 	return df
 
-def rectify(df,p):
+def rectify(df):
 	'''
 	apply solving obj1 for each objects in the entire dataframe
 	'''
 	# filter out len<2
 	df = df.groupby("ID").filter(lambda x: len(x)>=2)
-	df['Timestamp'] = p(df['Frame #'])
-	df = df.groupby("ID").apply(rectify_single_camera).reset_index(drop=True)
+	tqdm.pandas()
+	df = df.groupby("ID").progress_apply(rectify_single_camera).reset_index(drop=True)
 	return df
 	
 def create_synth_data(n):

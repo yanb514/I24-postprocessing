@@ -1,4 +1,210 @@
 # unused functions
+
+def nan_helper(y):
+	n = len(y)
+	nans = np.isnan(y)
+	x = lambda z: z.nonzero()[0]
+	z = np.polyfit(x(~nans), y[~nans], 1)
+	p = np.poly1d(z)
+	y[nans]=p(x(nans))
+	return y
+	
+def nan_helper_orig(y):
+	return np.isnan(y), lambda z: z.nonzero()[0]
+
+# path compression
+def find(parent, i):
+	if (parent[i] != i):
+		parent[i] = find(parent, parent[i])
+	return parent[i]
+
+def compress(parent, groupList):	
+	for i in groupList:
+		find(parent, i)
+	return parent 
+
+
+# calculate average speed of an object (in m/s)
+def calc_velocity_mps(df):
+	if (len(df)<=1):
+		return # do nothing 
+	distance = haversine_distance(df.lat.values[0], df.lon.values[0],df.lat.values[-1],df.lon.values[-1])
+	timestep = df.Timestamp.values[-1] - df.Timestamp.values[0]
+	df['mps'] = distance/timestep
+	return df
+	
+def calc_accel(positions, timestamps):
+	dx = np.gradient(positions)
+	dt = np.gradient(timestamps)
+	v = dx/dt
+	a = np.gradient(v)/dt
+	return a
+	
+def calc_velx(positions, timestamps):
+	dx = np.gradient(positions)
+	dt = np.gradient(timestamps)
+	return dx/dt
+
+	
+def calc_vel(Y, timestamps):
+	cx = (Y[:,0]+Y[:,6])/2
+	cy = (Y[:,1]+Y[:,7])/2
+	vx = calc_velx(cx, timestamps)
+	vy = calc_velx(cy, timestamps)
+	v = np.sqrt(vx**2+vy**2)
+	return vx,vy,v
+
+def calc_positions(cx,cy,theta,w,l):
+	# compute positions
+	xa = cx + w/2*sin(theta)
+	ya = cy - w/2*cos(theta)
+	xb = xa + l*cos(theta)
+	yb = ya + l*sin(theta)
+	xc = xb - w*sin(theta)
+	yc = yb + w*cos(theta)
+	xd = xa - w*sin(theta)
+	yd = ya + w*cos(theta)
+	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1) 
+	return Yre
+	
+def calc_theta(Y,timestamps):
+	vx,vy,v = calc_vel(Y,timestamps)
+	# theta0 = np.arccos(vx/v)
+	# return theta0
+	# to get negative angles
+	return np.arctan(vy/vx)
+	
+def calc_steering(Y,timestamps):
+# approximate because l is not the distance between axis
+# TODO: finish this
+	theta = calc_theta(Y,timestamps)
+	thetadot
+	tan_phi = thetadot*v/l
+	return arctan(tan_phi)
+	
+def pt_to_line_dist_gps(lat1, lon1, lat2, lon2, lat3, lon3):
+	# distance from point (lat3, lon3) to a line defined by p1 and p2
+	toA,_,_ = euclidean_distance(lat1, lon1, lat3, lon3)
+	toB,_,_ = euclidean_distance(lat2, lon2, lat3, lon3)
+	AB,_,_ = euclidean_distance(lat1, lon1, lat2, lon2)
+	s = (toA+toB+AB)/2
+	area = (s*(s-toA)*(s-toB)*(s-AB)) ** 0.5
+	min_distance = area*2/AB
+	return min_distance
+	
+def bearing(lat1, lon1, lat2, lon2):
+# TODO: check north bound direction
+	AB,dx,dy = euclidean_distance(lat1, lon1, lat2, lon2)
+	return np.pi-np.arctan2(np.abs(dx),np.abs(dy))
+	
+	
+
+	
+def gps_to_road_df(df):
+# TODO: consider traffic in the other direction
+# use trigonometry 
+	lat1, lon1 = A
+	lat2, lon2 = B
+	Y_gps =	 np.array(df[['bbrlat','bbrlon','fbrlat','fbrlon','fbllat','fbllon','bbllat','bbllon']])
+	Y = gps_to_road(Y_gps)
+	# write Y to df
+	i = 0
+	for pt in ['bbr','fbr','fbl','bbl']:
+		df[pt+'_x'] = Y[:,2*i]
+		df[pt+'_y'] = Y[:,2*i+1]
+		i = i+1
+	return df
+	
+def gps_to_road(Ygps):
+	# use equal-rectangle approximation
+	R = 6371*1000 # in meter6378137
+	lat1, lon1 = A
+	lat2, lon2 = B
+	AB,_,_ = euclidean_distance(lat1,lon1,lat2,lon2)
+	# convert to n-vector https://en.wikipedia.org/wiki/N-vector
+	Y = np.empty(Ygps.shape)
+	
+	# use euclidean_distance
+	for i in range(int(Ygps.shape[1]/2)):
+		pt_lats = Ygps[:,2*i]
+		pt_lons = Ygps[:,2*i+1]
+		AC,_,_ = euclidean_distance(lat1,lon1,pt_lats,pt_lons)
+		# cross-track: toAB
+		toAB = pt_to_line_dist_gps(lat1, lon1, lat2, lon2, pt_lats, pt_lons)
+		# along-track distance (x)
+		along_track = np.sqrt(AC**2-toAB**2)
+		Y[:,2*i] = along_track
+		Y[:,2*i+1] = toAB
+	return Y
+	
+def road_to_gps(Y, A, B):
+# TODO: make this bidirectional
+# https://stackoverflow.com/questions/7222382/get-lat-long-given-current-point-distance-and-bearing
+	R = 6371000
+	lat1, lon1 = A
+	lat2, lon2 = B
+	Ygps = np.zeros(Y.shape)
+	gamma_ab = bearing(lat1,lon1,lat2,lon2)
+	gamma_dc = gamma_ab - np.pi/2
+	lat1 = np.radians(lat1)
+	lon1 = np.radians(lon1)
+	for i in range(int(Y.shape[1]/2)):
+		xs = Y[:,2*i]
+		ys = Y[:,2*i+1]
+		latD, lonD = destination_given_distance_bearing(lat1, lon1, xs, gamma_ab)
+		latC, lonC = destination_given_distance_bearing(latD, lonD, ys, gamma_dc)
+		Ygps[:,2*i] = degrees(latC)
+		Ygps[:,2*i+1] = degrees(lonC)
+	return Ygps
+	
+	
+def destination_given_distance_bearing(lat1, lon1, d, bearing):
+	'''
+	find the destination lat and lng given distance and bearing from the start point
+	https://www.movable-type.co.uk/scripts/latlong.html
+	lat1, lon1: start point gps coordinates
+	d: distance from the start point
+	bearing: bearing from the start point
+	'''
+	R = 6371000
+	lat2 = arcsin(sin(lat1)*cos(d/R)+cos(lat1)*sin(d/R)*cos(bearing))
+	lon2 = lon1 + arctan2(sin(bearing)*sin(d/R)*cos(lat1), cos(d/R)-sin(lat1)*sin(lat2))
+	return lat2, lon2
+
+def calc_homography_matrix(camera_id, file_name):
+	c = pd.read_csv(file_name)
+	camera = c.loc[c['Camera'].str.lower()==camera_id.lower()]
+
+	gps_pts = camera[['GPS Lat','GPS Long']].to_numpy(dtype ='float32')
+	xy_pts = camera[['Camera X','Camera Y']].to_numpy(dtype ='float32')
+	# transform from pixel coords to gps coords
+	M = cv2.getPerspectiveTransform(xy_pts,gps_pts)
+	return M
+	
+def img_to_gps(df, camera_id, file_name):
+	# vectorized
+	M = calc_homography_matrix(camera_id,file_name)
+	for pt in ['fbr','fbl','bbr','bbl']:
+		ps = np.array(df[[pt+'x', pt+'y']]) # get pixel coords
+		ps1 = np.vstack((np.transpose(ps), np.ones((1,len(ps))))) # add ones to standardize
+		pds = M.dot(ps1) # convert to gps unnormalized
+		pds = pds / pds[-1,:][np.newaxis, :] # gps normalized s.t. last row is 1
+		ptgps = np.transpose(pds[0:2,:]) # only use the first two rows
+		df = pd.concat([df, pd.DataFrame(ptgps,columns=[pt+'lat', pt+'lon'])], axis=1)
+	return df
+
+def gps_to_img(df, camera_id, file_name):
+	# vectorized
+	M = calc_homography_matrix(camera_id, file_name)
+	Minv = np.linalg.inv(M)
+	for pt in ['fbr','fbl','bbr','bbl']:
+		ptgps = np.array(df[[pt+'lat', pt+'lon']]) 
+		pds = np.vstack((np.transpose(ptgps), np.ones((1,len(ptgps)))))
+		pds = Minv.dot(pds)
+		ps1 = pds / pds[-1,:][np.newaxis, :]
+		ps = np.transpose(ps1[0:2,:])
+		df.loc[:,[pt+'x',pt+'y']] = ps
+	return df
 def gps_to_road_df(df, A, B):
 # TODO: not assume flat earth, using cross track distance
 # TODO: consider traffic in the other direction
