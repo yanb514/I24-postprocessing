@@ -153,6 +153,50 @@ def naive_filter_3D(df):
 	# print('filter width length:', len(df['ID'].unique()))
 	return df
 
+def findLongestSequence(car, k=0):
+    A = np.diff(car['Frame #'].values)
+    A[A!=1]=0
+    
+    # https://www.techiedelight.com/find-maximum-sequence-of-continuous-1s-can-formed-replacing-k-zeroes-ones/
+    left = 0        # represents the current window's starting index
+    count = 0       # stores the total number of zeros in the current window
+    window = 0      # stores the maximum number of continuous 1's found
+                    # so far (including `k` zeroes)
+ 
+    leftIndex = 0   # stores the left index of maximum window found so far
+ 
+    # maintain a window `[left…right]` containing at most `k` zeroes
+    for right in range(len(A)):
+ 
+        # if the current element is 0, increase the count of zeros in the
+        # current window by 1
+        if A[right] == 0:
+            count = count + 1
+ 
+        # the window becomes unstable if the total number of zeros in it becomes
+        # more than `k`
+        while count > k:
+            # if we have found zero, decrement the number of zeros in the
+            # current window by 1
+            if A[left] == 0:
+                count = count - 1
+ 
+            # remove elements from the window's left side till the window
+            # becomes stable again
+            left = left + 1
+ 
+        # when we reach here, window `[left…right]` contains at most
+        # `k` zeroes, and we update max window size and leftmost index
+        # of the window
+        if right - left + 1 > window:
+            window = right - left + 1
+            leftIndex = left
+ 
+    # print the maximum sequence of continuous 1's
+#     print("The longest sequence has length", window, "from index",
+#         leftIndex, "to", (leftIndex + window - 1))
+    return car.iloc[leftIndex:leftIndex + window - 1,:]
+	
 def preprocess(file_path, tform_path):
 	print('Reading data...')
 	df = read_data(file_path,0)
@@ -160,13 +204,15 @@ def preprocess(file_path, tform_path):
 	print('Transform from image to road...')
 	camera_name = find_camera_name(file_path)
 	df = img_to_road(df, tform_path, camera_name)
+	print('Deleting unrelavent columns...')
+	df = df.drop(columns=['BBox xmin','BBox ymin','BBox xmax','BBox ymax','vel_x','vel_y','lat','lon'])
 	
 	print('Get x direction...')
 	df = get_x_direction(df)
 	print('Naive filter...')
 	df = naive_filter_3D(df)
-	print('Deleting unrelavent columns...')
-	df = df.drop(columns=['BBox xmin','BBox ymin','BBox xmax','BBox ymax','vel_x','vel_y','lat','lon'])
+	print('Get the longest continuous frame chuck...')
+	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
 	print('Interpret missing timestamps...')
 	z = np.polyfit(df['Frame #'].iloc[[0,-1]].values,df['Timestamp'].iloc[[0,-1]].values, 1)
 	p = np.poly1d(z)
@@ -527,13 +573,13 @@ def plot_track_df(df,length=15,width=1):
 		xs, ys = zip(*coord) #lon, lat as x, y
 		plt.plot(xs,ys,label='t=0' if i==0 else '',alpha=i/len(D),c='black')
 
-		plt.scatter(D[i,2],D[i,3],color='black',alpha=i/len(D))
+		plt.scatter(D[i,2],D[i,3],color='black')#,alpha=i/len(D)
 	ax = plt.gca()
 	plt.xlabel('meter')
 	plt.ylabel('meter')
 	# plt.xlim([50,60])
 	# plt.ylim([0,60])
-	plt.legend()
+	# plt.legend()
 	# ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y)
 	plt.show() 
 	return
