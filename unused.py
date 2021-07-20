@@ -375,7 +375,46 @@ def calc_dynamics_all(df, filename):
 			df_new = pd.concat([df_new, group])
 	return df_new
 	
-
+def create_synth_data(n):
+	timestamps =  np.linspace(0,n/30,n)
+	theta = np.zeros(n)
+	theta = np.random.normal(0, .02, theta.shape) + theta
+	w = np.ones(n)*2 + np.random.normal(0, .2, n) 
+	l = np.ones(n)*4 + np.random.normal(0, .4, n) 
+	x = np.linspace(0,n,n) # assume 30fps and 30m/s, then 1 frame = 1m
+	x = np.random.normal(0, .1, x.shape) + x
+	y = np.ones(n)
+	xa = x + w/2*sin(theta)
+	ya = y - w/2*cos(theta)
+	xb = xa + l*cos(theta)
+	yb = ya + l*sin(theta)
+	xc = xb - w*sin(theta)
+	yc = yb + w*cos(theta)
+	xd = xa - w*sin(theta)
+	yd = ya + w*cos(theta)
+	Y = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
+	return timestamps,Y
+	
+def create_true_data(n):
+	''' same as create_synth_data except no noise
+	'''
+	timestamps =  np.linspace(0,n/30,n)
+	theta = np.zeros(n)
+	w = np.ones(n)*2
+	l = np.ones(n)*4
+	x = np.linspace(0,100,n)
+	y = np.ones(n)
+	xa = x + w/2*sin(theta)
+	ya = y - w/2*cos(theta)
+	xb = xa + l*cos(theta)
+	yb = ya + l*sin(theta)
+	xc = xb - w*sin(theta)
+	yc = yb + w*cos(theta)
+	xd = xa - w*sin(theta)
+	yd = ya + w*cos(theta)
+	Y = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
+	return timestamps,Y
+	
 def naive_filter(df):
 	# select based on proper bearings
 	b = get_bearing_bounds(df)

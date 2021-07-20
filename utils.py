@@ -17,6 +17,7 @@ import sys
 import re
 import glob
 from tqdm import tqdm
+from utils_optimization import *
 # warnings.simplefilter ('default')
 
 # global A,B
@@ -159,9 +160,6 @@ def preprocess(file_path, tform_path):
 	print('Transform from image to road...')
 	camera_name = find_camera_name(file_path)
 	df = img_to_road(df, tform_path, camera_name)
-	# df = img_to_gps(df, camera_name.upper(), tform_path) # transform from pixel to gps coordinates
-	# print('Transform from gps to road...')
-	# df = gps_to_road_df(df)
 	
 	print('Get x direction...')
 	df = get_x_direction(df)
@@ -169,7 +167,6 @@ def preprocess(file_path, tform_path):
 	df = naive_filter_3D(df)
 	print('Deleting unrelavent columns...')
 	df = df.drop(columns=['BBox xmin','BBox ymin','BBox xmax','BBox ymax','vel_x','vel_y','lat','lon'])
-	# to interpret missing timestamps
 	print('Interpret missing timestamps...')
 	z = np.polyfit(df['Frame #'].iloc[[0,-1]].values,df['Timestamp'].iloc[[0,-1]].values, 1)
 	p = np.poly1d(z)
@@ -331,7 +328,7 @@ def get_xy_minmax(df):
 	Yy = Y[:,[1,3,5,7]]
 	return Yx[notNan,:].min(),Yx[notNan,:].max(),Yy[notNan,:].min(),Yy[notNan,:].max()
 	
-def extend_prediction(car):
+def extend_prediction(car, args):
 	'''
 	extend the dynamics of the vehicles that are still in view
 	'''
@@ -339,16 +336,16 @@ def extend_prediction(car):
 	# xmin = args[0]
 	# xmax = args[1]
 	# print(kwargs.itmes())
-
+	xmin, xmax, maxFrame = args
 	dir = car['direction'].iloc[0]
 
 	xlast = car['x'].iloc[-1]	
 	xfirst = car['x'].iloc[0]
 	
 	if (dir == 1) & (xlast < xmax):
-		car = forward_predict(car,xmin,xmax,'xmax')
+		car = forward_predict(car,xmin,xmax,'xmax',maxFrame)
 	if (dir == -1) & (xlast > xmin):
-		car = forward_predict(car,xmin,xmax,'xmin') # tested
+		car = forward_predict(car,xmin,xmax,'xmin', maxFrame) # tested
 	if (dir == 1) & (xfirst > xmin):
 		car = backward_predict(car,xmin,xmax,'xmin')
 	if (dir == -1) & (xfirst < xmax):
@@ -356,13 +353,19 @@ def extend_prediction(car):
 	return car
 		
 
-def forward_predict(car,xmin,xmax,target):
+def forward_predict(car,xmin,xmax,target, maxFrame):
+	'''
+	stops at maxFrame
+	'''
 	# lasts
+	framelast = car['Frame #'].values[-1]
+	if framelast >= maxFrame:
+		return car
 	ylast = car['y'].values[-1]
 	xlast = car['x'].values[-1]
 	vlast = car['speed'].values[-1]
 	thetalast = car['theta'].values[-1]
-	framelast = car['Frame #'].values[-1]
+	
 	w = car['width'].values[-1]
 	l = car['length'].values[-1]
 	dir = car['direction'].values[-1]
@@ -397,25 +400,26 @@ def forward_predict(car,xmin,xmax,target):
 	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)		
 	
 	frames = np.arange(framelast+1,framelast+1+len(x))
-	car_ext = {'Frame #': frames,
-				'x':x,
-				'y':y,
-				'bbr_x': xa,
-				'bbr_y': ya,
-				'fbr_x': xb,
-				'fbr_y': yb,
-				'fbl_x': xc,
-				'fbl_y': yc,
-				'bbl_x': xd, 
-				'bbl_y': yd,
+	pos_frames = frames<=maxFrame
+	car_ext = {'Frame #': frames[pos_frames],
+				'x':x[pos_frames],
+				'y':y[pos_frames],
+				'bbr_x': xa[pos_frames],
+				'bbr_y': ya[pos_frames],
+				'fbr_x': xb[pos_frames],
+				'fbr_y': yb[pos_frames],
+				'fbl_x': xc[pos_frames],
+				'fbl_y': yc[pos_frames],
+				'bbl_x': xd[pos_frames], 
+				'bbl_y': yd[pos_frames],
 				'speed': vlast,
 				'theta': thetalast,
 				'width': w,
 				'length':l,
 				'ID': car['ID'].values[-1],
-				'direction': car['direction'].values[-1],
+				'direction': dir,
 				'acceleration': 0,
-				'Timestamp': timestamps
+				'Timestamp': timestamps[pos_frames]
 				}
 	car_ext = pd.DataFrame.from_dict(car_ext)
 	return pd.concat([car, car_ext], sort=False, axis=0)
@@ -484,7 +488,7 @@ def backward_predict(car,xmin,xmax,target):
 				'width': w,
 				'length':l,
 				'ID': car['ID'].values[0],
-				'direction': car['direction'].values[0],
+				'direction': dir,
 				'acceleration': 0,
 				'Timestamp': timestamps[pos_frames]
 				}
@@ -716,9 +720,6 @@ def plot_3D_ordered(frame,box,color = None,label = None):
 		top	 = min([point[1] for point in box])
 		frame = cv2.putText(frame,"{}".format(label),(int(left),int(top - 10)),cv2.FONT_HERSHEY_PLAIN,1,(0,0,0),3)
 		frame = cv2.putText(frame,"{}".format(label),(int(left),int(top - 10)),cv2.FONT_HERSHEY_PLAIN,1,(255,255,255),1)
-
-		
-	
 	return frame	
 	
 # delete repeated measurmeents per frame per object
@@ -729,7 +730,9 @@ def del_repeat_meas_per_frame(framesnap):
     return framesnap
 	
 def preprocess_multi_camera(df):
-	df_new = df.groupby('Frame #').apply(del_repeat_meas_per_frame).reset_index(drop=True)
+	tqdm.pandas()
+	# df_new = df.groupby('Frame #').progress_apply(del_repeat_meas_per_frame).reset_index(drop=True)
+	df_new = applyParallel(df.groupby("Frame #"), del_repeat_meas_per_frame).reset_index(drop=True)
 	return df_new
 
 def post_process(df):
@@ -737,14 +740,18 @@ def post_process(df):
 	df = df.groupby("ID").apply(width_filter).reset_index(drop=True)
 	print('extending tracks to edges of the frame...')
 	# del xmin, xmax
-	global xmin, xmax
+	# global xmin, xmax, maxFrame
 	xmin, xmax, ymin, ymax = get_xy_minmax(df)
+	maxFrame = max(df['Frame #'])
 	print(xmin, xmax)
 	if xmin<0:
 		xmin=0
-	args = (xmin, xmax)
+	if xmax>600:
+		xmax = 600
+	args = (xmin, xmax, maxFrame)
 	tqdm.pandas()
-	df = df.groupby('ID').progress_apply(extend_prediction,*args).reset_index(drop=True)
+	# df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
+	df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
 	return df
 	
 def width_filter(car):
