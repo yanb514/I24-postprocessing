@@ -20,9 +20,6 @@ from tqdm import tqdm
 from utils_optimization import *
 # warnings.simplefilter ('default')
 
-# global A,B
-# A = [36.004654, -86.609976] # south west side, so that x, y coords obey counterclockwise
-# B = [36.002114, -86.607129]
 
 
 # read data
@@ -40,7 +37,11 @@ def read_new_data(file_name):
 
 def p_frame_time(df):
 # polyfit frame wrt timestamps
-	z = np.polyfit(df['Frame #'].iloc[[0,-1]].values,df['Timestamp'].iloc[[0,-1]].values, 1)
+	frames = df['Frame #'].iloc[[0,-1]].values
+	times = df['Timestamp'].iloc[[0,-1]].values
+	print(frames)
+	print(times)
+	z = np.polyfit(frames,times, 1)
 	p = np.poly1d(z)
 	return p
 	
@@ -135,7 +136,7 @@ def filter_short_track(df):
 	notNans = np.count_nonzero(~np.isnan(df['bbrx']))
 
 	if (notNans <= 3) or (N <= 3):
-		print('track too short: ', df['ID'].iloc[0])
+		# print('track too short: ', df['ID'].iloc[0])
 		return False
 	return True
 	
@@ -211,10 +212,12 @@ def preprocess(file_path, tform_path):
 	df = get_x_direction(df)
 	print('Naive filter...')
 	df = naive_filter_3D(df)
-	print('Get the longest continuous frame chuck...')
-	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
+	
 	print('Interpret missing timestamps...')
-	z = np.polyfit(df['Frame #'].iloc[[0,-1]].values,df['Timestamp'].iloc[[0,-1]].values, 1)
+	frames = [min(df['Frame #']),max(df['Frame #'])]
+	times = [min(df['Timestamp']),max(df['Timestamp'])]
+	z = np.polyfit(frames,times, 1)
+	# z = np.polyfit(df['Frame #'].iloc[[0,-1]].values,df['Timestamp'].iloc[[0,-1]].values, 1)
 	p = np.poly1d(z)
 	df['Timestamp'] = p(df['Frame #'])
 	return df
@@ -778,8 +781,10 @@ def del_repeat_meas_per_frame(framesnap):
 def preprocess_multi_camera(df):
 	tqdm.pandas()
 	# df_new = df.groupby('Frame #').progress_apply(del_repeat_meas_per_frame).reset_index(drop=True)
-	df_new = applyParallel(df.groupby("Frame #"), del_repeat_meas_per_frame).reset_index(drop=True)
-	return df_new
+	df = applyParallel(df.groupby("Frame #"), del_repeat_meas_per_frame).reset_index(drop=True)
+	print('Get the longest continuous frame chuck...')
+	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
+	return df
 
 def post_process(df):
 	print('cap width at 2.59m...')
@@ -850,6 +855,5 @@ def width_filter(car):
 		car['speed']= v
 		
 		return car
-	
 	
 	

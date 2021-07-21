@@ -89,13 +89,13 @@ def generate_frames(df, xmin, xmax, ymax, skip_frame, image_folder):
 	# within a separate folder to later create an animation.
 	img = plt.imread("highway_p1c3.jpg")
 	maxFrameNum = int(max(df['Frame #']))    # Find the maximum number of frame
-	if maxFrameNum > 2100:
-		maxFrameNum = 2100
+	maxFrameNum = 600
+	# if maxFrameNum > 2100:
+		# maxFrameNum = 2100
 	minFrameNum = int(min(df['Frame #']))    # Find the maximum number of frame
+	if 'speed' not in df:
+		df['speed'] = 30
 	maxSpeed = np.amax(np.array(df[['speed']]))        # Find the maximum speed of cars
-	# xmin = 500
-	# xmax = 1200
-	# ymax = 116
 	print('Frame: ', minFrameNum, maxFrameNum)
 	for i in range(minFrameNum,maxFrameNum):
 		if (i%skip_frame==0):
