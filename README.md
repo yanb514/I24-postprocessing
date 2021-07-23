@@ -44,3 +44,6 @@ Meta for `rectified_record_xxx.csv`:
 15. `speed`: speed in m/s
 16. `x/y`: back center positions in road coordinates
 17. `theta`: angle between the travel direction and the positive x-axis. If direction = 1, theta is close to 0; if direction = -1, theta is close to pi.
+18. `camera`: camera ID that the original measurements are taking from.
+19. `camera_post`: reidentified camera ID based on the rectified x position.
+20. `fbrx_re/y_re`: new pixel coordinates based on rectified positions in road coordinates.
