@@ -223,11 +223,11 @@ def rectify_single_camera(df):
 	timestamps = df.Timestamp.values
 	dt = np.diff(timestamps)
 	# optimization parameters
-	lam1 = 1 # modification of measurement
-	lam2 = 1 # acceleration
-	lam3 = 0 # jerk
-	lam4 = 50 # theta
-	lam5 = 1 # omega
+	lam1 = 1 # modification of measurement 1
+	lam2 = 0.2 # acceleration 1
+	lam3 = 0 # jerk 0
+	lam4 = 10 # theta 10
+	lam5 = 1 # omega 1
 
 	# get bottom 4 points coordinates
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']

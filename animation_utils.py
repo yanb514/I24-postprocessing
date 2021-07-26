@@ -89,7 +89,7 @@ def generate_frames(df, xmin, xmax, ymax, skip_frame, image_folder):
 	# within a separate folder to later create an animation.
 	img = plt.imread("highway_p1c3.jpg")
 	maxFrameNum = int(max(df['Frame #']))    # Find the maximum number of frame
-	maxFrameNum = 600
+	# maxFrameNum = 600
 	# if maxFrameNum > 2100:
 		# maxFrameNum = 2100
 	minFrameNum = int(min(df['Frame #']))    # Find the maximum number of frame

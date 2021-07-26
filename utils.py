@@ -20,7 +20,10 @@ from tqdm import tqdm
 from utils_optimization import *
 # warnings.simplefilter ('default')
 
-
+import time
+import itertools
+from itertools import combinations
+from shapely.geometry import Polygon
 
 # read data
 def read_data(file_name, skiprows = 0, index_col = False):	 
@@ -587,11 +590,85 @@ def plot_track_df(df,length=15,width=1):
 	plt.show() 
 	return
 	
+def overlap_score(car1, car2):
+    '''
+    apply after rectify, check the overlap between two cars
+    '''
+    end = min(car1['Frame #'].iloc[-1],car2['Frame #'].iloc[-1])
+    start = max(car1['Frame #'].iloc[0],car2['Frame #'].iloc[0])
+    
+    if end <= start: # if no overlaps
+        return 999
+    car1 = car1.loc[(car1['Frame #'] >= start) & (car1['Frame #'] <= end)]
+    car2 = car2.loc[(car2['Frame #'] >= start) & (car2['Frame #'] <= end)]
+
+    pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    Y1 = np.array(car1[pts])
+    Y2 = np.array(car2[pts])
+    return np.sum(np.linalg.norm(Y1-Y2,2, axis=1))/(len(Y1))
+    
+def IOU_score(car1, car2):
+    '''
+    calculate the intersection of union of two boxes defined by d1 and D2
+    D1: prediction box
+    D2: measurement box
+    https://stackoverflow.com/questions/57885406/get-the-coordinates-of-two-polygons-intersection-area-in-python
+    '''
+    end = min(car1['Frame #'].iloc[-1],car2['Frame #'].iloc[-1])
+    start = max(car1['Frame #'].iloc[0],car2['Frame #'].iloc[0])
+    
+    if end <= start: # if no overlaps in time
+        return -1
+    car1 = car1.loc[(car1['Frame #'] >= start) & (car1['Frame #'] <= end)]
+    car2 = car2.loc[(car2['Frame #'] >= start) & (car2['Frame #'] <= end)]
+    pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    Y1 = np.array(car1[pts]) # N x 8
+    Y2 = np.array(car2[pts])
+    IOU = 0
+    for j in range(len(Y1)):
+        D1 = Y1[j,:]
+        D2 = Y2[j,:]
+        p = Polygon([(D1[2*i],D1[2*i+1]) for i in range(int(len(D1)/2))])
+        q = Polygon([(D2[2*i],D2[2*i+1]) for i in range(int(len(D2)/2))])
+        if (p.intersects(q)):
+            intersection_area = p.intersection(q).area
+            union_area = p.union(q).area
+    #         print(intersection_area, union_area)
+            IOU += float(intersection_area/union_area)
+        else:
+            IOU += 0
+    return IOU / len(Y1)
+
+def get_id_rem(df,SCORE_THRESHOLD):
+	'''
+	get all the ID's to be removed due to overlapping
+	'''
+	groups = df.groupby('ID')
+	groupList = list(groups.groups)
+	nO = len(groupList)
+	comb = itertools.combinations(groupList, 2)
+	id_rem = [] # ID's to be removed
+
+	for c1,c2 in comb:
+		car1 = groups.get_group(c1)
+		car2 = groups.get_group(c2)
+	#     score = overlap_score(car1, car2)
+		score = IOU_score(car1,car2)
+		IOU.append(score)
+		if score > SCORE_THRESHOLD:
+			# remove the shorter track
+			if len(car1)>= len(car2):
+				id_rem.append(c2)
+			else:
+				id_rem.append(c1)
+	return id_rem
+
 def plot_3D_csv(sequence,label_file,framerate = 30):	
 	colors = (np.random.rand(100,3)*255)
 	downsample = 2
-	
-	outfile = label_file.split("_track_outputs_3D.csv")[0] + "_3D.mp4"
+	# outfile = label_file.split("_track_outputs_3D.csv")[0] + "_3D.mp4"
+	outfile = label_file.split(".csv")[0] + "_3D.mp4"
+	print(outfile)
 	out = cv2.VideoWriter(outfile,cv2.VideoWriter_fourcc(*'mp4v'), framerate, (3840,2160))
 	cap= cv2.VideoCapture(sequence)
 	
@@ -600,19 +677,17 @@ def plot_3D_csv(sequence,label_file,framerate = 30):
 		read = csv.reader(f)
 		HEADERS = True
 		for row in read:
-			
 			if not HEADERS:
-				frame_idx = int(row[0])
-				
+				frame_idx = int(row[1])
 				if frame_idx not in frame_labels.keys():
 					frame_labels[frame_idx] = [row]
 				else:
 					frame_labels[frame_idx].append(row)
 					
 			if HEADERS and len(row) > 0:
-				if row[0][0:5] == "Frame":
+				# if row[0][0:5] == "Frame":
+				if row[1][0:5] == "Frame":
 					HEADERS = False # all header lines have been read at this point
-	
 	ret,frame = cap.read()
 	frame_idx = 0
 	while ret:
@@ -620,21 +695,22 @@ def plot_3D_csv(sequence,label_file,framerate = 30):
 		print("\rWriting frame {}".format(frame_idx),end = '\r', flush = True)	
 		
 		# get all boxes for current frame
+
 		try:
 			cur_frame_labels = frame_labels[frame_idx]
 		except:
-			cur_frame_labels = []
-			
+			cur_frame_labels = []	
 		for row in cur_frame_labels:
-			obj_idx = int(row[2])
-			obj_class = row[3]
+			obj_idx = int(row[3])
+			obj_class = row[4]
 			label = "{} {}".format(obj_class,obj_idx)
 			color = colors[obj_idx%100]
 			color = (0,0,255)
-			bbox2d = np.array(row[4:8]).astype(float)  
-			if len(row) == 46: # has 3D bbox, rectified data
-				try:
-					bbox = np.array(row[13:29]).astype(float).astype(int).reshape(8,2) #* downsample
+			# bbox2d = np.array(row[4:8]).astype(float)  
+			if len(row) == 48: # has 3D bbox, rectified data
+				try: # get the rectified footprint positions
+					bbox = np.array(row[40:48])
+					bbox = np.vstack([bbox,bbox]).astype(float).astype(int).reshape(8,1) #* downsample
 				except:
 					# if there was a previous box for this object, use it instead
 					try:
@@ -642,8 +718,8 @@ def plot_3D_csv(sequence,label_file,framerate = 30):
 						prev = 1
 						while prev < 4 and NOMATCH:
 							for row in frame_labels[frame_idx -prev]: 
-								if int(row[2]) == obj_idx:
-									bbox = np.array(row[13:29]).astype(float).astype(int).reshape(8,2) * downsample
+								if int(row[3]) == obj_idx:
+									bbox = np.array(row[40:48]).astype(float).astype(int).reshape(8,1) * downsample
 									x_offset = (bbox2d[2] - bbox2d[0])/2.0 - (float(row[4]) + float(row[6]))/2.0 
 									y_offset = (bbox2d[3] - bbox2d[1])/2.0 - (float(row[5]) + float(row[7]))/2.0 
 									shift = np.zeros([8,2])
@@ -658,20 +734,20 @@ def plot_3D_csv(sequence,label_file,framerate = 30):
 						bbox = []
 				
 				# get rid of bboxes that lie outside of a bbox factor x larger than 2d bbox
-				factor = 3
-				for point in bbox:
-					if point[0] < bbox2d[0] - (bbox2d[2] - bbox2d[0])/factor:
-						bbox = []
-						break
-					if point[1] < bbox2d[1] - (bbox2d[3] - bbox2d[1])/factor:
-						bbox = []
-						break
-					if point[0] > bbox2d[2] + (bbox2d[2] - bbox2d[0])/factor:
-						bbox = []
-						break
-					if point[1] > bbox2d[3] + (bbox2d[3] - bbox2d[1])/factor:
-						bbox = []
-						break
+				# factor = 3
+				# for point in bbox:
+					# if point[0] < bbox2d[0] - (bbox2d[2] - bbox2d[0])/factor:
+						# bbox = []
+						# break
+					# if point[1] < bbox2d[1] - (bbox2d[3] - bbox2d[1])/factor:
+						# bbox = []
+						# break
+					# if point[0] > bbox2d[2] + (bbox2d[2] - bbox2d[0])/factor:
+						# bbox = []
+						# break
+					# if point[1] > bbox2d[3] + (bbox2d[3] - bbox2d[1])/factor:
+						# bbox = []
+						# break
 					
 				
 				frame = plot_3D_ordered(frame, bbox,color = color)
@@ -679,8 +755,8 @@ def plot_3D_csv(sequence,label_file,framerate = 30):
 			
 			color = (255,0,0)
 			# frame = cv2.rectangle(frame,(int(bbox2d[0]),int(bbox2d[1])),(int(bbox2d[2]),int(bbox2d[3])),color,2)
-			frame = cv2.putText(frame,"{}".format(label),(int(bbox2d[0]),int(bbox2d[1] - 10)),cv2.FONT_HERSHEY_PLAIN,2,(0,0,0),3)
-			frame = cv2.putText(frame,"{}".format(label),(int(bbox2d[0]),int(bbox2d[1] - 10)),cv2.FONT_HERSHEY_PLAIN,2,(255,255,255),1)
+			# frame = cv2.putText(frame,"{}".format(label),(int(bbox2d[0]),int(bbox2d[1] - 10)),cv2.FONT_HERSHEY_PLAIN,2,(0,0,0),3)
+			# frame = cv2.putText(frame,"{}".format(label),(int(bbox2d[0]),int(bbox2d[1] - 10)),cv2.FONT_HERSHEY_PLAIN,2,(255,255,255),1)
 		
 		# lastly, add frame number in top left
 		frame_label = "{}: frame {}".format(sequence.split("/")[-1],frame_idx)
@@ -712,6 +788,7 @@ def plot_3D_ordered(frame,box,color = None,label = None):
 	"""
 	Plots 3D points as boxes, drawing only line segments that point towards vanishing points
 	"""
+	print(box)
 	if len(box) == 0:
 		return frame
 	
@@ -787,23 +864,59 @@ def preprocess_multi_camera(df):
 	return df
 
 def post_process(df):
+	# print('remove overlapped cars...')
+	# id_rem = get_id_rem(df, SCORE_THRESHOLD=0) # TODO: untested threshold
+	# df = df.groupby(['ID']).filter(lambda x: (x['ID'].iloc[-1] not in id_rem))
 	print('cap width at 2.59m...')
 	df = df.groupby("ID").apply(width_filter).reset_index(drop=True)
-	print('extending tracks to edges of the frame...')
-	# del xmin, xmax
-	# global xmin, xmax, maxFrame
-	xmin, xmax, ymin, ymax = get_xy_minmax(df)
-	maxFrame = max(df['Frame #'])
-	print(xmin, xmax)
-	if xmin<0:
-		xmin=0
-	if xmax>600:
-		xmax = 600
-	args = (xmin, xmax, maxFrame)
-	tqdm.pandas()
-	# df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
-	df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
+	
+	# print('extending tracks to edges of the frame...')
+	# # del xmin, xmax
+	# # global xmin, xmax, maxFrame
+	# xmin, xmax, ymin, ymax = get_xy_minmax(df)
+	# maxFrame = max(df['Frame #'])
+	# print(xmin, xmax)
+	# if xmin<0:
+		# xmin=0
+	# if xmax>600:
+		# xmax = 600
+	# args = (xmin, xmax, maxFrame)
+	# tqdm.pandas()
+	# # df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
+	# df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
 	return df
+
+def get_camera_x(x):
+	x = x * 3.281 # convert to feet
+	if x < 640:
+		camera = 'p1c2'
+	elif x < 770:
+		camera = 'p1c3'
+	elif x < 920:
+		camera = 'p1c5'
+	else:
+		camera = 'p1c6'
+	return camera
+	
+def road_to_img(df, tform_path):
+	# TODO: to be tested
+	if 'camera_post' not in df:
+		df['camera_post'] = df[['x']].apply(lambda x: get_camera_x(x.item()), axis = 1)
+	groups = df.groupby('camera_post')
+	df_new = pd.DataFrame()
+	for camera_id, group in groups:
+		M = get_homography_matrix(camera_id, tform_path)
+		Minv = np.linalg.inv(M)
+		for pt in ['fbr','fbl','bbr','bbl']:
+			road_pts = np.array(df[[pt+'_x', pt+'_y']]) * 3.281
+			road_pts_1 = np.vstack((np.transpose(road_pts), np.ones((1,len(road_pts)))))
+			img_pts_un = Minv.dot(road_pts_1)
+			img_pts_1 = img_pts_un / img_pts_un[-1,:][np.newaxis, :]
+			img_pts = np.transpose(img_pts_1[0:2,:])*2
+			group[[pt+'x_re',pt+'y_re']] = pd.DataFrame(img_pts, index=df.index)
+		df_new = pd.concat([df_new, group])
+	return df_new
+	
 	
 def width_filter(car):
 # post processing only
