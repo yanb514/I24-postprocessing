@@ -87,12 +87,12 @@ def plot_rectified_objects(sequence,csv_file,frame_rate = 15):
 						obj_heights[id] = est_height
 
 					except:
-						pass
-					
-			bbox_re = np.array(row[40:48]).astype(float).reshape(4,2)
-			# if (bbox_re < 0).any():
-				# print('bbox out of range: ', frame_idx, id, len(bbox_re))
-				# bbox_re = []
+						pass		
+			try:
+				bbox_re = np.array(row[40:48]).astype(float).reshape(4,2)
+			except:
+				bbox_re = np.zeros((4,2))
+
 			if frame_idx in all_frame_data.keys():
 				all_frame_data[frame_idx].append([id,bbox_re,camera])
 			else:

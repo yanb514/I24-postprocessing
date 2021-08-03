@@ -18,6 +18,7 @@ import re
 import glob
 from tqdm import tqdm
 from utils_optimization import *
+from data_association import *
 # warnings.simplefilter ('default')
 
 import time
@@ -104,32 +105,34 @@ def reorder_points(df):
 
 def filter_width_length(df):
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
-	# pts_gps = ['bbrlat','bbrlon', 'fbrlat','fbrlon','fbllat','fbllon','bbllat', 'bbllon']
-	
+
 	Y = np.array(df[pts])
-	# Ygps = np.array(df[pts_gps])
 	Y = Y.astype("float")
+	
 	# filter outlier based on width	
 	w1 = np.abs(Y[:,3]-Y[:,5])
 	w2 = np.abs(Y[:,1]-Y[:,7])
-	outliers = np.logical_or(w1>5, w2>5)
+	m = np.nanmean([w1,w2])
+	s = np.nanstd([w1,w2])
+	# print(m,s)
+	outliers =	np.logical_or(abs(w1 - m) > 2 * s,abs(w2 - m) > 2 * s)
 	# print('width outlier:',np.count_nonzero(outliers))
 	Y[outliers,:] = np.nan
 	
 	# filter outlier based on length
 	l1 = np.abs(Y[:,0]-Y[:,2])
-	m1 = np.nanmean(l1)
-	s1 = np.nanstd(l1)
-	outliers =	abs(l1 - m1) > 2 * s1
+	l2 = np.abs(Y[:,4]-Y[:,6])
+	m = np.nanmean([l1,l2])
+	s = np.nanstd([l1,l2])
+	# print(m,s)
+	outliers =	np.logical_or(abs(l1 - m) > 2 * s,abs(l2 - m) > 2 * s)
 	# print('length outlier:',np.count_nonzero(outliers))
 	Y[outliers,:] = np.nan
 	
 	isnan = np.isnan(np.sum(Y,axis=-1))
-	# Ygps[isnan,:] = np.nan
 	
 	# write into df
 	df.loc[:,pts] = Y
-	# df.loc[:,pts_gps] = Ygps
 	return df
 	
 def filter_short_track(df):
@@ -145,65 +148,67 @@ def filter_short_track(df):
 	
 def naive_filter_3D(df):
 	# filter out direction==0
-	df = df.groupby("ID").filter(lambda x: x['direction'].values[0] != 0)
-	print('after direction=0 filter: ',len(df['ID'].unique()))
+	# df = df.groupby("ID").filter(lambda x: x['direction'].values[0] != 0)
+	# print('after direction=0 filter: ',len(df['ID'].unique()))
 	# reorder points
 	df = df.groupby("ID").apply(reorder_points).reset_index(drop=True)
 	# filter out short tracks
-	df = df.groupby("ID").filter(filter_short_track)
-	print('after filtering short tracks: ',len(df['ID'].unique()))
+	# df = df.groupby("ID").filter(filter_short_track)
+	# print('after filtering short tracks: ',len(df['ID'].unique()))
 	# filter out-of-bound length and width
-	# df = df.groupby("ID").apply(filter_width_length).reset_index(drop=True)
-	# print('filter width length:', len(df['ID'].unique()))
+	df = df.groupby("ID").apply(filter_width_length).reset_index(drop=True)
+	print('filter width length:', len(df['ID'].unique()))
 	return df
 
 def findLongestSequence(car, k=0):
-    A = np.diff(car['Frame #'].values)
-    A[A!=1]=0
-    
-    # https://www.techiedelight.com/find-maximum-sequence-of-continuous-1s-can-formed-replacing-k-zeroes-ones/
-    left = 0        # represents the current window's starting index
-    count = 0       # stores the total number of zeros in the current window
-    window = 0      # stores the maximum number of continuous 1's found
-                    # so far (including `k` zeroes)
+	A = np.diff(car['Frame #'].values)
+	A[A!=1]=0
+	
+	# https://www.techiedelight.com/find-maximum-sequence-of-continuous-1s-can-formed-replacing-k-zeroes-ones/
+	left = 0		# represents the current window's starting index
+	count = 0		# stores the total number of zeros in the current window
+	window = 0		# stores the maximum number of continuous 1's found
+					# so far (including `k` zeroes)
  
-    leftIndex = 0   # stores the left index of maximum window found so far
+	leftIndex = 0	# stores the left index of maximum window found so far
  
-    # maintain a window `[left…right]` containing at most `k` zeroes
-    for right in range(len(A)):
+	# maintain a window `[left…right]` containing at most `k` zeroes
+	for right in range(len(A)):
  
-        # if the current element is 0, increase the count of zeros in the
-        # current window by 1
-        if A[right] == 0:
-            count = count + 1
+		# if the current element is 0, increase the count of zeros in the
+		# current window by 1
+		if A[right] == 0:
+			count = count + 1
  
-        # the window becomes unstable if the total number of zeros in it becomes
-        # more than `k`
-        while count > k:
-            # if we have found zero, decrement the number of zeros in the
-            # current window by 1
-            if A[left] == 0:
-                count = count - 1
+		# the window becomes unstable if the total number of zeros in it becomes
+		# more than `k`
+		while count > k:
+			# if we have found zero, decrement the number of zeros in the
+			# current window by 1
+			if A[left] == 0:
+				count = count - 1
  
-            # remove elements from the window's left side till the window
-            # becomes stable again
-            left = left + 1
+			# remove elements from the window's left side till the window
+			# becomes stable again
+			left = left + 1
  
-        # when we reach here, window `[left…right]` contains at most
-        # `k` zeroes, and we update max window size and leftmost index
-        # of the window
-        if right - left + 1 > window:
-            window = right - left + 1
-            leftIndex = left
+		# when we reach here, window `[left…right]` contains at most
+		# `k` zeroes, and we update max window size and leftmost index
+		# of the window
+		if right - left + 1 > window:
+			window = right - left + 1
+			leftIndex = left
  
-    # print the maximum sequence of continuous 1's
-#     print("The longest sequence has length", window, "from index",
-#         leftIndex, "to", (leftIndex + window - 1))
-    return car.iloc[leftIndex:leftIndex + window - 1,:]
+	# print the maximum sequence of continuous 1's
+#	  print("The longest sequence has length", window, "from index",
+#		  leftIndex, "to", (leftIndex + window - 1))
+	return car.iloc[leftIndex:leftIndex + window - 1,:]
 	
 def preprocess(file_path, tform_path):
 	print('Reading data...')
-	df = read_data(file_path,0)
+	df = read_data(file_path,9)
+	if 'Object ID' in df:
+		df.rename(columns={"Object ID": "ID"})
 	print(len(df['ID'].unique()))
 	print('Transform from image to road...')
 	camera_name = find_camera_name(file_path)
@@ -223,6 +228,8 @@ def preprocess(file_path, tform_path):
 	# z = np.polyfit(df['Frame #'].iloc[[0,-1]].values,df['Timestamp'].iloc[[0,-1]].values, 1)
 	p = np.poly1d(z)
 	df['Timestamp'] = p(df['Frame #'])
+	print('Get the longest continuous frame chuck...')
+	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
 	return df
 
 def find_camera_name(file_path):
@@ -369,11 +376,31 @@ def img_to_road(df,tform_path,camera_id):
 		df[[pt+'_x', pt+'_y']] = pd.DataFrame(road_pts, index=df.index)
 	return df
 	
-
+def img_to_road_box(img_pts_4,tform_path,camera_id):
+	'''
+	the images are downsampled
+	img_pts: N x 8
+	'''
+	M = get_homography_matrix(camera_id, tform_path)
+	print(img_pts_4.shape)
+	road_pts_4 = np.empty([len(img_pts_4),0])
+	for i in range(4):
+		img_pts = img_pts_4[:,2*i:2*i+1]
+		print(img_pts.shape)
+		img_pts = img_pts/2 # downsample image to correctly correspond to M
+		img_pts_1 = np.vstack((np.transpose(img_pts), np.ones((1,len(img_pts))))) # add ones to standardize
+		road_pts_un = M.dot(img_pts_1) # convert to gps unnormalized
+		road_pts_1 = road_pts_un / road_pts_un[-1,:][np.newaxis, :] # gps normalized s.t. last row is 1
+		road_pts = np.transpose(road_pts_1[0:2,:])/3.281 # only use the first two rows, convert from ft to m
+		road_pts_4 = np.hstack([road_pts_4, road_pts])
+	return road_pts
 	
 def get_xy_minmax(df):
-# for plotting
-	Y = np.array(df[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
+
+	if isinstance(df, pd.DataFrame):
+		Y = np.array(df[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
+	else:
+		Y = df
 	notNan = ~np.isnan(np.sum(Y,axis=-1))
 	Yx = Y[:,[0,2,4,6]]
 	# print(np.where(Yx[notNan,:]==Yx[notNan,:].min()))
@@ -568,76 +595,98 @@ def plot_track(D,length=15,width=1):
 	plt.show() 
 	return
 	
-def plot_track_df(df,length=15,width=1):
+def plot_track_df(df,length=15,width=1,show=True, ax=None, color='black'):
 	D = np.array(df[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
-	fig, ax = plt.subplots(figsize=(length,width))
-
+	if ax is None:
+		fig, ax = plt.subplots(figsize=(length,width))
+	
 	for i in range(len(D)):
 		coord = D[i,:]
 		coord = np.reshape(coord,(-1,2)).tolist()
 		coord.append(coord[0]) #repeat the first point to create a 'closed loop'
 		xs, ys = zip(*coord) #lon, lat as x, y
-		plt.plot(xs,ys,label='t=0' if i==0 else '',alpha=i/len(D),c='black')
+		ax.plot(xs,ys,label='t=0' if i==0 else '',alpha=(i+1)/len(D),c=color)
+		ax.scatter(D[i,2],D[i,3],color=color)#,alpha=i/len(D)
+	ax.set_xlabel('meter')
+	ax.set_ylabel('meter')
+	if show:
+		plt.show() 
+		return
+	else:
+		return ax
+	
+from matplotlib import cm
+def plot_track_df_camera(df,tform_path,length=15,width=1, camera='varies'):
+	camera_list = ['p1c1','p1c2','p1c3','p1c4','p1c5','p1c6']
+	color=cm.rainbow(np.linspace(0,1,len(camera_list)))
+	camera_dict = dict(zip(camera_list,color))
+	ID = df['ID'].iloc[0]
+	fig, ax = plt.subplots(figsize=(length,width))
+	if camera == 'varies':
+		camera_group = df.groupby('camera')
+		print('ID:',ID,'# frames:',len(df),'# cameras:',len(camera_group))
+		for cameraID,cg in camera_group:
+			Y = np.array(cg[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
+			c=camera_dict[cameraID]
+			for i in range(len(Y)):
+				coord = Y[i,:]
+				coord = np.reshape(coord,(-1,2)).tolist()
+				coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+				xs, ys = zip(*coord) #lon, lat as x, y	 
+				plt.plot(xs,ys,c=c,label=cameraID if i == 0 else "")
 
-		plt.scatter(D[i,2],D[i,3],color='black')#,alpha=i/len(D)
-	ax = plt.gca()
-	plt.xlabel('meter')
-	plt.ylabel('meter')
-	# plt.xlim([50,60])
-	# plt.ylim([0,60])
-	# plt.legend()
-	# ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y)
-	plt.show() 
+			plt.scatter(Y[:,2],Y[:,3],color='black')
+			ax = plt.gca()
+			plt.xlabel('meter')
+			plt.ylabel('meter')
+			plt.legend()
+			ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y) 
+		
+	else:
+		c=camera_dict[camera]
+		img_pts = np.array(df[['bbrx','bbry', 'fbrx','fbry','fblx','fbly','bblx', 'bbly']])
+		Y = img_to_road_box(img_pts,tform_path,camera)
+		for i in range(len(Y)):
+			coord = Y[i,:]
+			coord = np.reshape(coord,(-1,2)).tolist()
+			coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+			xs, ys = zip(*coord) #lon, lat as x, y	 
+			plt.plot(xs,ys,c=c,label=camera if i == 0 else "")
+
+		plt.scatter(Y[:,2],Y[:,3],color='black')
+		ax = plt.gca()
+		plt.xlabel('meter')
+		plt.ylabel('meter')
+		ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y) 
+
+		plt.legend()
+		plt.show()
+	
+	return
+
+def plot_track_compare(car,carre):
+	ax = plot_track_df(car,show=False, color='red')
+	plot_track_df(carre, show=True, ax=ax, color='blue')
 	return
 	
 def overlap_score(car1, car2):
-    '''
-    apply after rectify, check the overlap between two cars
-    '''
-    end = min(car1['Frame #'].iloc[-1],car2['Frame #'].iloc[-1])
-    start = max(car1['Frame #'].iloc[0],car2['Frame #'].iloc[0])
-    
-    if end <= start: # if no overlaps
-        return 999
-    car1 = car1.loc[(car1['Frame #'] >= start) & (car1['Frame #'] <= end)]
-    car2 = car2.loc[(car2['Frame #'] >= start) & (car2['Frame #'] <= end)]
+	'''
+	apply after rectify, check the overlap between two cars
+	'''
+	end = min(car1['Frame #'].iloc[-1],car2['Frame #'].iloc[-1])
+	start = max(car1['Frame #'].iloc[0],car2['Frame #'].iloc[0])
+	
+	if end <= start: # if no overlaps
+		return 999
+	car1 = car1.loc[(car1['Frame #'] >= start) & (car1['Frame #'] <= end)]
+	car2 = car2.loc[(car2['Frame #'] >= start) & (car2['Frame #'] <= end)]
 
-    pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
-    Y1 = np.array(car1[pts])
-    Y2 = np.array(car2[pts])
-    return np.sum(np.linalg.norm(Y1-Y2,2, axis=1))/(len(Y1))
-    
-def IOU_score(car1, car2):
-    '''
-    calculate the intersection of union of two boxes defined by d1 and D2
-    D1: prediction box
-    D2: measurement box
-    https://stackoverflow.com/questions/57885406/get-the-coordinates-of-two-polygons-intersection-area-in-python
-    '''
-    end = min(car1['Frame #'].iloc[-1],car2['Frame #'].iloc[-1])
-    start = max(car1['Frame #'].iloc[0],car2['Frame #'].iloc[0])
-    
-    if end <= start: # if no overlaps in time
-        return -1
-    car1 = car1.loc[(car1['Frame #'] >= start) & (car1['Frame #'] <= end)]
-    car2 = car2.loc[(car2['Frame #'] >= start) & (car2['Frame #'] <= end)]
-    pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
-    Y1 = np.array(car1[pts]) # N x 8
-    Y2 = np.array(car2[pts])
-    IOU = 0
-    for j in range(len(Y1)):
-        D1 = Y1[j,:]
-        D2 = Y2[j,:]
-        p = Polygon([(D1[2*i],D1[2*i+1]) for i in range(int(len(D1)/2))])
-        q = Polygon([(D2[2*i],D2[2*i+1]) for i in range(int(len(D2)/2))])
-        if (p.intersects(q)):
-            intersection_area = p.intersection(q).area
-            union_area = p.union(q).area
-    #         print(intersection_area, union_area)
-            IOU += float(intersection_area/union_area)
-        else:
-            IOU += 0
-    return IOU / len(Y1)
+	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+	Y1 = np.array(car1[pts])
+	Y2 = np.array(car2[pts])
+	return np.sum(np.linalg.norm(Y1-Y2,2, axis=1))/(len(Y1))
+	
+
 
 def get_id_rem(df,SCORE_THRESHOLD):
 	'''
@@ -652,7 +701,7 @@ def get_id_rem(df,SCORE_THRESHOLD):
 	for c1,c2 in comb:
 		car1 = groups.get_group(c1)
 		car2 = groups.get_group(c2)
-	#     score = overlap_score(car1, car2)
+	#	  score = overlap_score(car1, car2)
 		score = IOU_score(car1,car2)
 		IOU.append(score)
 		if score > SCORE_THRESHOLD:
@@ -663,206 +712,102 @@ def get_id_rem(df,SCORE_THRESHOLD):
 				id_rem.append(c1)
 	return id_rem
 
-def plot_3D_csv(sequence,label_file,framerate = 30):	
-	colors = (np.random.rand(100,3)*255)
-	downsample = 2
-	# outfile = label_file.split("_track_outputs_3D.csv")[0] + "_3D.mp4"
-	outfile = label_file.split(".csv")[0] + "_3D.mp4"
-	print(outfile)
-	out = cv2.VideoWriter(outfile,cv2.VideoWriter_fourcc(*'mp4v'), framerate, (3840,2160))
-	cap= cv2.VideoCapture(sequence)
-	
-	frame_labels = {}
-	with open(label_file,"r") as f:
-		read = csv.reader(f)
-		HEADERS = True
-		for row in read:
-			if not HEADERS:
-				frame_idx = int(row[1])
-				if frame_idx not in frame_labels.keys():
-					frame_labels[frame_idx] = [row]
-				else:
-					frame_labels[frame_idx].append(row)
-					
-			if HEADERS and len(row) > 0:
-				# if row[0][0:5] == "Frame":
-				if row[1][0:5] == "Frame":
-					HEADERS = False # all header lines have been read at this point
-	ret,frame = cap.read()
-	frame_idx = 0
-	while ret:
-		
-		print("\rWriting frame {}".format(frame_idx),end = '\r', flush = True)	
-		
-		# get all boxes for current frame
 
-		try:
-			cur_frame_labels = frame_labels[frame_idx]
-		except:
-			cur_frame_labels = []	
-		for row in cur_frame_labels:
-			obj_idx = int(row[3])
-			obj_class = row[4]
-			label = "{} {}".format(obj_class,obj_idx)
-			color = colors[obj_idx%100]
-			color = (0,0,255)
-			# bbox2d = np.array(row[4:8]).astype(float)  
-			if len(row) == 48: # has 3D bbox, rectified data
-				try: # get the rectified footprint positions
-					bbox = np.array(row[40:48])
-					bbox = np.vstack([bbox,bbox]).astype(float).astype(int).reshape(8,1) #* downsample
-				except:
-					# if there was a previous box for this object, use it instead
-					try:
-						NOMATCH = True
-						prev = 1
-						while prev < 4 and NOMATCH:
-							for row in frame_labels[frame_idx -prev]: 
-								if int(row[3]) == obj_idx:
-									bbox = np.array(row[40:48]).astype(float).astype(int).reshape(8,1) * downsample
-									x_offset = (bbox2d[2] - bbox2d[0])/2.0 - (float(row[4]) + float(row[6]))/2.0 
-									y_offset = (bbox2d[3] - bbox2d[1])/2.0 - (float(row[5]) + float(row[7]))/2.0 
-									shift = np.zeros([8,2])
-									shift[:,0] += x_offset
-									shift[:,1] += y_offset
-									bbox += shift
-									NOMATCH = False
-									break
-								else:
-									prev += 1
-					except:
-						bbox = []
-				
-				# get rid of bboxes that lie outside of a bbox factor x larger than 2d bbox
-				# factor = 3
-				# for point in bbox:
-					# if point[0] < bbox2d[0] - (bbox2d[2] - bbox2d[0])/factor:
-						# bbox = []
-						# break
-					# if point[1] < bbox2d[1] - (bbox2d[3] - bbox2d[1])/factor:
-						# bbox = []
-						# break
-					# if point[0] > bbox2d[2] + (bbox2d[2] - bbox2d[0])/factor:
-						# bbox = []
-						# break
-					# if point[1] > bbox2d[3] + (bbox2d[3] - bbox2d[1])/factor:
-						# bbox = []
-						# break
-					
-				
-				frame = plot_3D_ordered(frame, bbox,color = color)
-			
-			
-			color = (255,0,0)
-			# frame = cv2.rectangle(frame,(int(bbox2d[0]),int(bbox2d[1])),(int(bbox2d[2]),int(bbox2d[3])),color,2)
-			# frame = cv2.putText(frame,"{}".format(label),(int(bbox2d[0]),int(bbox2d[1] - 10)),cv2.FONT_HERSHEY_PLAIN,2,(0,0,0),3)
-			# frame = cv2.putText(frame,"{}".format(label),(int(bbox2d[0]),int(bbox2d[1] - 10)),cv2.FONT_HERSHEY_PLAIN,2,(255,255,255),1)
-		
-		# lastly, add frame number in top left
-		frame_label = "{}: frame {}".format(sequence.split("/")[-1],frame_idx)
-		frame = cv2.putText(frame,frame_label,(0,50),cv2.FONT_HERSHEY_PLAIN,2,(255,255,255),2)
 
-		out.write(frame)
-		
-		frame_show = cv2.resize(frame.copy(),(1920,1080))
-		
-		cv2.imshow("frame",frame_show)
-		key = cv2.waitKey(1)
-		if key == ord('q'):
-			cv2.destroyAllWindows()
-			break
-			
-		# get next frame
-		ret,frame = cap.read()
-		frame_idx += 1
-
-		if frame_idx > 2050:
-			break
-		
-	cap.release()
-	out.release()
-	
-	print("Finished writing {}".format(outfile))
-	
-def plot_3D_ordered(frame,box,color = None,label = None):
-	"""
-	Plots 3D points as boxes, drawing only line segments that point towards vanishing points
-	"""
-	print(box)
-	if len(box) == 0:
-		return frame
-	
-	DRAW = [[0,1,1,0,1,0,0,0], #bfl
-			[0,0,0,1,0,1,0,0], #bfr
-			[0,0,0,1,0,0,1,1], #bbl
-			[0,0,0,0,0,0,1,1], #bbr
-			[0,0,0,0,0,1,1,0], #tfl
-			[0,0,0,0,0,0,0,1], #tfr
-			[0,0,0,0,0,0,0,1], #tbl
-			[0,0,0,0,0,0,0,0]] #tbr
-	
-	DRAW_BASE = [[0,1,1,1,0,0,0,0], #bfl
-			[0,0,1,1,0,0,0,0], #bfr
-			[0,0,0,1,0,0,0,0], #bbl
-			[0,0,0,0,0,0,0,0], #bbr
-			[0,0,0,0,0,0,0,0], #tfl
-			[0,0,0,0,0,0,0,0], #tfr
-			[0,0,0,0,0,0,0,0], #tbl
-			[0,0,0,0,0,0,0,0]] #tbr
-	
-	if color is None:
-		color = (100,255,100)
-		
-	for a in range(len(box)):
-		ab = box[a]
-		for b in range(a,len(box)):
-			bb = box[b]
-			if DRAW_BASE[a][b] == 1:
-				frame = cv2.line(frame,(int(ab[0]),int(ab[1])),(int(bb[0]),int(bb[1])),color,2)
-			# if DRAW_BASE[a][b] == 1:
-			#	  frame = cv2.line(frame,(int(ab[0]),int(ab[1])),(int(bb[0]),int(bb[1])),color,2)
-	
-	size = 4
-	# color = (0,0,255)
-	color = (0,0,0)
-	frame = cv2.circle(frame,(int(box[0][0]),int(box[0][1])),size,color,-1)
-	# color = (0,100,255)
-	frame = cv2.circle(frame,(int(box[1][0]),int(box[1][1])),size,color,-1)
-	# color = (0,175,255)
-	frame = cv2.circle(frame,(int(box[2][0]),int(box[2][1])),size,color,-1)
-	# color = (0,255,255)
-	frame = cv2.circle(frame,(int(box[3][0]),int(box[3][1])),size,color,-1)
-	# color = (255,0,0)
-	# frame = cv2.circle(frame,(int(box[4][0]),int(box[4][1])),size,color,-1)
-	# color = (255,100,0)
-	# frame = cv2.circle(frame,(int(box[5][0]),int(box[5][1])),size,color,-1)
-	# color = (255,175,0)
-	# frame = cv2.circle(frame,(int(box[6][0]),int(box[6][1])),size,color,-1)
-	# color = (255,255,0)
-	# frame = cv2.circle(frame,(int(box[7][0]),int(box[7][1])),size,color,-1)
-	
-	if label is not None:
-		left = min([point[0] for point in box])
-		top	 = min([point[1] for point in box])
-		frame = cv2.putText(frame,"{}".format(label),(int(left),int(top - 10)),cv2.FONT_HERSHEY_PLAIN,1,(0,0,0),3)
-		frame = cv2.putText(frame,"{}".format(label),(int(left),int(top - 10)),cv2.FONT_HERSHEY_PLAIN,1,(255,255,255),1)
-	return frame	
-	
-# delete repeated measurmeents per frame per object
+# delete repeated measurements per frame per object
 del_repeat_meas = lambda x: x.head(1) if np.isnan(x['bbr_x'].values).all() else x[~np.isnan(x['bbr_x'].values)].head(1)
 
 def del_repeat_meas_per_frame(framesnap):
-    framesnap = framesnap.groupby('ID').apply(del_repeat_meas)
-    return framesnap
+	framesnap = framesnap.groupby('ID').apply(del_repeat_meas)
+	return framesnap
 	
-def preprocess_multi_camera(df):
-	tqdm.pandas()
-	# df_new = df.groupby('Frame #').progress_apply(del_repeat_meas_per_frame).reset_index(drop=True)
-	df = applyParallel(df.groupby("Frame #"), del_repeat_meas_per_frame).reset_index(drop=True)
+def preprocess_multi_camera(data_path, tform_path):
+	
+	df = pd.DataFrame()
+	for root,dirs,files in os.walk(str(data_path), topdown = True):
+		for file in files:
+			if file.endswith(".csv"):
+				file_name = data_path.joinpath(file)
+				camera_name = find_camera_name(file_name)
+				print('*** Reading ',camera_name,'...')
+				df1 = read_data(file_name,9)
+				if 'Object ID' in df1:
+					df1.rename(columns={"Object ID": "ID"})
+				print(len(df1['ID'].unique()))
+				print('Transform from image to road...')
+				
+				df1 = img_to_road(df1, tform_path, camera_name)
+				print('Deleting unrelavent columns...')
+				df1 = df1.drop(columns=['BBox xmin','BBox ymin','BBox xmax','BBox ymax','vel_x','vel_y','lat','lon'])
+				df1 = df1.assign(camera=camera_name)
+				df = pd.concat([df, df1])
+		break
+		
+	# MUST SORT!!! OTHERWISE DIRECTION WILL BE WRONG
+	df = df.sort_values(by=['Frame #','Timestamp']).reset_index(drop=True) 
+	print('sorted.')
+		
+	print('Get x direction...')
+	df = get_x_direction(df)
+	print('Naive filter...')
+	df = naive_filter_3D(df)
+	
+	print('Interpret missing timestamps...')
+	frames = [min(df['Frame #']),max(df['Frame #'])]
+	times = [min(df['Timestamp']),max(df['Timestamp'])]
+	z = np.polyfit(frames,times, 1)
+	p = np.poly1d(z)
+	df['Timestamp'] = p(df['Frame #'])
 	print('Get the longest continuous frame chuck...')
 	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
 	return df
-
+	
+def preprocess_data_association(df):
+	tqdm.pandas()
+	
+	# APPLY DA ALGORIHTM
+	parent = stitch_objects(df)
+	df['ID'] = df['ID'].apply(lambda x: parent[x] if x in parent else x)
+	parent = associate_cross_camera(df)
+	df['ID'] = df['ID'].apply(lambda x: parent[x] if x in parent else x)  
+	
+	print('Get the longest continuous frame chunk...')
+	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
+	df = applyParallel(df.groupby("Frame #"), del_repeat_meas_per_frame).reset_index(drop=True)
+	return df
+	
+def get_camera_range(camera_id):
+	'''
+	return xmin, xmax, ymin, ymax (in meter)
+	'''
+	ymin = -5
+	ymax = 45
+	if camera_id=='p1c1':
+		xmin = 0
+		xmax = 130
+	elif camera_id=='p1c2':
+		xmin = 100
+		xmax = 220
+	elif camera_id=='p1c3':
+		xmin = 180
+		xmax = 260
+	elif camera_id=='p1c4':
+		xmin = 190
+		xmax = 250
+	elif camera_id=='p1c5':
+		xmin = 210
+		xmax = 300
+	elif camera_id=='p1c6':
+		xmin = 240
+		xmax = 400
+	elif camera_id=='all':
+		xmin = 0
+		xmax = 400
+	else:
+		print('no camera ID in get_camera_range')
+		return
+	return xmin, xmax, ymin, ymax
+	
 def post_process(df):
 	# print('remove overlapped cars...')
 	# id_rem = get_id_rem(df, SCORE_THRESHOLD=0) # TODO: untested threshold
@@ -884,6 +829,17 @@ def post_process(df):
 	# tqdm.pandas()
 	# # df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
 	# df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
+	
+	print('Constrain x,y range by camera FOV')
+	if len(df['camera'].unique())==1:
+		xmin, xmax, ymin, ymax = get_camera_range(df['camera'][0])
+	else:
+		xmin, xmax, ymin, ymax = get_camera_range('all')
+	print(xmin, xmax, ymin, ymax)
+	print(len(df))
+	df = df.loc[(df['bbr_x'] >= xmin) & (df['bbr_x'] <= xmax)]
+	df = df.loc[(df['bbr_y'] >= ymin) & (df['bbr_y'] <= ymax)]
+	print(len(df))
 	return df
 
 def get_camera_x(x):

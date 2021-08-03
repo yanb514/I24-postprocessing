@@ -168,7 +168,7 @@ def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
 
 	# min perturbation
-	c1 = lam1*LA.norm(Y1-Yre[notNan,:],'fro')/np.count_nonzero(notNan)
+	c1 = lam1*np.sum(LA.norm(Y1-Yre[notNan,:],axis=1))/np.count_nonzero(notNan)
 	c2 = lam2*LA.norm(a,2)/np.count_nonzero(notNan)
 	# c3 = lam3*LA.norm(j,2)/np.count_nonzero(notNan)
 	c4 = lam4*LA.norm(sin(theta),2)/np.count_nonzero(notNan)
@@ -224,10 +224,10 @@ def rectify_single_camera(df):
 	dt = np.diff(timestamps)
 	# optimization parameters
 	lam1 = 1 # modification of measurement 1
-	lam2 = 0.2 # acceleration 1
+	lam2 = 2 # acceleration 2
 	lam3 = 0 # jerk 0
-	lam4 = 10 # theta 10
-	lam5 = 1 # omega 1
+	lam4 = 30 # theta 30
+	lam5 = 0 # omega 0
 
 	# get bottom 4 points coordinates
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
@@ -266,14 +266,14 @@ def rectify_single_camera(df):
 
 	res = minimize(obj1, X0, (Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5), method = 'L-BFGS-B',
 					bounds=bnds, options={'disp': False,'maxiter':100000})#
-
 	# extract results
 	Yre, x,y,v,a,theta,omega,w,l = unpack1(res,N,dt)
-
+	# score = LA.norm(Y1-Yre[notNan,:],'fro')/np.count_nonzero(notNan)
+	score = np.sum(LA.norm(Y1-Yre[notNan,:],axis=1))/np.count_nonzero(notNan)
+	print(df['ID'].iloc[0], score)
 	# write into df
 	# Ygps = road_to_gps(Yre, A,B)
 	df.loc[:,pts] = Yre
-	# df.loc[:,pts_gps] = Ygps
 	df.loc[:,'acceleration'] = a
 	df.loc[:,'speed'] = v
 	df.loc[:,'x'] = x
@@ -281,7 +281,6 @@ def rectify_single_camera(df):
 	df.loc[:,'theta'] = theta
 	df.loc[:,'width'] = w
 	df.loc[:,'length'] = l
-	# df['Timestamp'] = timestamps
 	
 	return df
 
