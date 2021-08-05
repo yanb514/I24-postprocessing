@@ -148,8 +148,8 @@ def filter_short_track(df):
 	
 def naive_filter_3D(df):
 	# filter out direction==0
-	# df = df.groupby("ID").filter(lambda x: x['direction'].values[0] != 0)
-	# print('after direction=0 filter: ',len(df['ID'].unique()))
+	df = df.groupby("ID").filter(lambda x: x['direction'].values[0] != 0)
+	print('after direction=0 filter: ',len(df['ID'].unique()))
 	# reorder points
 	df = df.groupby("ID").apply(reorder_points).reset_index(drop=True)
 	# filter out short tracks
@@ -206,20 +206,17 @@ def findLongestSequence(car, k=0):
 	
 def preprocess(file_path, tform_path):
 	print('Reading data...')
-	df = read_data(file_path,9)
+	df = read_data(file_path,0)
 	if 'Object ID' in df:
 		df.rename(columns={"Object ID": "ID"})
+	if 'frx' in df:
+		df.rename(columns={"frx":"fbr_x", "fry":"fbr_y", "flx":"fbl_x", "fly":"fbl_y","brx":"bbr_x","bry":"bbr_y","blx":"bbl_x","bbly":"bbl_y"})
 	print(len(df['ID'].unique()))
 	print('Transform from image to road...')
 	camera_name = find_camera_name(file_path)
 	df = img_to_road(df, tform_path, camera_name)
-	print('Deleting unrelavent columns...')
-	df = df.drop(columns=['BBox xmin','BBox ymin','BBox xmax','BBox ymax','vel_x','vel_y','lat','lon'])
-	
-	print('Get x direction...')
-	df = get_x_direction(df)
-	print('Naive filter...')
-	df = naive_filter_3D(df)
+	# print('Deleting unrelavent columns...')
+	# df = df.drop(columns=['BBox xmin','BBox ymin','BBox xmax','BBox ymax','vel_x','vel_y','lat','lon'])
 	
 	print('Interpret missing timestamps...')
 	frames = [min(df['Frame #']),max(df['Frame #'])]
@@ -228,8 +225,24 @@ def preprocess(file_path, tform_path):
 	# z = np.polyfit(df['Frame #'].iloc[[0,-1]].values,df['Timestamp'].iloc[[0,-1]].values, 1)
 	p = np.poly1d(z)
 	df['Timestamp'] = p(df['Frame #'])
+	# print('Constrain x,y range by camera FOV')
+	if 'camera' not in df:
+		df['camera'] = find_camera_name(file_path)
+	# if len(df['camera'].unique())==1:
+		# xmin, xmax, ymin, ymax = get_camera_range(df['camera'][0])
+	# else:
+		# xmin, xmax, ymin, ymax = get_camera_range('all')
+	# print(xmin, xmax, ymin, ymax)
+	# df = df.loc[(df['bbr_x'] >= xmin) & (df['bbr_x'] <= xmax)]
+	# df = df.loc[(df['bbr_y'] >= ymin) & (df['bbr_y'] <= ymax)]
+
 	print('Get the longest continuous frame chuck...')
 	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
+	print('Get x direction...')
+	df = get_x_direction(df)
+	print('Naive filter...')
+	df = naive_filter_3D(df)
+	
 	return df
 
 def find_camera_name(file_path):
@@ -340,11 +353,25 @@ def ffill_direction(df):
 	bbrx = df['bbr_x'].values
 	notnan = ~np.isnan(bbrx)
 	bbrx = bbrx[notnan]
+	
 	if (len(bbrx)<=1):
-		df = df.assign(direction=0)
+		sign = 0
 	else:
 		sign = np.sign(bbrx[-1]-bbrx[0])
+		
+	# if all the y axis are below 18
+	bbry = df['bbr_y'].values[notnan]
+	if (bbry < 18).all():
+		signy = 1
+	elif (bbry > 18).all():
+		signy = -1
+	else:
+		signy = 0
+		
+	if sign == signy:
 		df = df.assign(direction = sign)
+	else:
+		df = df.assign(direction = 0)
 	return df
 
 
@@ -717,8 +744,18 @@ def get_id_rem(df,SCORE_THRESHOLD):
 # delete repeated measurements per frame per object
 del_repeat_meas = lambda x: x.head(1) if np.isnan(x['bbr_x'].values).all() else x[~np.isnan(x['bbr_x'].values)].head(1)
 
+# x: df of measurements of same object ID at same frame, get average
+def average_meas(x):
+	mean = x.head(1)
+	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+	Y = np.array(x[pts])
+	Y = np.nanmean(Y, axis=0)
+	mean.loc[:,pts] = Y
+	return mean
+	
+	
 def del_repeat_meas_per_frame(framesnap):
-	framesnap = framesnap.groupby('ID').apply(del_repeat_meas)
+	framesnap = framesnap.groupby('ID').apply(average_meas)
 	return framesnap
 	
 def preprocess_multi_camera(data_path, tform_path):
@@ -766,10 +803,13 @@ def preprocess_data_association(df):
 	tqdm.pandas()
 	
 	# APPLY DA ALGORIHTM
+	print('Before DA: ', len(df['ID'].unique()), 'cars')
 	parent = stitch_objects(df)
 	df['ID'] = df['ID'].apply(lambda x: parent[x] if x in parent else x)
-	parent = associate_cross_camera(df)
+	print('After stitching: ', len(df['ID'].unique()), 'cars')
+	parent = associate_overlaps(df)
 	df['ID'] = df['ID'].apply(lambda x: parent[x] if x in parent else x)  
+	print('After assocating overlaps: ', len(df['ID'].unique()), 'cars')
 	
 	print('Get the longest continuous frame chunk...')
 	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
@@ -829,17 +869,9 @@ def post_process(df):
 	# tqdm.pandas()
 	# # df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
 	# df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
+	print('standardize format for plotter...')
+	df = df.drop(columns=['lat','lon'])
 	
-	print('Constrain x,y range by camera FOV')
-	if len(df['camera'].unique())==1:
-		xmin, xmax, ymin, ymax = get_camera_range(df['camera'][0])
-	else:
-		xmin, xmax, ymin, ymax = get_camera_range('all')
-	print(xmin, xmax, ymin, ymax)
-	print(len(df))
-	df = df.loc[(df['bbr_x'] >= xmin) & (df['bbr_x'] <= xmax)]
-	df = df.loc[(df['bbr_y'] >= ymin) & (df['bbr_y'] <= ymax)]
-	print(len(df))
 	return df
 
 def get_camera_x(x):
@@ -869,7 +901,7 @@ def road_to_img(df, tform_path):
 			img_pts_un = Minv.dot(road_pts_1)
 			img_pts_1 = img_pts_un / img_pts_un[-1,:][np.newaxis, :]
 			img_pts = np.transpose(img_pts_1[0:2,:])*2
-			group[[pt+'x_re',pt+'y_re']] = pd.DataFrame(img_pts, index=df.index)
+			group[[pt+'x',pt+'y']] = pd.DataFrame(img_pts, index=df.index)
 		df_new = pd.concat([df_new, group])
 	return df_new
 	

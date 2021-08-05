@@ -117,8 +117,11 @@ def predict_tracks(tracks):
 			
 def stitch_objects(df):
 	SCORE_THRESHOLD = 4 # TODO: to be tested
-	xmin = 0
-	xmax = 400
+	xmin, xmax, ymin, ymax = get_xy_minmax(df)
+	if xmin < 0:
+		xmin = 0
+	if xmax > 400:
+		xmax = 400
 	ns = np.amin(np.array(df[['Frame #']])) # start frame
 	nf = np.amax(np.array(df[['Frame #']])) # end frame
 	tracks = dict() # a dictionary to store all current objects in view
@@ -129,7 +132,7 @@ def stitch_objects(df):
 		parent[g] = g
 				
 	for k in range(ns,nf):
-		if (k%10==0):
+		if (k%100==0):
 			print("Frame : %4d" % (k), flush=True)
 		# get all measurements from current frame
 		frame = df.loc[(df['Frame #'] == k)] # TODO: use groupby frame to save time
@@ -205,7 +208,6 @@ def stitch_objects(df):
 					tracks[new_id] = np.reshape(y[m], (1,-1))
 					
 	parent = compress(parent,gl)				
-	
 	return parent
 	
 	
@@ -263,6 +265,44 @@ def associate_cross_camera(df_original):
 		
 	return parent
 
+	
+def associate_overlaps(df_original):
+	'''
+	get all the ID pairs that associated to the same car
+	do this BEFORE preprocess_multi_camera
+	'''
+	df = df_original.copy() # TODO: make this a method
+	
+	groups = df.groupby('ID')
+	gl = list(groups.groups)
+	
+	# initialize tree
+	parent = {}
+	for g in gl:
+		parent[g] = g
+			
+	SCORE_THRESHOLD = 0 # IOU score
+				
+	comb = itertools.combinations(gl, 2)
+	
+	for c1,c2 in comb:
+		car1 = groups.get_group(c1)
+		car2 = groups.get_group(c2)
+		if ((car1['direction'].iloc[0])==(car2['direction'].iloc[0])):
+			score = IOU_score(car1,car2)
+			if score > SCORE_THRESHOLD:
+				# associate!
+				parent[c2] = c1
+		else:
+			continue
+				
+		# path compression (part of union find): compress multiple ID's to the same object			
+	parent = compress(parent, gl)
+		# change ID to first appeared ones
+		# df2['ID'] = df2['ID'].apply(lambda x: parent[x] if x in parent else x)
+		
+	return parent
+	
 # path compression
 def find(parent, i):
 	if parent[parent[i]] == i:
