@@ -4,10 +4,10 @@ For Derek:
 To generate rectified footprints from uncorrected 3D bounding boxes, do the following 4 steps:
 
 1. ``df = utils.preprocess(file_path, tform_path, skip_row = 9)``
-    a. calculate image-road transformation
-    b. interpret missing timestamps
-    c. get traveling direction of each car
-    d. naive filter
+    - calculate image-road transformation
+    - interpret missing timestamps
+    - get traveling direction of each car
+    - naive filter
     
 2. ``df = utils.preprocess_data_association(df)``
     a. stitch objects based on obvious overlaps
