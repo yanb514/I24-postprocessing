@@ -1,6 +1,6 @@
 # I24-trajectory-generation
 
-For Derek:
+## For Derek:
 To generate rectified footprints from uncorrected 3D bounding boxes, do the following 4 steps:
 
 1. ``df = utils.preprocess(file_path, tform_path, skip_row = 9)``
@@ -10,21 +10,21 @@ To generate rectified footprints from uncorrected 3D bounding boxes, do the foll
     - naive filter
     
 2. ``df = utils.preprocess_data_association(df)``
-    a. stitch objects based on obvious overlaps
-    b. stitch objects based on predicted trajectories
+    - stitch objects based on obvious overlaps
+    - stitch objects based on predicted trajectories
     
 3. ``df = opt.rectify(df)``
-    a. the optimization stuff
+    - the optimization stuff
     
 4. ``df = utils.post_process(df)``
-    a. cap the width
-    b. standardize for the plotter
+    - cap the width
+    - standardize for the plotter
 
 Sample running code in ``I24_data_association.ipynb``
 
 
 
-For Arthur
+## For Arthur
 Before running this notebook, please do the following
 1. Download the 3D bbox trajectory data at https://vanderbilt.box.com/s/sgb996yj09bmev6yhc7slf053nz74p9q
 2. Download camera_calibration_points csv file. Click "raw" and save as csv (https://github.com/DerekGloudemans/I24-video-processing/blob/main/config/camera_calibration_points_I24_validation_system.csv)
