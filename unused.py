@@ -456,7 +456,34 @@ def predict_distance(n,group,dt):
 	# return np.append(group.Timestamp.values, time[1:]), np.append(group.distance, distance[1:])
 
 
+def euclidean_distance(lat1, lon1, lat2, lon2):
+# https://math.stackexchange.com/questions/29157/how-do-i-convert-the-distance-between-two-lat-long-points-into-feet-meters
+	r = 6371000
+	lat1,lon1 = np.radians([lat1, lon1])
+	lat2 = np.radians(lat2)
+	lon2 = np.radians(lon2)
+	theta = (lat1+lat2)/2
+	dx = r*cos(theta)*(lon2-lon1)
+	dy = r*(lat2-lat1)
+	d = np.sqrt(dx**2+dy**2)
+	# d = r*np.sqrt((lat2-lat1)**2+(cos(theta)**2*(lon2-lon1)**2))
+	return d,dx,dy
+	
 
+	
+def haversine_distance(lat1, lon1, lat2, lon2):
+	r = 6371
+	phi1 = np.radians(lat1)
+	phi2 = np.radians(lat2)
+	delta_phi = np.radians(lat2 - lat1)
+	delta_lambda = np.radians(lon2 - lon1)
+	try:
+		a = np.sin(delta_phi / 2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(delta_lambda / 2)**2
+	except RuntimeWarning:
+		print('error here')
+	res = r * (2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a)))
+	return res * 1000 # km to m
+	
 def overlap(group1, group2, n, dt):
 	# check of the next n steps of group1 trajectry will overlap with any of group2's trajectory
 	time, lat_pred, lon_pred = predict_n_steps(n, group1, dt)
@@ -730,3 +757,128 @@ def naive_filter_3D(df):
 			g.loc[:,pts_gps[i]] = Ygps[:,i]
 		new_df = pd.concat([new_df, g])
 	return new_df
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import pathlib
+import math
+import os
+from numpy import arctan2,random,sin,cos,degrees, arcsin, radians,arccos
+from scipy.optimize import minimize,NonlinearConstraint,leastsq,fmin_slsqp,least_squares
+import numpy.linalg as LA
+from utils import *
+from tqdm import tqdm
+from functools import partial
+from multiprocessing import Pool, cpu_count
+from itertools import repeat
+
+def obj(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
+	"""The cost function
+		X = [j,alpha,a0,v0,x0,y0,theta0,w,l]^T
+		penalize omega, a, jerk, theta and correction
+		slow and not so accurate
+	""" 
+	# unpack variables
+	j = X[:N]
+	omega = X[N:2*N]
+	a0,v0,x0,y0,theta0,w,l = X[2*N:]
+	
+	a = np.zeros(N)
+	a[0] = a0
+	for k in range(0,N-2):
+		a[k+1] = a[k] + j[k]*dt[k]
+	a[-1] = a[-2]
+	
+	theta = np.zeros(N)
+	theta[0] = theta0
+	for k in range(0,N-1):
+		theta[k+1] = theta[k] + omega[k]*dt[k]
+	
+	v = np.zeros(N)
+	v[0] = v0
+	for k in range(0,N-2):
+		v[k+1] = v[k] + a[k]*dt[k]
+	v[-1]=v[-2]
+	vx = v*cos(theta)
+	vy = v*sin(theta)
+	
+	x = np.zeros(N)
+	y = np.zeros(N)
+	x[0] = x0
+	y[0] = y0
+	
+	for k in range(0,N-1):
+		x[k+1] = x[k] + vx[k]*dt[k]
+		y[k+1] = y[k] + vy[k]*dt[k]
+	
+	# compute positions
+	xa = x + w/2*sin(theta)
+	ya = y - w/2*cos(theta)
+	xb = xa + l*cos(theta)
+	yb = ya + l*sin(theta)
+	xc = xb - w*sin(theta)
+	yc = yb + w*cos(theta)
+	xd = xa - w*sin(theta)
+	yd = ya + w*cos(theta)
+	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
+
+	# min perturbation
+	c1 = lam1*LA.norm(Y1-Yre[notNan,:],'fro')/np.count_nonzero(notNan)
+	c2 = lam2*LA.norm(a,2)/np.count_nonzero(notNan)
+	c3 = lam3*LA.norm(j,2)/np.count_nonzero(notNan)
+	c4 = lam4*LA.norm(theta,2)/np.count_nonzero(notNan)
+	c5 = lam5*LA.norm(omega,2)/np.count_nonzero(notNan)
+	return c1+c2+c3+c4+c5
+	
+	
+def unpack(res,N,dt):
+	# extract results
+	# unpack variables
+	j = res.x[:N]
+	omega = res.x[N:2*N]
+	a0,v0,x0,y0,theta0,w,l = res.x[2*N:]
+	
+	a = np.zeros(N)
+	a[0] = a0
+	for k in range(0,N-2):
+		a[k+1] = a[k] + j[k]*dt[k]
+	a[-1] = a[-2]
+	
+	theta = np.zeros(N)
+	theta[0] = theta0
+	for k in range(0,N-1):
+		theta[k+1] = theta[k] + omega[k]*dt[k]
+	
+	v = np.zeros(N)
+	v[0] = v0
+	for k in range(0,N-2):
+		v[k+1] = v[k] + a[k]*dt[k]
+	v[-1]=v[-2]
+	vx = v*cos(theta)
+	vy = v*sin(theta)
+
+	x = np.zeros(N)
+	y = np.zeros(N)
+	x[0] = x0
+	y[0] = y0
+	for k in range(0,N-1):
+		x[k+1] = x[k] + vx[k]*dt[k]
+		y[k+1] = y[k] + vy[k]*dt[k]
+
+	# compute positions
+	xa = x + w/2*sin(theta)
+	ya = y - w/2*cos(theta)
+	xb = xa + l*cos(theta)
+	yb = ya + l*sin(theta)
+	xc = xb - w*sin(theta)
+	yc = yb + w*cos(theta)
+	xd = xa - w*sin(theta)
+	yd = ya + w*cos(theta)
+	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
+	return Yre, x,y,v,a,j,theta,omega,w,l
+	
+	
+	
+	
+	

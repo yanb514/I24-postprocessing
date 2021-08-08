@@ -1,25 +1,18 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-# import pathlib
-# import math
-# import os
 from numpy import arctan2,random,sin,cos,degrees, radians
 from bs4 import BeautifulSoup
 from IPython.display import IFrame
 import gmplot 
-# from sklearn import linear_model
-# from sklearn.metrics import r2_score
 import cv2
 import csv
-# import warnings
 import sys
 import re
 import glob
 from tqdm import tqdm
 from utils_optimization import *
 from data_association import *
-# warnings.simplefilter ('default')
 
 import time
 import itertools
@@ -31,54 +24,8 @@ def read_data(file_name, skiprows = 0, index_col = False):
 #	  path = pathlib.Path().absolute().joinpath('tracking_outputs',file_name)
 	df = pd.read_csv(file_name, skiprows = skiprows,error_bad_lines=False,index_col = index_col)
 	df = df.rename(columns={"GPS lat of bbox bottom center": "lat", "GPS long of bbox bottom center": "lon", 'Object ID':'ID'})
-	# df = df.loc[df['Timestamp'] >= 0]
 	return df
-
-def read_new_data(file_name):
-	df = pd.read_csv(file_name)
-	return df
-
-
-def p_frame_time(df):
-# polyfit frame wrt timestamps
-	frames = df['Frame #'].iloc[[0,-1]].values
-	times = df['Timestamp'].iloc[[0,-1]].values
-	print(frames)
-	print(times)
-	z = np.polyfit(frames,times, 1)
-	p = np.poly1d(z)
-	return p
 	
-
-	
-def haversine_distance(lat1, lon1, lat2, lon2):
-	r = 6371
-	phi1 = np.radians(lat1)
-	phi2 = np.radians(lat2)
-	delta_phi = np.radians(lat2 - lat1)
-	delta_lambda = np.radians(lon2 - lon1)
-	try:
-		a = np.sin(delta_phi / 2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(delta_lambda / 2)**2
-	except RuntimeWarning:
-		print('error here')
-	res = r * (2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a)))
-	return res * 1000 # km to m
-
-def euclidean_distance(lat1, lon1, lat2, lon2):
-# https://math.stackexchange.com/questions/29157/how-do-i-convert-the-distance-between-two-lat-long-points-into-feet-meters
-	r = 6371000
-	lat1,lon1 = np.radians([lat1, lon1])
-	lat2 = np.radians(lat2)
-	lon2 = np.radians(lon2)
-	theta = (lat1+lat2)/2
-	dx = r*cos(theta)*(lon2-lon1)
-	dy = r*(lat2-lat1)
-	d = np.sqrt(dx**2+dy**2)
-	# d = r*np.sqrt((lat2-lat1)**2+(cos(theta)**2*(lon2-lon1)**2))
-	return d,dx,dy
-	
-
-
 
 def reorder_points(df):
 	'''
@@ -104,10 +51,12 @@ def reorder_points(df):
 	return df
 
 def filter_width_length(df):
+	'''
+	filter out bbox if their width/length is 2 std-dev's away
+	'''
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
 
-	Y = np.array(df[pts])
-	Y = Y.astype("float")
+	Y = np.array(df[pts]).astype("float")
 	
 	# filter outlier based on width	
 	w1 = np.abs(Y[:,3]-Y[:,5])
@@ -161,10 +110,13 @@ def naive_filter_3D(df):
 	return df
 
 def findLongestSequence(car, k=0):
+	'''
+	keep the longest continuous frame sequence for each car
+	# https://www.techiedelight.com/find-maximum-sequence-of-continuous-1s-can-formed-replacing-k-zeroes-ones/	
+	'''
 	A = np.diff(car['Frame #'].values)
 	A[A!=1]=0
 	
-	# https://www.techiedelight.com/find-maximum-sequence-of-continuous-1s-can-formed-replacing-k-zeroes-ones/
 	left = 0		# represents the current window's starting index
 	count = 0		# stores the total number of zeros in the current window
 	window = 0		# stores the maximum number of continuous 1's found
@@ -204,14 +156,18 @@ def findLongestSequence(car, k=0):
 #		  leftIndex, "to", (leftIndex + window - 1))
 	return car.iloc[leftIndex:leftIndex + window - 1,:]
 	
-def preprocess(file_path, tform_path):
+def preprocess(file_path, tform_path, skip_row = 0):
+	'''
+	preprocess for one single camera data
+	skip_row: number of rows to skip when reading csv files to dataframe
+	'''
 	print('Reading data...')
-	df = read_data(file_path,0)
+	df = read_data(file_path,skip_row)
 	if 'Object ID' in df:
 		df.rename(columns={"Object ID": "ID"})
 	if 'frx' in df:
 		df.rename(columns={"frx":"fbr_x", "fry":"fbr_y", "flx":"fbl_x", "fly":"fbl_y","brx":"bbr_x","bry":"bbr_y","blx":"bbl_x","bbly":"bbl_y"})
-	print(len(df['ID'].unique()))
+	print('Total # cars before preprocessing:', len(df['ID'].unique()))
 	print('Transform from image to road...')
 	camera_name = find_camera_name(file_path)
 	df = img_to_road(df, tform_path, camera_name)
@@ -225,6 +181,7 @@ def preprocess(file_path, tform_path):
 	# z = np.polyfit(df['Frame #'].iloc[[0,-1]].values,df['Timestamp'].iloc[[0,-1]].values, 1)
 	p = np.poly1d(z)
 	df['Timestamp'] = p(df['Frame #'])
+	
 	# print('Constrain x,y range by camera FOV')
 	if 'camera' not in df:
 		df['camera'] = find_camera_name(file_path)
@@ -800,17 +757,22 @@ def preprocess_multi_camera(data_path, tform_path):
 	return df
 	
 def preprocess_data_association(df):
+	'''
+	stitch objects based on their predicted trajectories
+	associate objects based on obvious overlaps
+	'''
 	tqdm.pandas()
 	
-	# APPLY DA ALGORIHTM
+	# stitch based on prediction (weighted distance measure)
 	print('Before DA: ', len(df['ID'].unique()), 'cars')
 	parent = stitch_objects(df)
 	df['ID'] = df['ID'].apply(lambda x: parent[x] if x in parent else x)
 	print('After stitching: ', len(df['ID'].unique()), 'cars')
+	
+	# associate based on overlaps (IOU measure)
 	parent = associate_overlaps(df)
 	df['ID'] = df['ID'].apply(lambda x: parent[x] if x in parent else x)  
 	print('After assocating overlaps: ', len(df['ID'].unique()), 'cars')
-	
 	print('Get the longest continuous frame chunk...')
 	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
 	df = applyParallel(df.groupby("Frame #"), del_repeat_meas_per_frame).reset_index(drop=True)

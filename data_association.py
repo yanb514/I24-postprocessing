@@ -4,8 +4,6 @@ import numpy as np
 import pathlib
 import math
 import os
-from numpy import arctan2,random,sin,cos,degrees, arcsin, radians,arccos
-from scipy.optimize import minimize,NonlinearConstraint,leastsq,fmin_slsqp,least_squares
 import numpy.linalg as LA
 from utils import *
 from tqdm import tqdm
@@ -14,8 +12,8 @@ import itertools
 
 def dist_score(B, B_data, DIST_MEAS='xy'):
 	'''
-	compute euclidean distance between B and B_data
-	B: predicted bbox location
+	compute euclidean distance between two boxes B and B_data
+	B: predicted bbox location ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
 	B_data: measurement
 	'''
 
@@ -30,30 +28,9 @@ def dist_score(B, B_data, DIST_MEAS='xy'):
 	else:
 		return
 	
-# def IOU_score(D1,D2):
-	# '''
-	# calculate the intersection of union of two boxes defined by d1 and D2
-	# D1: prediction box
-	# D2: measurement box
-	# https://stackoverflow.com/questions/57885406/get-the-coordinates-of-two-polygons-intersection-area-in-python
-	# '''
-	# print(type(D1), type(D2))
-	# if np.isnan(D2).any():
-		# return np.nan
-	# p = Polygon([(D1[2*i],D1[2*i+1]) for i in range(int(len(D1)/2))])
-	# q = Polygon([(D2[2*i],D2[2*i+1]) for i in range(int(len(D2)/2))])
-	# if (p.intersects(q)):
-		# intersection_area = p.intersection(q).area
-		# union_area = p.union(q).area
-		  # print(intersection_area, union_area)
-		# return float(intersection_area/union_area)
-	# else:
-		# return 0
 def IOU_score(car1, car2):
 	'''
-	calculate the intersection of union of two boxes defined by d1 and D2
-	D1: prediction box
-	D2: measurement box
+	calculate the intersection of union of trajectories associated with car1 and car2 based on their overlapped measurements
 	https://stackoverflow.com/questions/57885406/get-the-coordinates-of-two-polygons-intersection-area-in-python
 	'''
 	end = min(car1['Frame #'].iloc[-1],car2['Frame #'].iloc[-1])
@@ -77,7 +54,7 @@ def IOU_score(car1, car2):
 			# print(j)
 			# print(car1)
 			# print(car2)
-		if ~np.isnan(np.sum([D1,D2])):
+		if ~np.isnan(np.sum([D1,D2])): # if no Nan in any measurements
 			p = Polygon([(D1[2*i],D1[2*i+1]) for i in range(int(len(D1)/2))])
 			q = Polygon([(D2[2*i],D2[2*i+1]) for i in range(int(len(D2)/2))])
 			if (p.intersects(q)):
@@ -117,6 +94,8 @@ def predict_tracks(tracks):
 			
 def stitch_objects(df):
 	SCORE_THRESHOLD = 4 # TODO: to be tested
+	
+	# define the x,y range to keep track of cars in FOV (meter)
 	xmin, xmax, ymin, ymax = get_xy_minmax(df)
 	if xmin < 0:
 		xmin = 0
@@ -126,6 +105,8 @@ def stitch_objects(df):
 	nf = np.amax(np.array(df[['Frame #']])) # end frame
 	tracks = dict() # a dictionary to store all current objects in view
 	parent = {} # a dictionary to store all associated tracks
+	
+	# initialize parent{} with each car itself
 	groups = df.groupby('ID')
 	gl = list(groups.groups)
 	for g in gl:
@@ -163,7 +144,7 @@ def stitch_objects(df):
 			# make predictions to all existing tracks
 			x, tracks = predict_tracks(tracks)
 			
-		elif (m_box > 0) & (n_car == 0): # create new tracks (initialize?)
+		elif (m_box > 0) & (n_car == 0): # create new tracks (initialize)
 	#		  print('[3] frame ',k,', no tracks, initialize with first measurements')
 			for index, row in frame.iterrows():
 				new_id = row['ID']
@@ -213,8 +194,7 @@ def stitch_objects(df):
 	
 def associate_cross_camera(df_original):
 	'''
-	get all the ID pairs that associated to the same car
-	do this BEFORE preprocess_multi_camera
+	this function is essentially the same as associate_overlaps
 	'''
 	df = df_original.copy() # TODO: make this a method
 	
@@ -268,8 +248,7 @@ def associate_cross_camera(df_original):
 	
 def associate_overlaps(df_original):
 	'''
-	get all the ID pairs that associated to the same car
-	do this BEFORE preprocess_multi_camera
+	get all the ID pairs that associated to the same car based on overlaps
 	'''
 	df = df_original.copy() # TODO: make this a method
 	
@@ -296,10 +275,8 @@ def associate_overlaps(df_original):
 		else:
 			continue
 				
-		# path compression (part of union find): compress multiple ID's to the same object			
+	# path compression (part of union find): compress multiple ID's to the same object			
 	parent = compress(parent, gl)
-		# change ID to first appeared ones
-		# df2['ID'] = df2['ID'].apply(lambda x: parent[x] if x in parent else x)
 		
 	return parent
 	
