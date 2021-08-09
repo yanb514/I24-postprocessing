@@ -181,10 +181,10 @@ def rectify(df):
 	'''
 	apply solving obj1 for each objects in the entire dataframe
 	'''
+	print('Rectifying...')
 	# filter out len<2
 	df = df.groupby("ID").filter(lambda x: len(x)>=2)
 	tqdm.pandas()
-	# df = df.groupby("ID").progress_apply(rectify_single_camera).reset_index(drop=True)
 	df = applyParallel(df.groupby("ID"), rectify_single_camera).reset_index(drop=True)
 	return df
 

@@ -96,11 +96,9 @@ def stitch_objects(df):
 	SCORE_THRESHOLD = 4 # TODO: to be tested
 	
 	# define the x,y range to keep track of cars in FOV (meter)
-	xmin, xmax, ymin, ymax = get_xy_minmax(df)
-	if xmin < 0:
-		xmin = 0
-	if xmax > 400:
-		xmax = 400
+	camera_id = df['camera'].iloc[0]
+	xmin, xmax, ymin, ymax = get_camera_range(camera_id)
+
 	ns = np.amin(np.array(df[['Frame #']])) # start frame
 	nf = np.amax(np.array(df[['Frame #']])) # end frame
 	tracks = dict() # a dictionary to store all current objects in view
@@ -113,8 +111,8 @@ def stitch_objects(df):
 		parent[g] = g
 				
 	for k in range(ns,nf):
-		if (k%100==0):
-			print("Frame : %4d" % (k), flush=True)
+		# if (k%100==0):
+			# print("Frame : %4d" % (k), flush=True)
 		# get all measurements from current frame
 		frame = df.loc[(df['Frame #'] == k)] # TODO: use groupby frame to save time
 		y = np.array(frame[['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
@@ -177,7 +175,8 @@ def stitch_objects(df):
 					new_id = curr_id[n]
 					old_id = frame['ID'].iloc[m]
 					tracks[new_id][-1,:] = y[m] # change the last row from x_pred to ym				  
-					parent[old_id] = new_id
+					# parent[old_id] = new_id
+					parent = union(parent,old_id, new_id)
 					
 			# measurements that have no cars associated, create new
 			if len(pairs) < m_box:
@@ -188,7 +187,7 @@ def stitch_objects(df):
 					new_id = frame['ID'].iloc[m]
 					tracks[new_id] = np.reshape(y[m], (1,-1))
 					
-	parent = compress(parent,gl)				
+	parent = compress(parent,gl)	
 	return parent
 	
 	
@@ -234,7 +233,8 @@ def associate_cross_camera(df_original):
 				score = IOU_score(car1,car2)
 				if score > SCORE_THRESHOLD:
 					# associate!
-					parent[c2] = c1
+					# parent[c2] = c1
+					parent = union(parent, c1, c2)
 			else:
 				continue
 				
@@ -245,7 +245,19 @@ def associate_cross_camera(df_original):
 		
 	return parent
 
-	
+# def check_overlaps(pair, groups, parent):
+	# c1,c2 = pair
+	# car1 = groups.get_group(c1)
+	# car2 = groups.get_group(c2)
+	# if ((car1['direction'].iloc[0])==(car2['direction'].iloc[0])):
+		# score = IOU_score(car1,car2)
+		# if score > SCORE_THRESHOLD:
+			# associate!
+			# parent[c2] = c1
+	# else:
+		# continue
+	# return parent
+			
 def associate_overlaps(df_original):
 	'''
 	get all the ID pairs that associated to the same car based on overlaps
@@ -263,7 +275,6 @@ def associate_overlaps(df_original):
 	SCORE_THRESHOLD = 0 # IOU score
 				
 	comb = itertools.combinations(gl, 2)
-	
 	for c1,c2 in comb:
 		car1 = groups.get_group(c1)
 		car2 = groups.get_group(c2)
@@ -271,9 +282,12 @@ def associate_overlaps(df_original):
 			score = IOU_score(car1,car2)
 			if score > SCORE_THRESHOLD:
 				# associate!
-				parent[c2] = c1
+				# parent[c2] = c1
+				parent = union(parent, c1, c2)
 		else:
 			continue
+	# with multiprocessing.Pool() as pool:
+		# parent = pool.map(partial(check_overlaps,groups=groups,parent=parent), range(comb))
 				
 	# path compression (part of union find): compress multiple ID's to the same object			
 	parent = compress(parent, gl)
@@ -282,12 +296,22 @@ def associate_overlaps(df_original):
 	
 # path compression
 def find(parent, i):
-	if parent[parent[i]] == i:
-		parent[i] = i
-	if (parent[i] != i):
-		parent[i] = find(parent, parent[i])
-	return parent[i]
+	# if parent[parent[i]] == i:
+		# parent[i] = i
+	if parent[i] == i:
+		return i
+	# if (parent[i] != i):
+		# print(i, parent[i])
+		# parent[i] = find(parent, parent[i])
+	# return parent[i]
+	return find(parent, parent[i])
 
+def union(parent, x,y):
+	xset = find(parent,x)
+	yset = find(parent,y)
+	parent[xset] = yset
+	return parent
+	
 def compress(parent, groupList):	
 	for i in groupList:
 		find(parent, i)

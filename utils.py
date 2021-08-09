@@ -13,7 +13,7 @@ import glob
 from tqdm import tqdm
 from utils_optimization import *
 from data_association import *
-
+from functools import partial
 import time
 import itertools
 from itertools import combinations
@@ -163,6 +163,8 @@ def preprocess(file_path, tform_path, skip_row = 0):
 	'''
 	print('Reading data...')
 	df = read_data(file_path,skip_row)
+	if (df.columns[0] != 'Frame #'):
+		df = read_data(file_path,9)
 	if 'Object ID' in df:
 		df.rename(columns={"Object ID": "ID"})
 	if 'frx' in df:
@@ -783,7 +785,7 @@ def preprocess_data_association(df):
 	print('Before DA: ', len(df['ID'].unique()), 'cars')
 	parent = stitch_objects(df)
 	df['ID'] = df['ID'].apply(lambda x: parent[x] if x in parent else x)
-	print('After stitching: ', len(df['ID'].unique()), 'cars')
+	print('After stitching: ', len(df['ID'].unique()), 'cars, checking for overlaps...')
 	
 	# associate based on overlaps (IOU measure)
 	parent = associate_overlaps(df)
@@ -793,6 +795,14 @@ def preprocess_data_association(df):
 	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
 	df = applyParallel(df.groupby("Frame #"), del_repeat_meas_per_frame).reset_index(drop=True)
 	return df
+	
+def applyParallel(dfGrouped, func, args=None):
+	with Pool(cpu_count()) as p:
+		if args is None:
+			ret_list = list(tqdm(p.imap(func, [group for name, group in dfGrouped]), total=len(dfGrouped.groups)))
+		else:# if has extra arguments
+			ret_list = list(tqdm(p.imap(partial(func, args=args), [group for name, group in dfGrouped]), total=len(dfGrouped.groups)))
+	return pd.concat(ret_list)	
 	
 def get_camera_range(camera_id):
 	'''
@@ -869,20 +879,18 @@ def post_process(df):
 	print('cap width at 2.59m...')
 	df = df.groupby("ID").apply(width_filter).reset_index(drop=True)
 	
-	# print('extending tracks to edges of the frame...')
-	# # del xmin, xmax
-	# # global xmin, xmax, maxFrame
-	# xmin, xmax, ymin, ymax = get_xy_minmax(df)
-	# maxFrame = max(df['Frame #'])
-	# print(xmin, xmax)
-	# if xmin<0:
-		# xmin=0
-	# if xmax>600:
-		# xmax = 600
-	# args = (xmin, xmax, maxFrame)
-	# tqdm.pandas()
-	# # df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
-	# df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
+	print('extending tracks to edges of the frame...')
+	# del xmin, xmax
+	# global xmin, xmax, maxFrame
+	camera = df['camera'].iloc[0]
+	xmin, xmax, ymin, ymax = get_camera_range(camera)
+	maxFrame = max(df['Frame #'])
+	print(xmin, xmax)
+	args = (xmin, xmax, maxFrame)
+	tqdm.pandas()
+	# df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
+	df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
+	
 	print('standardize format for plotter...')
 	if ('lat' in df):
 		df = df.drop(columns=['lat','lon'])
