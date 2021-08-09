@@ -758,20 +758,6 @@ def naive_filter_3D(df):
 		new_df = pd.concat([new_df, g])
 	return new_df
 
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-import pathlib
-import math
-import os
-from numpy import arctan2,random,sin,cos,degrees, arcsin, radians,arccos
-from scipy.optimize import minimize,NonlinearConstraint,leastsq,fmin_slsqp,least_squares
-import numpy.linalg as LA
-from utils import *
-from tqdm import tqdm
-from functools import partial
-from multiprocessing import Pool, cpu_count
-from itertools import repeat
 
 def obj(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 	"""The cost function

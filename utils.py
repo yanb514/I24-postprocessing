@@ -166,10 +166,11 @@ def preprocess(file_path, tform_path, skip_row = 0):
 	if 'Object ID' in df:
 		df.rename(columns={"Object ID": "ID"})
 	if 'frx' in df:
-		df.rename(columns={"frx":"fbr_x", "fry":"fbr_y", "flx":"fbl_x", "fly":"fbl_y","brx":"bbr_x","bry":"bbr_y","blx":"bbl_x","bbly":"bbl_y"})
+		df = df.rename(columns={"frx":"fbr_x", "fry":"fbr_y", "flx":"fbl_x", "fly":"fbl_y","brx":"bbr_x","bry":"bbr_y","blx":"bbl_x","bly":"bbl_y"})
 	print('Total # cars before preprocessing:', len(df['ID'].unique()))
-	print('Transform from image to road...')
 	camera_name = find_camera_name(file_path)
+	print('Transform from image to road for {}...'.format(camera_name))
+	
 	df = img_to_road(df, tform_path, camera_name)
 	# print('Deleting unrelavent columns...')
 	# df = df.drop(columns=['BBox xmin','BBox ymin','BBox xmax','BBox ymax','vel_x','vel_y','lat','lon'])
@@ -177,9 +178,11 @@ def preprocess(file_path, tform_path, skip_row = 0):
 	print('Interpret missing timestamps...')
 	frames = [min(df['Frame #']),max(df['Frame #'])]
 	times = [min(df['Timestamp']),max(df['Timestamp'])]
-	z = np.polyfit(frames,times, 1)
-	# z = np.polyfit(df['Frame #'].iloc[[0,-1]].values,df['Timestamp'].iloc[[0,-1]].values, 1)
-	p = np.poly1d(z)
+	if np.isnan(times).any(): # if no time is recorded
+		p = np.poly1d([1/30,0]) # frame 0 corresponds to time 0, fps=30
+	else:
+		z = np.polyfit(frames,times, 1)
+		p = np.poly1d(z)
 	df['Timestamp'] = p(df['Frame #'])
 	
 	# print('Constrain x,y range by camera FOV')
@@ -345,14 +348,14 @@ def get_homography_matrix(camera_id, tform_path):
 	M = np.array(tf.iloc[-3:,0:3], dtype=float)
 	return M
 	
-def img_to_road(df,tform_path,camera_id):
+def img_to_road(df,tform_path,camera_id,ds=1):
 	'''
-	the images are downsampled
+	ds: downsample rate
 	'''
 	M = get_homography_matrix(camera_id, tform_path)
 	for pt in ['fbr','fbl','bbr','bbl']:
 		img_pts = np.array(df[[pt+'x', pt+'y']]) # get pixel coords
-		img_pts = img_pts/2 # downsample image to correctly correspond to M
+		img_pts = img_pts/ds # downsample image to correctly correspond to M
 		img_pts_1 = np.vstack((np.transpose(img_pts), np.ones((1,len(img_pts))))) # add ones to standardize
 		road_pts_un = M.dot(img_pts_1) # convert to gps unnormalized
 		road_pts_1 = road_pts_un / road_pts_un[-1,:][np.newaxis, :] # gps normalized s.t. last row is 1
@@ -832,8 +835,10 @@ def post_process(df):
 	# # df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
 	# df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
 	print('standardize format for plotter...')
-	df = df.drop(columns=['lat','lon'])
-	
+	if ('lat' in df):
+		df = df.drop(columns=['lat','lon'])
+	# if ('frx' in df) and ('fbr_x' in df):
+		# continue
 	return df
 
 def get_camera_x(x):

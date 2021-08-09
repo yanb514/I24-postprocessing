@@ -25,68 +25,68 @@ import random
 
 def getCarColor(speed, maxSpeed, carID) :
 	# based on speed
-    if(carID == 316120) : return 'black'
-    elif(carID == 344120) : return 'red'
-    elif(carID == 399120) : return 'white'
-    else :
-        coolwarm = cm.get_cmap('coolwarm_r')
-        if speed > 34 :
-            return coolwarm(0.999)
-        else :
-            normVal = speed / 34.0
-            return coolwarm(normVal)
+	if(carID == 316120) : return 'black'
+	elif(carID == 344120) : return 'red'
+	elif(carID == 399120) : return 'white'
+	else :
+		coolwarm = cm.get_cmap('coolwarm_r')
+		if speed > 34 :
+			return coolwarm(0.999)
+		else :
+			normVal = speed / 34.0
+			return coolwarm(normVal)
 			
 def get_cmap(n, name='hsv'):
-    '''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
-    RGB color; the keyword argument name must be a standard mpl colormap name.'''
-    return plt.cm.get_cmap(name, n)
+	'''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
+	RGB color; the keyword argument name must be a standard mpl colormap name.'''
+	return plt.cm.get_cmap(name, n)
 	
 	
 def restructCoord(frameSnap) :
-    for i in range(len(frameSnap)) :
-        if frameSnap[i,9] == 1 :  # If car is going left to right
-            # Transform the coordinates so that bbr_x and so on are in sync
-            # with cars going from right to left
-            
-            temp = frameSnap[i,0]
-            frameSnap[i,0] = frameSnap[i,4]
-            frameSnap[i,4] = temp
-            
-            temp = frameSnap[i,1]
-            frameSnap[i,1] = frameSnap[i,5]
-            frameSnap[i,5] = temp
-            
-            temp = frameSnap[i,2]
-            frameSnap[i,2] = frameSnap[i,6]
-            frameSnap[i,6] = temp
-            
-            temp = frameSnap[i,3]
-            frameSnap[i,3] = frameSnap[i,7]
-            frameSnap[i,7] = temp
-            
-        # Loop to change to feet
-        for j in range(0,8) :
-            frameSnap[i,j] *= 3.28084
-            
-        if math.isnan(frameSnap[i,11]) : frameSnap[i,11] = 0
-            
+	for i in range(len(frameSnap)) :
+		if frameSnap[i,9] == 1 :  # If car is going left to right
+			# Transform the coordinates so that bbr_x and so on are in sync
+			# with cars going from right to left
+			
+			temp = frameSnap[i,0]
+			frameSnap[i,0] = frameSnap[i,4]
+			frameSnap[i,4] = temp
+			
+			temp = frameSnap[i,1]
+			frameSnap[i,1] = frameSnap[i,5]
+			frameSnap[i,5] = temp
+			
+			temp = frameSnap[i,2]
+			frameSnap[i,2] = frameSnap[i,6]
+			frameSnap[i,6] = temp
+			
+			temp = frameSnap[i,3]
+			frameSnap[i,3] = frameSnap[i,7]
+			frameSnap[i,7] = temp
+			
+		# Loop to change to feet
+		for j in range(0,8) :
+			frameSnap[i,j] *= 3.28084
+			
+		if math.isnan(frameSnap[i,11]) : frameSnap[i,11] = 0
+			
 def fillBetweenX(xs) :
-    # Minor misalignments between the coordinates causes the fill function
-    # to fill color in random spaces. Fixing the numbers to be exact.
-    temp = list(xs)
-    temp[1] = temp[2]
-    temp[3] = temp[0]
-    newxs = tuple(temp)
-    
-    return newxs
+	# Minor misalignments between the coordinates causes the fill function
+	# to fill color in random spaces. Fixing the numbers to be exact.
+	temp = list(xs)
+	temp[1] = temp[2]
+	temp[3] = temp[0]
+	newxs = tuple(temp)
+	
+	return newxs
 
 def fillBetweenY(ys) :
-    temp = list(ys)
-    temp[1] = temp[0]
-    temp[2] = temp[3]
-    newys = tuple(temp)
-    
-    return newys
+	temp = list(ys)
+	temp[1] = temp[0]
+	temp[2] = temp[3]
+	newys = tuple(temp)
+	
+	return newys
 
 def generate_image_per_frame(i,df, dim, skip_frame, color_dic, image_folder):
 	xmin, xmax, ymin, ymax = dim
@@ -95,7 +95,7 @@ def generate_image_per_frame(i,df, dim, skip_frame, color_dic, image_folder):
 	img = plt.imread("highway_p1c3.jpg")
 	if 'speed' not in df:
 		df['speed'] = 30
-	maxSpeed = np.amax(np.array(df[['speed']]))        # Find the maximum speed of cars
+	maxSpeed = np.amax(np.array(df[['speed']]))		   # Find the maximum speed of cars
 	
 	if (i%skip_frame==0):
 		# Plot dimension setup
@@ -118,7 +118,7 @@ def generate_image_per_frame(i,df, dim, skip_frame, color_dic, image_folder):
 		for j in range(len(frameSnap)):
 			carID = frameSnap[j,8]
 			carSpeed = frameSnap[j,11]
-			coord = frameSnap[j,0:8]     # Road Coordinates of the Car
+			coord = frameSnap[j,0:8]	 # Road Coordinates of the Car
 			coord = np.reshape(coord,(-1,2)).tolist()
 			coord.append(coord[0])
 			xs, ys = zip(*coord)
@@ -127,7 +127,7 @@ def generate_image_per_frame(i,df, dim, skip_frame, color_dic, image_folder):
 			# Displaying information above the car
 			if xcoord < xmax and xcoord > xmin and ycoord < ymax :
 				plt.text(xcoord, ycoord, str(int(carID)), fontsize=8)
-#                 plt.text(xcoord, ycoord, str(int(carSpeed * 2.2369)) + ' mph', fontsize=8)    
+#				  plt.text(xcoord, ycoord, str(int(carSpeed * 2.2369)) + ' mph', fontsize=8)	
 			# Setting up car color
 			# oneCarColor = getCarColor(carSpeed, maxSpeed, carID)
 			oneCarColor = color_dic[carID]
@@ -136,8 +136,10 @@ def generate_image_per_frame(i,df, dim, skip_frame, color_dic, image_folder):
 			newys = fillBetweenY(ys)
 			ax.plot(newxs, newys, c = oneCarColor)
 			ax.fill(newxs, newys, color = oneCarColor)
-
-		plt.title(datetime.fromtimestamp(frame_time).strftime("%H:%M:%S"), pad=20)
+		try:
+			plt.title(datetime.fromtimestamp(frame_time).strftime("%H:%M:%S"), pad=20)
+		except:
+			pass
 		fig.savefig(image_folder + '/' + format(i,"04d") + '.jpg', dpi=80)
 		plt.close(fig)
 	return
@@ -157,11 +159,11 @@ def generate_frames(df, dim, skip_frame, image_folder):
 		color_dic[carID] = cmap(random.randint(0,nc))
 		
 		
-	maxFrameNum = int(max(df['Frame #']))    # Find the maximum number of frame
+	maxFrameNum = int(max(df['Frame #']))	 # Find the maximum number of frame
 	# maxFrameNum = 600
 	# if maxFrameNum > 2100:
 		# maxFrameNum = 2100
-	minFrameNum = int(min(df['Frame #']))    # Find the maximum number of frame
+	minFrameNum = int(min(df['Frame #']))	 # Find the maximum number of frame
 	
 	print('Frame: ', minFrameNum, maxFrameNum)
 

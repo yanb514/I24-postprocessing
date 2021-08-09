@@ -78,7 +78,7 @@ def plot_vehicle_csv(
             
             keep.append(row)
     pts = np.stack([[float(item) for item in row] for row in keep])
-    im_pts = pts[:,:2] * 2.0
+    im_pts = pts[:,:2]
     lmcs_pts = pts[:,2:]
     H,_ = cv2.findHomography(lmcs_pts,im_pts)
     
