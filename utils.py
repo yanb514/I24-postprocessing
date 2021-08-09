@@ -179,23 +179,28 @@ def preprocess(file_path, tform_path, skip_row = 0):
 	frames = [min(df['Frame #']),max(df['Frame #'])]
 	times = [min(df['Timestamp']),max(df['Timestamp'])]
 	if np.isnan(times).any(): # if no time is recorded
+		print('No timestamps values')
 		p = np.poly1d([1/30,0]) # frame 0 corresponds to time 0, fps=30
 	else:
 		z = np.polyfit(frames,times, 1)
 		p = np.poly1d(z)
 	df['Timestamp'] = p(df['Frame #'])
 	
-	# print('Constrain x,y range by camera FOV')
+	print('Constrain x,y range by camera FOV')
 	if 'camera' not in df:
 		df['camera'] = find_camera_name(file_path)
-	# if len(df['camera'].unique())==1:
-		# xmin, xmax, ymin, ymax = get_camera_range(df['camera'][0])
-	# else:
-		# xmin, xmax, ymin, ymax = get_camera_range('all')
-	# print(xmin, xmax, ymin, ymax)
-	# df = df.loc[(df['bbr_x'] >= xmin) & (df['bbr_x'] <= xmax)]
-	# df = df.loc[(df['bbr_y'] >= ymin) & (df['bbr_y'] <= ymax)]
+	if len(df['camera'].unique())==1:
+		xmin, xmax, ymin, ymax = get_camera_range(df['camera'][0])
+	else:
+		xmin, xmax, ymin, ymax = get_camera_range('all')
+		
+	print(xmin, xmax, ymin, ymax)
+	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+	df.loc[(df['bbr_x'] < xmin) | (df['bbr_x'] > xmax), pts] = np.nan # 
+	df.loc[(df['bbr_y'] < ymin) | (df['bbr_y'] > ymax), pts] = np.nan # 
 
+	print('Filtering out tailing place holders...')
+	df = df.groupby('ID').apply(remove_tailing_place_holders).reset_index(drop=True)
 	print('Get the longest continuous frame chuck...')
 	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
 	print('Get x direction...')
@@ -205,6 +210,14 @@ def preprocess(file_path, tform_path, skip_row = 0):
 	
 	return df
 
+def remove_tailing_place_holders(car):
+	notnan = ~np.isnan(np.sum(np.array(car[['bbr_x']]),axis=1))
+	if np.count_nonzero(notnan)>0:
+		start = np.where(notnan)[0][0]
+		end = np.where(notnan)[0][-1]
+		car = car.iloc[start:end+1]
+	return car
+	
 def find_camera_name(file_path):
 	camera_name_regex = re.compile(r'p(\d)*c(\d)*')
 	camera_name = camera_name_regex.search(str(file_path))
@@ -805,9 +818,45 @@ def get_camera_range(camera_id):
 	elif camera_id=='p1c6':
 		xmin = 240
 		xmax = 400
+	elif camera_id=='p2c1':
+		xmin = 182
+		xmax = 234
+	elif camera_id=='p2c2':
+		xmin = 220
+		xmax = 256
+	elif camera_id=='p2c3':
+		xmin = 840/3.281
+		xmax = 960/3.281
+	elif camera_id=='p2c4':
+		xmin = 840/3.281
+		xmax = 960/3.281
+	elif camera_id=='p2c5':
+		xmin = 920/3.281
+		xmax = 1040/3.281
+	elif camera_id=='p2c6':
+		xmin = 970/3.281
+		xmax = 1120/3.281
+	elif camera_id=='p3c1':
+		xmin = 1000/3.281
+		xmax = 1250/3.281
+	elif camera_id=='p3c2':
+		xmin = 1200/3.281
+		xmax = 1330/3.281
+	elif camera_id=='p3c3':
+		xmin = 1320/3.281
+		xmax = 1440/3.281
+	elif camera_id=='p3c4':
+		xmin = 1320/3.281
+		xmax = 1450/3.281
+	elif camera_id=='p3c5':
+		xmin = 1440/3.281
+		xmax = 1720/3.281
+	elif camera_id=='p3c6':
+		xmin = 1680/3.281
+		xmax = 1810/3.281
 	elif camera_id=='all':
 		xmin = 0
-		xmax = 400
+		xmax = 1810/3.281
 	else:
 		print('no camera ID in get_camera_range')
 		return
