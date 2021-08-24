@@ -32,8 +32,7 @@ def reorder_points(df):
 		make sure points in the road-plane do not flip
 	'''
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
-	Y = np.array(df[pts])
-	Y = Y.astype("float")
+	Y = np.array(df[pts]).astype("float")
 	xsort = np.sort(Y[:,[0,2,4,6]])
 	ysort = np.sort(Y[:,[1,3,5,7]])
 	try:
@@ -413,10 +412,7 @@ def extend_prediction(car, args):
 	'''
 	extend the dynamics of the vehicles that are still in view
 	'''
-	# print(args)
-	# xmin = args[0]
-	# xmax = args[1]
-	# print(kwargs.itmes())
+
 	xmin, xmax, maxFrame = args
 	dir = car['direction'].iloc[0]
 
@@ -445,6 +441,8 @@ def forward_predict(car,xmin,xmax,target, maxFrame):
 	ylast = car['y'].values[-1]
 	xlast = car['x'].values[-1]
 	vlast = car['speed'].values[-1]
+	if vlast < 1:
+		return car
 	thetalast = car['theta'].values[-1]
 	
 	w = car['width'].values[-1]
@@ -516,6 +514,8 @@ def backward_predict(car,xmin,xmax,target):
 	yfirst = car['y'].values[0]
 	xfirst = car['x'].values[0]
 	vfirst = car['speed'].values[0]
+	if vfirst < 1:
+		return car
 	thetafirst = car['theta'].values[0]
 	w = car['width'].values[-1]
 	l = car['length'].values[-1]
@@ -981,4 +981,54 @@ def width_filter(car):
 		
 		return car
 	
+def dashboard(cars):
+	'''
+	cars: list of dfs
+	show acceleration/speed/theta/... of each car
+	'''
 	
+	# acceleration
+	# theta
+	# omega
+
+	fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(1, 5, figsize=(15,3))
+	# x
+	i = 0
+	for car in cars:
+		ax1.scatter(car['Frame #'].values, car['fbr_x'].values, label=i, s=1)
+		i+=1
+	ax1.legend()
+	ax1.set_title('x (m)')
+		
+	# y positions
+	i = 0
+	for car in cars:
+		ax2.scatter(car['Frame #'].values, car['fbr_y'].values, s=1)
+		i+=1
+	ax2.set_title('y (m)')
+	
+	# speed
+	i = 0
+	for car in cars:
+		# notnan=~np.isnan(car.bbl_x.values)
+		# ax3.scatter(car['Frame #'].values[notnan][:-1], -np.diff(car['bbl_x'].values[notnan])/(4/30))
+		ax3.scatter(car['Frame #'].values, car['speed'].values, s=1)
+		i+=1
+	ax3.set_title('speed (m/s)')
+	
+	# acceleration
+	i = 0
+	for car in cars:
+		ax4.scatter(car['Frame #'].values, car['acceleration'].values, s=1)
+		i+=1
+	ax4.set_title('acceleration (m/s2)')
+	
+	# theta
+	i = 0
+	for car in cars:
+		ax5.scatter(car['Frame #'].values, car['theta'].values, s=1)
+		i+=1
+	ax5.set_title('theta (rad)')
+	
+	plt.show()
+	return
