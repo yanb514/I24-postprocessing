@@ -498,7 +498,8 @@ def forward_predict(car,xmin,xmax,target, maxFrame):
 				'ID': car['ID'].values[-1],
 				'direction': dir,
 				'acceleration': 0,
-				'Timestamp': timestamps[pos_frames]
+				'Timestamp': timestamps[pos_frames],
+				'Generation method': 'Extended'
 				}
 	car_ext = pd.DataFrame.from_dict(car_ext)
 	return pd.concat([car, car_ext], sort=False, axis=0)
@@ -571,7 +572,8 @@ def backward_predict(car,xmin,xmax,target):
 				'ID': car['ID'].values[0],
 				'direction': dir,
 				'acceleration': 0,
-				'Timestamp': timestamps[pos_frames]
+				'Timestamp': timestamps[pos_frames],
+				'Generation method': 'Extended'
 				}
 	car_ext = pd.DataFrame.from_dict(car_ext)
 	return pd.concat([car_ext, car], sort=False, axis=0)
@@ -794,6 +796,10 @@ def preprocess_data_association(df):
 	print('Get the longest continuous frame chunk...')
 	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
 	df = applyParallel(df.groupby("Frame #"), del_repeat_meas_per_frame).reset_index(drop=True)
+	# added the following noticed error in current version
+	camera = find_camera_name(file)
+	df = img_to_road(df, tform_path,camera)
+	df = df.groupby("ID").apply(reorder_points).reset_index(drop=True)
 	return df
 	
 def applyParallel(dfGrouped, func, args=None):
@@ -938,48 +944,48 @@ def width_filter(car):
 	w = car['width'].values[-1]
 	l = car['length'].values[-1]
 	notNan = np.count_nonzero(~np.isnan(np.sum(np.array(car[['bbr_x']]),axis=1)))
+	if (w < 2.59) & (notNan == len(car)):
+		return car
 	theta = car['theta'].values
 	dt=1/30
 	
-	if (w < 2.59) & (notNan == len(car)):
-		return car
-	else:
-		if w > 2.59:
-			w = 2.59
-		a = car['acceleration'].values
-		a = np.nan_to_num(a) # fill nan with zero
-		v = car['speed'].values
-		x = car['x'].values
-		y = car['y'].values
-		dir = car['direction'].values[0]
-		for i in range(1,len(car)):
-			v[i] = v[i-1] + a[i-1] * dt
-			x[i] = x[i-1] + dir*v[i-1] * dt
-			y[i] = y[i-1]
-		# compute new positions
-		xa = x + w/2*sin(theta)
-		ya = y - w/2*cos(theta)
-		xb = xa + l*cos(theta)
-		yb = ya + l*sin(theta)
-		xc = xb - w*sin(theta)
-		yc = yb + w*cos(theta)
-		xd = xa - w*sin(theta)
-		yd = ya + w*cos(theta)
-		
-		car['width'] = w
-		car['x'] = x
-		car['y'] = y
-		car['bbr_x'] = xa
-		car['bbr_y'] = ya
-		car['fbr_x']= xb
-		car['fbr_y']= yb
-		car['fbl_x']= xc
-		car['fbl_y']= yc
-		car['bbl_x']= xd
-		car['bbl_y']= yd
-		car['speed']= v
-		
-		return car
+	
+	if w > 2.59:
+		w = 2.59
+	# a = car['acceleration'].values
+	# a = np.nan_to_num(a) # fill nan with zero
+	v = car['speed'].values
+	x = car['x'].values
+	y = car['y'].values
+	# dir = car['direction'].values[0]
+	# for i in range(1,len(car)):
+		# v[i] = v[i-1] + a[i-1] * dt
+		# x[i] = x[i-1] + dir*v[i-1] * dt
+		# y[i] = y[i-1]
+	# compute new positions
+	xa = x + w/2*sin(theta)
+	ya = y - w/2*cos(theta)
+	xb = xa + l*cos(theta)
+	yb = ya + l*sin(theta)
+	xc = xb - w*sin(theta)
+	yc = yb + w*cos(theta)
+	xd = xa - w*sin(theta)
+	yd = ya + w*cos(theta)
+	
+	car['width'] = w
+	car['x'] = x
+	car['y'] = y
+	car['bbr_x'] = xa
+	car['bbr_y'] = ya
+	car['fbr_x']= xb
+	car['fbr_y']= yb
+	car['fbl_x']= xc
+	car['fbl_y']= yc
+	car['bbl_x']= xd
+	car['bbl_y']= yd
+	car['speed']= v
+	
+	return car
 	
 def dashboard(cars):
 	'''

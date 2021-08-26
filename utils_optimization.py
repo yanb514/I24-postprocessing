@@ -15,33 +15,37 @@ def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 		pretty accurate and faster than previous formulation
 	""" 
 	# unpack variables
-	a = X[:N]
+	# a = X[:N]
+	# theta = X[N:2*N]
+	# v0,x0,y0,w,l = X[2*N:]
+	
+	# ver2 unpack
+	v = X[:N]
 	theta = X[N:2*N]
-	# omega = np.diff(theta)/dt
-	# omega = np.append(omega,omega[-1])
-	v0,x0,y0,w,l = X[2*N:]
+	x0,y0,w,l = X[2*N:]
 	
 	# v = np.zeros(N)
 	# v[0] = v0
 	# for k in range(0,N-2):
 		# v[k+1] = v[k] + a[k]*dt[k]
 	# v[-1]=v[-2]
-	# vx = v*cos(theta)
-	# vy = v*sin(theta)
-	
+	vx = v*cos(theta)
+	vy = v*sin(theta)
+	a = np.diff(v)/dt
+	a = np.append(a,a[-1])
 	# take a directional
-	ax = a*cos(theta)
-	ay = a*sin(theta)
-	vx = np.zeros(N)
-	vy = np.zeros(N)
-	vx[0] = v0*cos(theta[0])
-	vy[0] = v0*sin(theta[0])
-	for k in range(0,N-1):  
-		vx[k+1]=vx[k]+ax[k]*dt[k]
-		vy[k+1]=vy[k]+ay[k]*dt[k]
-	v = np.sqrt(vx**2+vy**2)	                    
-	x = np.zeros(N)         
-	y = np.zeros(N)   
+	# ax = a*cos(theta)
+	# ay = a*sin(theta)
+	# vx = np.zeros(N)
+	# vy = np.zeros(N)
+	# vx[0] = v0*cos(theta[0])
+	# vy[0] = v0*sin(theta[0])
+	# for k in range(0,N-1):  
+		# vx[k+1]=vx[k]+ax[k]*dt[k]
+		# vy[k+1]=vy[k]+ay[k]*dt[k]
+	# v = np.sqrt(vx**2+vy**2)	                    
+	# x = np.zeros(N)         
+	# y = np.zeros(N)   
 	x = np.zeros(N)
 	y = np.zeros(N)
 	x[0] = x0
@@ -63,18 +67,22 @@ def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
 
 	# min perturbation
-	c1 = lam1*np.sum(LA.norm(Y1-Yre[notNan,:],axis=1))/np.count_nonzero(notNan)
+	# diff = Y1-Yre[notNan,:]
+	# sum = np.sum(diff,axis=1)
+	# c1=lam1*LA.norm(sum,1)
+	c1 = lam1*np.sum(LA.norm(Y1-Yre[notNan,:],axis=1))
 	# xs = Y1[:,[0,2,4,6]]-Yre[:,[0,2,4,6]][notNan,:]
 	# ys = Y1[:,[1,3,5,7]]-Yre[:,[1,3,5,7]][notNan,:]
-	# c1 = lam1*(0.99*np.sum(LA.norm(xs,axis=1))+0.01*np.sum(LA.norm(ys,axis=1)))/np.count_nonzero(notNan)
+	# c1 = lam1*(0.8*np.sum(LA.norm(xs,axis=1))+0.2*np.sum(LA.norm(ys,axis=1)))/np.count_nonzero(notNan)
 	# regularize acceleration
-	c2 = lam2*(LA.norm(ax,2)+LA.norm(ay,2))/np.count_nonzero(notNan)
+	# c2 = lam2*LA.norm(ax,2)+LA.norm(ay,2))/np.count_nonzero(notNan)
+	c2 = lam2*LA.norm(a,2)
 	# regularize jerk
-	c3 = lam3*LA.norm(np.diff(a),2)/np.count_nonzero(notNan)
+	c3 = lam3*LA.norm(np.diff(a)/dt,2)
 	# regularize angle
-	c4 = lam4*LA.norm(sin(theta),2)/np.count_nonzero(notNan)
+	c4 = lam4*LA.norm(sin(theta),2)
 	# regularize angular velocity
-	c5 = lam5*LA.norm(np.diff(theta),2)/np.count_nonzero(notNan)
+	c5 = lam5*LA.norm(np.diff(theta)/dt,2)
 
 	return c1+c2+c3+c4+c5
 	
@@ -83,11 +91,11 @@ def unpack1(res,N,dt):
 	# extract results
 	# unpack variables
 
-	a = res.x[:N]
-	theta = res.x[N:2*N]
-	omega = np.diff(theta)/dt
-	omega = np.append(omega,omega[-1])
-	v0,x0,y0,w,l = res.x[2*N:]
+	# a = res.x[:N]
+	# theta = res.x[N:2*N]
+	# omega = np.diff(theta)/dt
+	# omega = np.append(omega,omega[-1])
+	# v0,x0,y0,w,l = res.x[2*N:]
 	
 	# v = np.zeros(N)
 	# v[0] = v0
@@ -98,19 +106,28 @@ def unpack1(res,N,dt):
 	# vy = v*sin(theta)
 
 	# take a directional
-	ax = a*cos(theta)
-	ay = a*sin(theta)
-	vx = np.zeros(N)
-	vy = np.zeros(N)
-	vx[0] = v0*cos(theta[0])
-	vy[0] = v0*sin(theta[0])
-	for k in range(0,N-1):  
-		vx[k+1]=vx[k]+ax[k]*dt[k]
-		vy[k+1]=vy[k]+ay[k]*dt[k]
-	v = np.sqrt(vx**2+vy**2)	                    
+	# ax = a*cos(theta)
+	# ay = a*sin(theta)
+	# vx = np.zeros(N)
+	# vy = np.zeros(N)
+	# vx[0] = v0*cos(theta[0])
+	# vy[0] = v0*sin(theta[0])
+	# for k in range(0,N-1):  
+		# vx[k+1]=vx[k]+ax[k]*dt[k]
+		# vy[k+1]=vy[k]+ay[k]*dt[k]
+	# v = np.sqrt(vx**2+vy**2)	                    
 	x = np.zeros(N)         
-	y = np.zeros(N)   
+	y = np.zeros(N) 
 	
+	# ver2 unpack
+	v = res.x[:N]
+	theta = res.x[N:2*N]
+	x0,y0,w,l = res.x[2*N:]
+	
+	vx = v*cos(theta)
+	vy = v*sin(theta)
+	a = np.diff(v)/dt
+	a = np.append(a,a[-1])
 	x[0] = x0               
 	y[0] = y0               
 	for k in range(0,N-1):  
@@ -128,112 +145,23 @@ def unpack1(res,N,dt):
 	yd = ya + w*cos(theta)  
 	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
 	                        
-	return Yre, x,y,v,a,theta,omega,w,l
+	return Yre, x,y,v,a,theta,w,l
 	                        
-def obj2(X, Y1,N,dt,notNan, w,l,lam1,lam2,lam3,lam4,lam5):
-	"""The cost function given w, l
-		X = [a,theta,v0,x0,y0]^T
-	"""                     
-	# unpack variables      
-	a = X[:N]               
-	theta = X[N:2*N]        
-	omega = np.diff(theta)/dt
-	omega = np.append(omega,omega[-1])
-	v0,x0,y0 = X[2*N:]      
-	                        
-	v = np.zeros(N)         
-	v[0] = v0               
-	for k in range(0,N-2):  
-		v[k+1] = v[k] + a[k]*dt[k]
-	v[-1]=v[-2]             
-	vx = v*cos(theta)       
-	vy = v*sin(theta)       
-	                        
-	x = np.zeros(N)         
-	y = np.zeros(N)         
-	x[0] = x0               
-	y[0] = y0               
-	                        
-	for k in range(0,N-1):  
-		x[k+1] = x[k] + vx[k]*dt[k]
-		y[k+1] = y[k] + vy[k]*dt[k]
-	                        
-	# compute positions     
-	xa = x + w/2*sin(theta) 
-	ya = y - w/2*cos(theta) 
-	xb = xa + l*cos(theta)  
-	yb = ya + l*sin(theta)  
-	xc = xb - w*sin(theta)  
-	yc = yb + w*cos(theta)  
-	xd = xa - w*sin(theta)  
-	yd = ya + w*cos(theta)  
-	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
-                            
-	# min perturbation      
-	c1 = lam1*np.sum(LA.norm(Y1-Yre[notNan,:],axis=1))/np.count_nonzero(notNan)
-	# regularize acceleration
-	c2 = lam2*LA.norm(a,2)/np.count_nonzero(notNan)
-	# regularize jerk       
-	c3 = lam3*LA.norm(np.diff(a),2)/np.count_nonzero(notNan)
-	# regularize angle      
-	c4 = lam4*LA.norm(sin(theta),2)/np.count_nonzero(notNan)
-	# regularize angular velocity
-	c5 = lam5*LA.norm(np.diff(theta),2)/np.count_nonzero(notNan)
-	return c1+c2+c3+c4+c5   
-	                        
-	                        
-def unpack2(res,N,dt,w,l):  
-	# extract results       
-	# unpack variables      
-                            
-	a = res.x[:N]           
-	theta = res.x[N:2*N]    
-	                        
-	omega = np.diff(theta)/dt
-	omega = np.append(omega,omega[-1])
-	v0,x0,y0 = res.x[2*N:]  
-	                        
-	v = np.zeros(N)         
-	v[0] = v0               
-	for k in range(0,N-2):  
-		v[k+1] = v[k] + a[k]*dt[k]
-	v[-1]=v[-2]             
-	vx = v*cos(theta)       
-	vy = v*sin(theta)       
-                            
-	x = np.zeros(N)         
-	y = np.zeros(N)         
-	x[0] = x0               
-	y[0] = y0               
-	for k in range(0,N-1):  
-		x[k+1] = x[k] + vx[k]*dt[k]
-		y[k+1] = y[k] + vy[k]*dt[k]
-                            
-	# compute positions     
-	xa = x + w/2*sin(theta) 
-	ya = y - w/2*cos(theta) 
-	xb = xa + l*cos(theta)  
-	yb = ya + l*sin(theta)  
-	xc = xb - w*sin(theta)  
-	yc = yb + w*cos(theta)  
-	xd = xa - w*sin(theta)  
-	yd = ya + w*cos(theta)  
-	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
-	return Yre, x,y,v,a,theta,omega
-	                        
-	                        
+
 def rectify_single_camera(df):
 	'''                     
 	df: a single track in one camera view
-	'''                     
+	'''          
+	
 	# print(df['ID'].iloc[0]) 
-	# print(len(df))          
+	# print(len(df))  
+	# plot_track_df(df)	
 	# optimization parameters
-	lam1 = 100 # modification of measurement 1
-	lam2 = 0 # acceleration 2
-	lam3 = 1 # jerk 0       
-	lam4 = 10 # theta 10    
-	lam5 = 10 # omega 0     
+	lam1 = 1 # modification of measurement 1
+	lam2 = 0 # acceleration 0
+	lam3 = 0.01 # jerk 0.2      
+	lam4 = 0 # theta 0    
+	lam5 = 0.02 # omega 10     
                             
 	timestamps = df.Timestamp.values
 	dt = np.diff(timestamps)
@@ -254,52 +182,32 @@ def rectify_single_camera(df):
 	v0 = (Y1[-1,0]-Y1[0,0])/(timestamps[notNan][-1]-timestamps[notNan][0])
 	                        
 	sign = np.sign(v0)      
-	v0 = np.abs(v0)         
+	v0 = np.array([np.abs(v0)]*N)        
 	x0 = (Y1[0,0]+Y1[0,6])/2
 	y0 = (Y1[0,1]+Y1[0,7])/2
 	theta0 = np.ones((N))*np.arccos(sign)
                             
 	                        
-	# try basinhopping      
-	# if exists perfect bbox for vehicle dimensions:
-	if df['width'].iloc[0]>0:
-		# print('perfect bbox exists')
-		w = df['width'].iloc[0]
-		l = df['length'].iloc[0]
-		X0 = np.concatenate((a0.T, theta0.T, \
-					 [v0,x0,y0]),axis=-1)
-		if sign>0: # positive x direction
-			bnds = [(-5,5) for i in range(0,N)]+\
-				[(-np.pi/8,np.pi/8) for i in range(N)]+\
-				[(0,40),(-np.inf,np.inf),(0,np.inf)]
-		else:               
-			bnds = [(-5,5) for i in range(0,N)]+\
-				[(-np.pi/8+np.pi,np.pi/8+np.pi) for i in range(N)]+\
-				[(0,40),(-np.inf,np.inf),(0,np.inf)]
-		minimizer_kwargs = {"method":"Nelder-Mead", "args":(Y1,N,dt,notNan,w,l,lam1,lam2,lam3,lam4,lam5),'bounds':bnds,'options':{'maxiter':300,'disp': False}}
-		res = basinhopping(obj2, X0, minimizer_kwargs=minimizer_kwargs,niter=0)
-		Yre, x,y,v,a,theta,omega = unpack2(res,N,dt,w,l)
-		                    
-	else: # no perfect box exists	
-		w0 = np.nanmean(np.abs(Y1[:,1]-Y1[:,7]))
-		l0 = np.nanmean(np.abs(Y1[:,0]-Y1[:,2]))
-		X0 = np.concatenate((a0.T, theta0.T, \
-					 [v0,x0,y0,w0,l0]),axis=-1)
-		if sign>0: # positive x direction
-			bnds = [(-5,5) for i in range(0,N)]+\
-				[(-np.pi/8,np.pi/8) for i in range(N)]+\
-				[(0,40),(-np.inf,np.inf),(0,np.inf),(1,4),(2,np.inf)]
-		else:               
-			bnds = [(-5,5) for i in range(0,N)]+\
-				[(-np.pi/8+np.pi,np.pi/8+np.pi) for i in range(N)]+\
-				[(0,40),(-np.inf,np.inf),(0,np.inf),(1,4),(2,np.inf)]
-		# print('no perfect box')
-		minimizer_kwargs = {"method":"Nelder-Mead", "args":(Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5),'bounds':bnds,'options':{'disp': True}}
-		res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=0)
-		# res = minimize(obj1, X0, (Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5), method = 'SLSQP',
-						# bounds=bnds, options={'disp': False})# L-BFGS-B, SLSQP, Nelder-Mead,'maxiter':100000
-		# extract results   
-		Yre, x,y,v,a,theta,omega,w,l = unpack1(res,N,dt)
+	# no perfect box exists	
+	w0 = np.nanmean(np.abs(Y1[:,1]-Y1[:,7]))
+	l0 = np.nanmean(np.abs(Y1[:,0]-Y1[:,2]))
+	X0 = np.concatenate((v0.T, theta0.T, \
+				 [x0,y0,w0,l0]),axis=-1)
+	if sign>0: # positive x direction
+		bnds = [(0,50) for i in range(0,N)]+\
+			[(-np.pi/8,np.pi/8) for i in range(N)]+\
+			[(-np.inf,np.inf),(0,np.inf),(1,4),(2,np.inf)]
+	else:               
+		bnds = [(0,50) for i in range(0,N)]+\
+			[(-np.pi/8+np.pi,np.pi/8+np.pi) for i in range(N)]+\
+			[(-np.inf,np.inf),(0,np.inf),(1,4),(2,np.inf)]
+	# print('no perfect box')
+	minimizer_kwargs = {"method":"SLSQP", "args":(Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5),'bounds':bnds,'options':{'disp': False}}
+	res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=50)
+	# res = minimize(obj1, X0, (Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5), method = 'SLSQP',
+					# bounds=bnds, options={'maxiter':100000, 'disp': False})# L-BFGS-B, SLSQP, Nelder-Mead,'maxiter':100000
+	# extract results   
+	Yre, x,y,v,a,theta,w,l = unpack1(res,N,dt)
 	# score = LA.norm(Y1-Yre[notNan,:],'fro')/np.count_nonzero(notNan)
 	# score = np.sum(LA.norm(Y1-Yre[notNan,:],axis=1))/np.count_nonzero(notNan)
 	# xs = Y1[:,[0,2,4,6]]-Yre[:,[0,2,4,6]][notNan,:]
@@ -316,7 +224,7 @@ def rectify_single_camera(df):
 	df.loc[:,'theta'] = theta
 	df.loc[:,'width'] = w   
 	df.loc[:,'length'] = l  
-	                        
+	# plot_track_df(df)                   
 	return df               
                             
                             

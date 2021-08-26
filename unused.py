@@ -865,6 +865,97 @@ def unpack(res,N,dt):
 	return Yre, x,y,v,a,j,theta,omega,w,l
 	
 	
-	
+def obj2(X, Y1,N,dt,notNan, w,l,lam1,lam2,lam3,lam4,lam5):
+	"""The cost function given w, l
+		X = [a,theta,v0,x0,y0]^T
+	"""                     
+	# unpack variables      
+	a = X[:N]               
+	theta = X[N:2*N]        
+	omega = np.diff(theta)/dt
+	omega = np.append(omega,omega[-1])
+	v0,x0,y0 = X[2*N:]      
+	                        
+	v = np.zeros(N)         
+	v[0] = v0               
+	for k in range(0,N-2):  
+		v[k+1] = v[k] + a[k]*dt[k]
+	v[-1]=v[-2]             
+	vx = v*cos(theta)       
+	vy = v*sin(theta)       
+	                        
+	x = np.zeros(N)         
+	y = np.zeros(N)         
+	x[0] = x0               
+	y[0] = y0               
+	                        
+	for k in range(0,N-1):  
+		x[k+1] = x[k] + vx[k]*dt[k]
+		y[k+1] = y[k] + vy[k]*dt[k]
+	                        
+	# compute positions     
+	xa = x + w/2*sin(theta) 
+	ya = y - w/2*cos(theta) 
+	xb = xa + l*cos(theta)  
+	yb = ya + l*sin(theta)  
+	xc = xb - w*sin(theta)  
+	yc = yb + w*cos(theta)  
+	xd = xa - w*sin(theta)  
+	yd = ya + w*cos(theta)  
+	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
+                            
+	# min perturbation      
+	c1 = lam1*np.sum(LA.norm(Y1-Yre[notNan,:],axis=1))/np.count_nonzero(notNan)
+	# regularize acceleration
+	c2 = lam2*LA.norm(a,2)/np.count_nonzero(notNan)
+	# regularize jerk       
+	c3 = lam3*LA.norm(np.diff(a),2)/np.count_nonzero(notNan)
+	# regularize angle      
+	c4 = lam4*LA.norm(sin(theta),2)/np.count_nonzero(notNan)
+	# regularize angular velocity
+	c5 = lam5*LA.norm(np.diff(theta),2)/np.count_nonzero(notNan)
+	return c1+c2+c3+c4+c5   
+	                        
+	                        
+def unpack2(res,N,dt,w,l):  
+	# extract results       
+	# unpack variables      
+                            
+	a = res.x[:N]           
+	theta = res.x[N:2*N]    
+	                        
+	omega = np.diff(theta)/dt
+	omega = np.append(omega,omega[-1])
+	v0,x0,y0 = res.x[2*N:]  
+	                        
+	v = np.zeros(N)         
+	v[0] = v0               
+	for k in range(0,N-2):  
+		v[k+1] = v[k] + a[k]*dt[k]
+	v[-1]=v[-2]             
+	vx = v*cos(theta)       
+	vy = v*sin(theta)       
+                            
+	x = np.zeros(N)         
+	y = np.zeros(N)         
+	x[0] = x0               
+	y[0] = y0               
+	for k in range(0,N-1):  
+		x[k+1] = x[k] + vx[k]*dt[k]
+		y[k+1] = y[k] + vy[k]*dt[k]
+                            
+	# compute positions     
+	xa = x + w/2*sin(theta) 
+	ya = y - w/2*cos(theta) 
+	xb = xa + l*cos(theta)  
+	yb = ya + l*sin(theta)  
+	xc = xb - w*sin(theta)  
+	yc = yb + w*cos(theta)  
+	xd = xa - w*sin(theta)  
+	yd = ya + w*cos(theta)  
+	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
+	return Yre, x,y,v,a,theta,omega
+	                        
+	                        	
 	
 	
