@@ -957,5 +957,76 @@ def unpack2(res,N,dt,w,l):
 	return Yre, x,y,v,a,theta,omega
 	                        
 	                        	
+def forward_predict(car,xmin,xmax,target, maxFrame):
+	'''
+	stops at maxFrame
+	'''
+	# lasts
+	framelast = car['Frame #'].values[-1]
+	if framelast >= maxFrame:
+		return car
+	ylast = car['y'].values[-1]
+	xlast = car['x'].values[-1]
+	vlast = car['speed'].values[-1]
+	alast = car['acceleration'].values[-1]
+	if vlast < 1 or alast<-5:
+		return car
+	thetalast = np.mean(car['theta'].values)
 	
+	w = car['width'].values[-1]
+	l = car['length'].values[-1]
+	dir = car['direction'].values[-1]
+	dt = 1/30
+
+	v = []
+	xfinal = xlast
+	if target=='xmax':
+		while xfinal < xmax: 
+			vlast = vlast + alast*dt
+			xfinal = xfinal + dir*vlast*dt*cos(thetalast)
+			v.append(vlast)
+
+	else:
+		while xfinal > xmin: # tested
+			vlast = vlast + alast*dt
+			xfinal = xfinal + dir*vlast*dt*sin(thetalast)
+			v.append(vlast)
+
+	
+	v = np.array(v)
+	theta = np.ones(v.shape) * thetalast
+	# v = np.ones(x.shape) * vlast
+	tlast = car['Timestamp'].values[-1]
+	timestamps = np.linspace(tlast+dt, tlast+dt+dt*len(v), len(v), endpoint=False)
+
+	# compute positions
+	Yre,x,y,a = generate(w,l,xlast+dt*vlast*cos(theta[0]),ylast+dt*vlast*sin(theta[0]),theta,v,outputall=True)
+	
+	frames = np.arange(framelast+1,framelast+1+len(x))
+	pos_frames = frames<=maxFrame
+	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+	car_ext = {'Frame #': frames[pos_frames],
+				'x':x[pos_frames],
+				'y':y[pos_frames],
+				'bbr_x': 0,
+				'bbr_y': 0,
+				'fbr_x': 0,
+				'fbr_y': 0,
+				'fbl_x': 0,
+				'fbl_y': 0,
+				'bbl_x': 0,
+				'bbl_y': 0,
+				'speed': v,
+				'theta': theta,
+				'width': w,
+				'length':l,
+				'ID': car['ID'].values[-1],
+				'direction': dir,
+				'acceleration': a,
+				'Timestamp': timestamps[pos_frames],
+				'Generation method': 'Extended'
+				}
+	car_ext = pd.DataFrame.from_dict(car_ext)
+	car_ext[pts] = Yre[pos_frames,:]
+	return pd.concat([car, car_ext], sort=False, axis=0)	
 	

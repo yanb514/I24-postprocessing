@@ -411,22 +411,23 @@ def get_xy_minmax(df):
 def extend_prediction(car, args):
 	'''
 	extend the dynamics of the vehicles that are still in view
+	constant acceleration model
 	'''
-
+	print(car['ID'].iloc[0])
 	xmin, xmax, maxFrame = args
 	dir = car['direction'].iloc[0]
 
 	xlast = car['x'].iloc[-1]	
 	xfirst = car['x'].iloc[0]
 	
-	if (dir == 1) & (xlast < xmax):
+	if (dir == 1) & (xlast < xmax):#
 		car = forward_predict(car,xmin,xmax,'xmax',maxFrame)
 	if (dir == -1) & (xlast > xmin):
-		car = forward_predict(car,xmin,xmax,'xmin', maxFrame) # tested
-	if (dir == 1) & (xfirst > xmin):
+		car = forward_predict(car,xmin,xmax,'xmin', maxFrame)
+	if (dir == 1) & (xfirst > xmin):#tested
 		car = backward_predict(car,xmin,xmax,'xmin')
 	if (dir == -1) & (xfirst < xmax):
-		car = backward_predict(car,xmin,xmax,'xmax') # tested, missing start point
+		car = backward_predict(car,xmin,xmax,'xmax')
 	return car
 		
 
@@ -441,68 +442,69 @@ def forward_predict(car,xmin,xmax,target, maxFrame):
 	ylast = car['y'].values[-1]
 	xlast = car['x'].values[-1]
 	vlast = car['speed'].values[-1]
-	if vlast < 1:
+	alast = car['acceleration'].values[-1]
+	if vlast < 1 or alast<-5 or alast>5:
 		return car
-	thetalast = car['theta'].values[-1]
+	thetalast = np.mean(car['theta'].values)
 	
 	w = car['width'].values[-1]
 	l = car['length'].values[-1]
 	dir = car['direction'].values[-1]
 	dt = 1/30
-	x = []
-	
+
+	v = []
+	xfinal = xlast
 	if target=='xmax':
-		while xlast < xmax: 
-			xlast = xlast + dir*vlast*dt
-			x.append(xlast)
+		while xfinal < xmax and vlast > 0: 
+			vlast = vlast + alast*dt
+			xfinal = xfinal + vlast*dt*cos(thetalast)
+			v.append(vlast)
+
+
 	else:
-		while xlast > xmin: # tested
-			xlast = xlast + dir*vlast*dt
-			x.append(xlast)
+		while xfinal > xmin and vlast > 0: # tested
+			vlast = vlast + alast*dt
+			xfinal = xfinal + vlast*dt*cos(thetalast)
+			v.append(vlast)
+
 	
-	x = np.array(x)
-	y = np.ones(x.shape) * ylast
-	theta = np.ones(x.shape) * thetalast
-	v = np.ones(x.shape) * vlast
+	v = np.array(v)
+	theta = np.ones(v.shape) * thetalast
+	# v = np.ones(x.shape) * vlast
 	tlast = car['Timestamp'].values[-1]
-	timestamps = np.linspace(tlast+dt, tlast+dt+dt*len(x), len(x), endpoint=False)
+	timestamps = np.linspace(tlast+dt, tlast+dt+dt*len(v), len(v), endpoint=False)
 
 	# compute positions
-	xa = x + w/2*sin(theta)
-	ya = y - w/2*cos(theta)
-	xb = xa + l*cos(theta)
-	yb = ya + l*sin(theta)
-	xc = xb - w*sin(theta)
-	yc = yb + w*cos(theta)
-	xd = xa - w*sin(theta)
-	yd = ya + w*cos(theta)
-	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)		
+	Yre,x,y,a = generate(w,l,xlast+dt*vlast*cos(theta[0]),ylast+dt*vlast*sin(theta[0]),theta,v,outputall=True)
 	
 	frames = np.arange(framelast+1,framelast+1+len(x))
 	pos_frames = frames<=maxFrame
+	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
 	car_ext = {'Frame #': frames[pos_frames],
 				'x':x[pos_frames],
 				'y':y[pos_frames],
-				'bbr_x': xa[pos_frames],
-				'bbr_y': ya[pos_frames],
-				'fbr_x': xb[pos_frames],
-				'fbr_y': yb[pos_frames],
-				'fbl_x': xc[pos_frames],
-				'fbl_y': yc[pos_frames],
-				'bbl_x': xd[pos_frames], 
-				'bbl_y': yd[pos_frames],
-				'speed': vlast,
-				'theta': thetalast,
+				'bbr_x': 0,
+				'bbr_y': 0,
+				'fbr_x': 0,
+				'fbr_y': 0,
+				'fbl_x': 0,
+				'fbl_y': 0,
+				'bbl_x': 0,
+				'bbl_y': 0,
+				'speed': v[pos_frames],
+				'theta': theta[pos_frames],
 				'width': w,
 				'length':l,
 				'ID': car['ID'].values[-1],
 				'direction': dir,
-				'acceleration': 0,
+				'acceleration': a[pos_frames],
 				'Timestamp': timestamps[pos_frames],
 				'Generation method': 'Extended'
 				}
 	car_ext = pd.DataFrame.from_dict(car_ext)
-	return pd.concat([car, car_ext], sort=False, axis=0)
+	car_ext[pts] = Yre[pos_frames,:]
+	return pd.concat([car, car_ext], sort=False, axis=0)	
+	
 
 def backward_predict(car,xmin,xmax,target):
 	'''
@@ -515,30 +517,47 @@ def backward_predict(car,xmin,xmax,target):
 	yfirst = car['y'].values[0]
 	xfirst = car['x'].values[0]
 	vfirst = car['speed'].values[0]
-	if vfirst < 1:
+	afirst = car['acceleration'].values[1]
+
+	if vfirst < 1 or afirst < -5 or afirst > 5:
 		return car
-	thetafirst = car['theta'].values[0]
+	# thetafirst = np.nanmean(car['theta'].values)
 	w = car['width'].values[-1]
 	l = car['length'].values[-1]
 	dt = 1/30
 	dir = car['direction'].values[-1]
-	x = []
-	
-	if target=='xmax': # dir=-1
-		while xfirst < xmax: 
-			xfirst = xfirst - dir*vfirst*dt
-			x.insert(0,xfirst)
+	if dir>0:
+		thetafirst = 0
 	else:
-		while xfirst > xmin: 
-			xfirst = xfirst - dir*vfirst*dt
+		thetafirst = np.pi
+	v = []
+	x = []
+	y = []
+	xfinal = xfirst
+	if target=='xmax': # dir=-1
+		while xfirst < xmax and vfirst > 0:	
+			vfirst = vfirst - afirst*dt
+			xfirst = xfirst - vfirst*dt*cos(thetafirst)
+			yfirst = yfirst - vfirst*dt*sin(thetafirst)
 			x.insert(0,xfirst)
+			y.insert(0,yfirst)
+			v.insert(0,vfirst)
+	else:
+		while xfirst > xmin and vfirst > 0: 
+			vfirst = vfirst - afirst*dt
+			xfirst = xfirst - vfirst*dt*cos(thetafirst)
+			yfirst = yfirst - vfirst*dt*sin(thetafirst)
+			x.insert(0,xfirst)
+			y.insert(0,yfirst)
+			v.insert(0,vfirst)
 	
+	v = np.array(v)
 	x = np.array(x)
-	y = np.ones(x.shape) * yfirst
-	theta = np.ones(x.shape) * thetafirst
-	v = np.ones(x.shape) * vfirst
+	y = np.array(y)
+	theta = np.ones(v.shape) * thetafirst
+	a = np.ones(v.shape) * afirst
 	tfirst = car['Timestamp'].values[0]
-	timestamps = np.linspace(tfirst-dt-dt*len(x), tfirst-dt, len(x), endpoint=False)
+	timestamps = np.linspace(tfirst-dt-dt*len(v), tfirst-dt, len(v), endpoint=False)
 
 	# compute positions
 	xa = x + w/2*sin(theta)
@@ -565,13 +584,13 @@ def backward_predict(car,xmin,xmax,target):
 				'fbl_y': yc[pos_frames],
 				'bbl_x': xd[pos_frames], 
 				'bbl_y': yd[pos_frames],
-				'speed': vfirst,
+				'speed': v[pos_frames],
 				'theta': thetafirst,
 				'width': w,
 				'length':l,
 				'ID': car['ID'].values[0],
 				'direction': dir,
-				'acceleration': 0,
+				'acceleration': a[pos_frames],
 				'Timestamp': timestamps[pos_frames],
 				'Generation method': 'Extended'
 				}
@@ -586,9 +605,8 @@ def plot_track(D,length=15,width=1):
 		coord = np.reshape(coord,(-1,2)).tolist()
 		coord.append(coord[0]) #repeat the first point to create a 'closed loop'
 		xs, ys = zip(*coord) #lon, lat as x, y
-		plt.plot(xs,ys,label='t=0' if i==0 else '',alpha=i/len(D),c='black')
-
-		plt.scatter(D[i,2],D[i,3],color='black',alpha=i/len(D))
+		plt.plot(xs,ys,label=('t=0' if i==0 else ''),c='black')#alpha=i/len(D)
+		plt.scatter(D[i,2],D[i,3],color='black')
 	ax = plt.gca()
 	plt.xlabel('meter')
 	plt.ylabel('meter')
@@ -609,7 +627,7 @@ def plot_track_df(df,length=15,width=1,show=True, ax=None, color='black'):
 		coord = np.reshape(coord,(-1,2)).tolist()
 		coord.append(coord[0]) #repeat the first point to create a 'closed loop'
 		xs, ys = zip(*coord) #lon, lat as x, y
-		ax.plot(xs,ys,label='t=0' if i==0 else '',alpha=(i+1)/len(D),c=color)
+		ax.plot(xs,ys,label='t=0' if i==0 else '',c=color)
 		ax.scatter(D[i,2],D[i,3],color=color)#,alpha=i/len(D)
 	ax.set_xlabel('meter')
 	ax.set_ylabel('meter')
@@ -670,7 +688,7 @@ def plot_track_df_camera(df,tform_path,length=15,width=1, camera='varies'):
 
 def plot_track_compare(car,carre):
 	ax = plot_track_df(car,show=False, color='red')
-	plot_track_df(carre, show=True, ax=ax, color='blue')
+	ax = plot_track_df(carre, show=False, ax=ax, color='blue')
 	return
 	
 def overlap_score(car1, car2):
@@ -894,14 +912,17 @@ def post_process(df):
 	print(xmin, xmax)
 	args = (xmin, xmax, maxFrame)
 	tqdm.pandas()
-	# df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
-	df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
+	df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
+	# df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
 	
 	print('standardize format for plotter...')
-	if ('lat' in df):
-		df = df.drop(columns=['lat','lon'])
-	# if ('frx' in df) and ('fbr_x' in df):
-		# continue
+	# if ('lat' in df):
+		# df = df.drop(columns=['lat','lon'])
+	df = df[['Frame #', 'Timestamp', 'ID', 'Object class', 'BBox xmin','BBox ymin','BBox xmax','BBox ymax',
+			'vel_x','vel_y','Generation method',
+			'fbrx','fbry','fblx','fbly','bbrx','bbry','bblx','bbly','ftrx','ftry','ftlx','ftly','btrx','btry','btlx','btly',
+			'fbr_x','fbr_y','fbl_x','fbl_y','bbr_x','bbr_y','bbl_x','bbl_y',
+			'direction','camera','acceleration','speed','x','y','theta','width','length']]
 	return df
 
 def get_camera_x(x):
