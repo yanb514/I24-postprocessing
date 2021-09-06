@@ -7,6 +7,7 @@ from utils import *
 from tqdm import tqdm
 from functools import partial
 from multiprocessing import Pool, cpu_count
+from scipy import stats
 
 def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 	"""The cost function
@@ -22,16 +23,10 @@ def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 	
 	Yre,x,y,a = generate(w,l,x0, y0, theta,v, outputall=True)
 
-	# min perturbation - NORMALIZED
-	# sum = np.sum(diff,axis=1)
-	# c1=lam1*LA.norm(sum,1)
-	# c1 = lam1*np.sum(LA.norm(Y1-Yre[notNan,:],axis=1))
-	# xs = Y1[:,[0,2,4,6]]-Yre[:,[0,2,4,6]][notNan,:]
-	# ys = Y1[:,[1,3,5,7]]-Yre[:,[1,3,5,7]][notNan,:]
-	# c1 = lam1*(0.8*np.sum(LA.norm(xs,axis=1))+0.2*np.sum(LA.norm(ys,axis=1)))/np.count_nonzero(notNan)
-	
+	# min perturbation
 	diff = Y1-Yre[notNan,:]
 	# diff = diff/diff.max()
+	# c1 = lam1*np.nanmean(LA.norm(diff,axis=1))
 	c1 = lam1*LA.norm(diff,'fro')/nvalid
 
 	# regularize acceleration
@@ -78,73 +73,85 @@ def rectify_single_camera(df):
 	df: a single track in one camera view
 	'''			 
 	
-	# print(df['ID'].iloc[0]) 
+	print(df['ID'].iloc[0]) 
 	# print(len(df))  
 	# plot_track_df(df)	
 	# optimization parameters
-	lam1 = 1 # modification of measurement 1
+	lam1 = 1000 # modification of measurement 1
 	lam2 = 0 # acceleration 0
-	lam3 = 0.001 # jerk 0.01	  
-	lam4 = 0 # theta 0	  
-	lam5 = 0.1 # omega 0.02	 
-							
+	lam3 = 0.1 # jerk 0.1	  
+	lam4 = 1000 # theta 1000	  
+	lam5 = 2 # omega 2	 
+	niter = 0
+	
 	timestamps = df.Timestamp.values
 	dt = np.diff(timestamps)
 							
 	# get bottom 4 points coordinates
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
 	Y1 = np.array(df[pts])	
-							
-	# Euler forward dynamics
+
+	# try removing outliers first
+	x = Y1[:,0]
+	l = np.abs(Y1[:,0]-Y1[:,2])
+	w = np.abs(Y1[:,1]-Y1[:,7])
+	invalid = [False]*len(Y1)
+	for meas in [w,l]:
+		valid = meas[~np.isnan(meas)]
+		if len(valid) > 5:
+			q1, q3 = np.percentile(valid,[10,90])
+			invalid = invalid | (meas<q1) | (meas>q3)
+	Y1[invalid,:] = np.nan
+	
+	plot_track(Y1)
 	N = len(Y1)				
 	notNan = ~np.isnan(np.sum(Y1,axis=-1))
-	Y1 = Y1[notNan,:]		
+	Y1 = Y1[notNan,:]
+
 	if (len(Y1) < 3):		
-		print('track too short: ', df['ID'].iloc[0])
+		print('Not enough valid measurements: ', df['ID'].iloc[0])
 		# df.loc[:,pts] = np.nan
-		return None				  
-	v0 = np.sqrt((Y1[-1,0]-Y1[0,0])**2 + (Y1[-1,1]-Y1[0,1])**2)/(timestamps[notNan][-1]-timestamps[notNan][0])		
+		return None	
+		
+	first_valid = np.where(notNan==True)[0][0]
+	
+	avgv = np.sqrt((Y1[-1,2]-Y1[0,2])**2 + (Y1[-1,3]-Y1[0,3])**2)/(timestamps[notNan][-1]-timestamps[notNan][0]) #fbr
+	# avgv = np.sqrt((Y1[-1,0]-Y1[0,2])**2 + (Y1[-1,0]-Y1[0,0])**2)/(timestamps[notNan][-1]-timestamps[notNan][0])#bbr
+	v0 = np.array([np.abs(avgv)]*N)
 	sign = np.sign(Y1[-1,0]-Y1[0,0])		
-	v0 = np.array([np.abs(v0)]*N)
-	v0 += np.random.normal(0,0.01,v0.shape)	
-	x0 = (Y1[0,0]+Y1[0,6])/2
+	
+	# v0 += np.random.normal(0,0.01,v0.shape)	
+
+	x0 = (Y1[0,0]+Y1[0,6])/2- sign*avgv*first_valid*1/30
 	y0 = (Y1[0,1]+Y1[0,7])/2
 	dy = Y1[-1,1]-Y1[0,1]
 	dx = Y1[-1,0]-Y1[0,0]
-	# theta0 = np.ones((N))*np.arccos(sign)
-	theta0 = np.ones((N))*np.arctan2(dy,dx)
+	theta0 = np.ones((N))*np.arccos(sign) # parallel to lane
+	# theta0 = np.ones((N))*np.arctan2(dy,dx) # average angle
 	
 	# no perfect box exists	
 	w0 = np.nanmean(np.sqrt((Y1[:,1]-Y1[:,7])**2+(Y1[:,0]-Y1[:,6])**2))
 	l0 = np.nanmean(np.sqrt((Y1[:,2]-Y1[:,0])**2+(Y1[:,1]-Y1[:,3])**2))
 	X0 = np.concatenate((v0.T, theta0.T, \
 				 [x0,y0,w0,l0]),axis=-1)
-	if sign>0: # positive x direction
-		bnds = [(0,50) for i in range(0,N)]+\
-			[(-np.pi/8,np.pi/8) for i in range(N)]+\
-			[(-np.inf,np.inf),(0,np.inf),(1,4),(2,np.inf)]
-	else:			
-		bnds = [(0,50) for i in range(0,N)]+\
-			[(-np.pi/8+np.pi,np.pi/8+np.pi) for i in range(N)]+\
-			[(-np.inf,np.inf),(0,np.inf),(1,4),(2,np.inf)]
+
+	bnds = [(0,50) for i in range(0,N)]+\
+			[(-np.pi/8+np.arccos(sign),np.pi/8+np.arccos(sign)) for i in range(N)]+\
+			[(-np.inf,np.inf),(0,np.inf),(1,4),(2,np.inf)]		
 	# Y0 = generate(w0,l0,x0, y0, theta0,v0)
 	# plot_track(Y0)
-	# print('no perfect box')
-	minimizer_kwargs = {"method":"SLSQP", "args":(Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5),'bounds':bnds,'options':{'disp': False}}
-	res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=0)
+
+	minimizer_kwargs = {"method":"L-BFGS-B", "args":(Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5),'bounds':bnds,'options':{'disp': False}}
+	res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
 
 	# res = minimize(obj1, X0, (Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5), method = 'SLSQP',
 					# bounds=bnds, options={'maxiter':100000, 'disp': False})# L-BFGS-B, SLSQP, Nelder-Mead,'maxiter':100000
 	# extract results	
 	Yre, x,y,v,a,theta,w,l = unpack1(res,N,dt)
-	# score = LA.norm(Y1-Yre[notNan,:],'fro')/np.count_nonzero(notNan)
-	# score = np.sum(LA.norm(Y1-Yre[notNan,:],axis=1))/np.count_nonzero(notNan)
-	# xs = Y1[:,[0,2,4,6]]-Yre[:,[0,2,4,6]][notNan,:]
-	# ys = Y1[:,[1,3,5,7]]-Yre[:,[1,3,5,7]][notNan,:]
-	# score2 = (0.99*np.sum(LA.norm(xs,axis=1))+0.01*np.sum(LA.norm(ys,axis=1)))/np.count_nonzero(notNan)
-	# 0.2*np.linalg.norm(B[[0,2,4,6]]-B_data[[0,2,4,6]],2) + 0.8*np.linalg.norm(B[[1,3,5,7]]-B_data[[1,3,5,7]],2)
-	# print(df['ID'].iloc[0], score, score2)
-							
+	# diff = Y1-Yre[notNan,:]
+	# score = np.nanmean(LA.norm(diff,axis=1))
+	# print('score:',score)
+	# print(LA.norm(a,2)/np.count_nonzero(notNan))	
 	df.loc[:,pts] = Yre		
 	df.loc[:,'acceleration'] = a
 	df.loc[:,'speed'] = v	
@@ -369,4 +376,34 @@ def generate(w,l,x0, y0, theta,v,outputall=False):
 	if outputall:
 		return Yre, x, y, a
 	return Yre
-							
+
+def calculate_score(Y1,Yre):
+	'''
+	for one box (frame)
+	'''
+	score = LA.norm(Y1-Yre,'fro')
+	return score
+	
+def score_for_box(w,l,Y):
+	'''
+	find the min score of a box of fixed w,l, with respect to measurement Y
+	Y: 1x8
+	'''
+	eq_cons = {'type': 'eq',
+		'fun' : lambda x: np.array([
+									(x[2]-x[0])**2-l**2,
+									(x[1]-x[7])**2-w**2,
+									(x[0]-x[6])**2,
+									(x[2]-x[4])**2,
+									(x[1]-x[3])**2,
+									(x[5]-x[7])**2])}
+	X0 = Y[0]
+	# X0 += np.random.normal(0, 0.1, X0.shape)
+	res = minimize(calculate_score, X0, (Y), method = 'SLSQP',constraints=[eq_cons],
+				options={'disp': False})
+	print(res.fun)
+	plot_track(Y.reshape((1,8)))
+	plot_track(res.x.reshape((1,8)))
+	return res
+	
+	

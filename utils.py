@@ -356,11 +356,32 @@ def get_homography_matrix(camera_id, tform_path):
 	read from Derek's new transformation file
 	'''
 	# find and read the csv file corresponding to the camera_id
-	tf_file = glob.glob(str(tform_path) + '/' + camera_id + "*.csv")
-	tf_file = tf_file[0]
-	tf = pd.read_csv(tf_file)
-	M = np.array(tf.iloc[-3:,0:3], dtype=float)
-	return M
+	# tf_file = glob.glob(str(tform_path) + '/' + camera_id + "*.csv")
+	# tf_file = tf_file[0]
+	# tf = pd.read_csv(tf_file)
+	# M = np.array(tf.iloc[-3:,0:3], dtype=float)
+	
+	transform_path = glob.glob(str(tform_path) + '/' + camera_id + "*.csv")[0]
+	# get transform from RWS -> ImS
+	keep = []
+	with open(transform_path,"r") as f:
+		read = csv.reader(f)
+		FIRST = True
+		for row in read:
+			if FIRST:
+				FIRST = False
+				continue
+					
+			if "im space"  in row[0]:
+				break
+			
+			keep.append(row)
+	pts = np.stack([[float(item) for item in row] for row in keep])
+	im_pts = pts[:,:2] # * 2.0
+	lmcs_pts = pts[:,2:]
+	H,_ = cv2.findHomography(im_pts,lmcs_pts)
+# Minv = np.linalg.inv(M)
+	return H
 	
 def img_to_road(df,tform_path,camera_id,ds=1):
 	'''
@@ -376,6 +397,7 @@ def img_to_road(df,tform_path,camera_id,ds=1):
 		road_pts = np.transpose(road_pts_1[0:2,:])/3.281 # only use the first two rows, convert from ft to m
 		df[[pt+'_x', pt+'_y']] = pd.DataFrame(road_pts, index=df.index)
 	return df
+				
 	
 def img_to_road_box(img_pts_4,tform_path,camera_id):
 	'''
@@ -413,7 +435,7 @@ def extend_prediction(car, args):
 	extend the dynamics of the vehicles that are still in view
 	constant acceleration model
 	'''
-	print(car['ID'].iloc[0])
+	# print(car['ID'].iloc[0])
 	xmin, xmax, maxFrame = args
 	dir = car['direction'].iloc[0]
 
@@ -435,15 +457,17 @@ def forward_predict(car,xmin,xmax,target, maxFrame):
 	'''
 	stops at maxFrame
 	'''
+	# print(car['ID'].iloc[0])
 	# lasts
 	framelast = car['Frame #'].values[-1]
 	if framelast >= maxFrame:
 		return car
 	ylast = car['y'].values[-1]
 	xlast = car['x'].values[-1]
-	vlast = car['speed'].values[-1]
-	alast = car['acceleration'].values[-1]
-	if vlast < 1 or alast<-5 or alast>5:
+	# vlast = car['speed'].values[-1]
+	vlast = np.nanmean(car['speed'].values)
+	# alast = car['acceleration'].values[-1]
+	if vlast < 1:
 		return car
 	thetalast = np.mean(car['theta'].values)
 	
@@ -452,25 +476,32 @@ def forward_predict(car,xmin,xmax,target, maxFrame):
 	dir = car['direction'].values[-1]
 	dt = 1/30
 
-	v = []
-	xfinal = xlast
+	# v = []
+	x = [xlast]
+	xfinal=xlast
 	if target=='xmax':
-		while xfinal < xmax and vlast > 0: 
-			vlast = vlast + alast*dt
+		while xfinal < xmax:# and vlast > 0: 
+			# vlast = vlast + alast*dt
 			xfinal = xfinal + vlast*dt*cos(thetalast)
-			v.append(vlast)
+			x.append(xfinal)
+			if len(x) > 1000:
+				break
+			# v.append(vlast)
 
 
 	else:
-		while xfinal > xmin and vlast > 0: # tested
-			vlast = vlast + alast*dt
+		while xfinal > xmin:# and vlast > 0: # tested
+			# vlast = vlast + alast*dt
 			xfinal = xfinal + vlast*dt*cos(thetalast)
-			v.append(vlast)
+			x.append(xfinal)
+			if len(x) > 1000:
+				break
+			# v.append(vlast)
 
 	
-	v = np.array(v)
-	theta = np.ones(v.shape) * thetalast
-	# v = np.ones(x.shape) * vlast
+	x = np.array(x)
+	theta = np.ones(x.shape) * thetalast
+	v = np.ones(x.shape) * vlast
 	tlast = car['Timestamp'].values[-1]
 	timestamps = np.linspace(tlast+dt, tlast+dt+dt*len(v), len(v), endpoint=False)
 
@@ -497,7 +528,7 @@ def forward_predict(car,xmin,xmax,target, maxFrame):
 				'length':l,
 				'ID': car['ID'].values[-1],
 				'direction': dir,
-				'acceleration': a[pos_frames],
+				'acceleration': 0,
 				'Timestamp': timestamps[pos_frames],
 				'Generation method': 'Extended'
 				}
@@ -511,15 +542,17 @@ def backward_predict(car,xmin,xmax,target):
 	backward predict up until frame 0
 	'''
 	# first
+	# print(car['ID'].iloc[0])
 	framefirst = car['Frame #'].values[0]
 	if framefirst <= 1:
 		return car
 	yfirst = car['y'].values[0]
 	xfirst = car['x'].values[0]
-	vfirst = car['speed'].values[0]
-	afirst = car['acceleration'].values[1]
+	vfirst = np.nanmean(car['speed'].values)
+	# vfirst = car['speed'].values[0]
+	# afirst = car['acceleration'].values[1]
 
-	if vfirst < 1 or afirst < -5 or afirst > 5:
+	if vfirst < 1:# or afirst < -5 or afirst > 5:
 		return car
 	# thetafirst = np.nanmean(car['theta'].values)
 	w = car['width'].values[-1]
@@ -530,32 +563,38 @@ def backward_predict(car,xmin,xmax,target):
 		thetafirst = 0
 	else:
 		thetafirst = np.pi
-	v = []
+	# v = []
 	x = []
 	y = []
-	xfinal = xfirst
+
 	if target=='xmax': # dir=-1
-		while xfirst < xmax and vfirst > 0:	
-			vfirst = vfirst - afirst*dt
+		while xfirst < xmax:# and vfirst > 0:	
+			# vfirst = vfirst - afirst*dt
 			xfirst = xfirst - vfirst*dt*cos(thetafirst)
 			yfirst = yfirst - vfirst*dt*sin(thetafirst)
 			x.insert(0,xfirst)
 			y.insert(0,yfirst)
-			v.insert(0,vfirst)
+			if len(x) > 1000:
+				break
+			# v.insert(0,vfirst)
 	else:
-		while xfirst > xmin and vfirst > 0: 
-			vfirst = vfirst - afirst*dt
+		while xfirst > xmin:# and vfirst > 0: 
+			# vfirst = vfirst - afirst*dt
 			xfirst = xfirst - vfirst*dt*cos(thetafirst)
 			yfirst = yfirst - vfirst*dt*sin(thetafirst)
 			x.insert(0,xfirst)
 			y.insert(0,yfirst)
-			v.insert(0,vfirst)
+			if len(x) > 1000:
+				break
+			# v.insert(0,vfirst)
 	
-	v = np.array(v)
+	# v = np.array(v)
+	
 	x = np.array(x)
 	y = np.array(y)
+	v = np.ones(x.shape)*vfirst
 	theta = np.ones(v.shape) * thetafirst
-	a = np.ones(v.shape) * afirst
+	# a = np.ones(v.shape) * afirst
 	tfirst = car['Timestamp'].values[0]
 	timestamps = np.linspace(tfirst-dt-dt*len(v), tfirst-dt, len(v), endpoint=False)
 
@@ -590,7 +629,7 @@ def backward_predict(car,xmin,xmax,target):
 				'length':l,
 				'ID': car['ID'].values[0],
 				'direction': dir,
-				'acceleration': a[pos_frames],
+				'acceleration': 0,#a[pos_frames],
 				'Timestamp': timestamps[pos_frames],
 				'Generation method': 'Extended'
 				}
@@ -836,65 +875,65 @@ def get_camera_range(camera_id):
 	ymax = 45
 	if camera_id=='p1c1':
 		xmin = 0
-		xmax = 130
+		xmax = 520
 	elif camera_id=='p1c2':
-		xmin = 100
-		xmax = 220
+		xmin = 400
+		xmax = 740
 	elif camera_id=='p1c3':
-		xmin = 180
-		xmax = 260
+		xmin = 600
+		xmax = 800
 	elif camera_id=='p1c4':
-		xmin = 190
-		xmax = 250
+		xmin = 600
+		xmax = 800
 	elif camera_id=='p1c5':
-		xmin = 210
-		xmax = 300
+		xmin = 660
+		xmax = 960
 	elif camera_id=='p1c6':
-		xmin = 240
-		xmax = 400
+		xmin = 760
+		xmax = 1200
 	elif camera_id=='p2c1':
-		xmin = 182
-		xmax = 234
+		xmin = 400
+		xmax = 900
 	elif camera_id=='p2c2':
-		xmin = 220
-		xmax = 256
+		xmin = 600
+		xmax = 920
 	elif camera_id=='p2c3':
-		xmin = 840/3.281
-		xmax = 960/3.281
+		xmin = 700
+		xmax = 1040
 	elif camera_id=='p2c4':
-		xmin = 840/3.281
-		xmax = 960/3.281
+		xmin = 700
+		xmax = 1040
 	elif camera_id=='p2c5':
-		xmin = 920/3.281
-		xmax = 1040/3.281
+		xmin = 780
+		xmax = 1060
 	elif camera_id=='p2c6':
-		xmin = 970/3.281
-		xmax = 1120/3.281
+		xmin = 800
+		xmax = 1160
 	elif camera_id=='p3c1':
-		xmin = 1000/3.281
-		xmax = 1250/3.281
+		xmin = 800
+		xmax = 1400
 	elif camera_id=='p3c2':
-		xmin = 1200/3.281
-		xmax = 1330/3.281
+		xmin = 1150
+		xmax = 1450
 	elif camera_id=='p3c3':
-		xmin = 1320/3.281
-		xmax = 1440/3.281
+		xmin = 1220
+		xmax = 1600
 	elif camera_id=='p3c4':
-		xmin = 1320/3.281
-		xmax = 1450/3.281
+		xmin = 1220
+		xmax = 1600
 	elif camera_id=='p3c5':
-		xmin = 1440/3.281
-		xmax = 1720/3.281
+		xmin = 1350
+		xmax = 1800
 	elif camera_id=='p3c6':
-		xmin = 1680/3.281
-		xmax = 1810/3.281
+		xmin = 1580
+		xmax = 2000
 	elif camera_id=='all':
 		xmin = 0
-		xmax = 1810/3.281
+		xmax = 2000
 	else:
 		print('no camera ID in get_camera_range')
 		return
-	return xmin, xmax, ymin, ymax
+	return xmin/3.281, xmax/3.281, ymin/3.281, ymax/3.281
 	
 def post_process(df):
 	# print('remove overlapped cars...')
@@ -912,8 +951,8 @@ def post_process(df):
 	print(xmin, xmax)
 	args = (xmin, xmax, maxFrame)
 	tqdm.pandas()
-	df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
-	# df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
+	# df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
+	df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
 	
 	print('standardize format for plotter...')
 	# if ('lat' in df):
@@ -1013,17 +1052,23 @@ def dashboard(cars):
 	cars: list of dfs
 	show acceleration/speed/theta/... of each car
 	'''
-	
-	# acceleration
-	# theta
-	# omega
 
 	fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(1, 5, figsize=(15,3))
 	# x
+	x1 = []
+	x2 = []
+	frames = cars[0]['Frame #'].values
 	i = 0
 	for car in cars:
-		ax1.scatter(car['Frame #'].values, car['fbr_x'].values, label=i, s=1)
+		x1.append(car['fbr_x'].values)
+		x2.append(car['bbr_x'].values)
+		# ax1.scatter(car['Frame #'].values, car['fbr_x'].values, label=i, s=1)
+		# ax1.scatter(car['Frame #'].values, car['bbr_x'].values, label=i, s=1)
 		i+=1
+	for i in range(len(frames)):
+		ax1.scatter(frames[i],x1[0][i]-x1[1][i],c='b',s=1,label='fbr' if i==0 else '')
+		ax1.scatter(frames[i],x2[0][i]-x2[1][i],c='r',s=1,label='bbr' if i==0 else '')
+	# ax1.scatter(cars[0]['Frame #'].values, xs[0]-xs[1], s=1)
 	ax1.legend()
 	ax1.set_title('x (m)')
 		
@@ -1046,7 +1091,10 @@ def dashboard(cars):
 	# acceleration
 	i = 0
 	for car in cars:
-		ax4.scatter(car['Frame #'].values, car['acceleration'].values, s=1)
+		try:
+			ax4.scatter(car['Frame #'].values, car['acceleration'].values, s=1)
+		except:
+			ax4.scatter(car['Frame #'].values, car['acceleration'], s=1)
 		i+=1
 	ax4.set_title('acceleration (m/s2)')
 	

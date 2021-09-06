@@ -85,7 +85,7 @@ def plot_vehicle_csv(
 	im_pts = pts[:,:2] # * 2.0
 	lmcs_pts = pts[:,2:]
 	H,_ = cv2.findHomography(lmcs_pts,im_pts)
-	
+	print(H)
 	
 	# store each item by frame_idx
 	all_frame_data = {}
