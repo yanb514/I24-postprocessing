@@ -9,6 +9,14 @@ from functools import partial
 from multiprocessing import Pool, cpu_count
 from scipy import stats
 
+# global variables for normalizing costs
+# global c1max, c2max, c3max, c3max, c5max
+# c1max = 10
+# c2max = 30
+# c3max = 45
+# c4max = 0.55
+# c5max = 0.3
+
 def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 	"""The cost function
 		X = [a,theta,v0,x0,y0,w,l]^T
@@ -25,29 +33,22 @@ def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 
 	# min perturbation
 	diff = Y1-Yre[notNan,:]
-	# diff = diff/diff.max()
-	# c1 = lam1*np.nanmean(LA.norm(diff,axis=1))
-	c1 = lam1*LA.norm(diff,'fro')/nvalid
+	c1 = lam1*np.nanmean(LA.norm(diff,axis=1))
 
-	# regularize acceleration
-	# c2 = lam2*LA.norm(ax,2)+LA.norm(ay,2))/np.count_nonzero(notNan)
-	# norm_a = a/a.max()
-	# c2 = lam2*LA.norm(norm_a,2)/nvalid
-	c2 = lam2*LA.norm(a,2)/nvalid
+	# regularize acceleration # not the real a or j, multiply a constant dt
+	c2 = lam2*LA.norm(a,2)/nvalid/30
 	# regularize jerk
 	j = np.diff(a)/dt
 	# norm_j = j/j.max()
 	# c3 = lam3*LA.norm(norm_j,2)/nvalid
-	c3 = lam3*LA.norm(j,2)/nvalid
+	c3 = lam3*LA.norm(j,2)/nvalid /900
 	# regularize angle
 	st = sin(theta)
-	# norm_theta = st/st.max()
-	# c4 = lam4*LA.norm(norm_theta,2)/nvalid
 	c4 = lam4*LA.norm(st,2)/nvalid
 	# regularize angular velocity
 	o = np.diff(theta)/dt
 	# norm_o = o/o.max()
-	c5 = lam5*LA.norm(o,2)/nvalid
+	c5 = lam5*LA.norm(o,2)/nvalid/30
 
 	return c1+c2+c3+c4+c5
 	
@@ -68,20 +69,20 @@ def unpack1(res,N,dt):
 	return Yre, x,y,v,a,theta,w,l
 							
 
-def rectify_single_camera(df):
+def rectify_single_camera(df, lam1, lam2, lam3,lam4,lam5):
 	'''						
 	df: a single track in one camera view
 	'''			 
 	
-	print(df['ID'].iloc[0]) 
+	# print(df['ID'].iloc[0]) 
 	# print(len(df))  
 	# plot_track_df(df)	
 	# optimization parameters
-	lam1 = 1000 # modification of measurement 1
-	lam2 = 0 # acceleration 0
-	lam3 = 0.1 # jerk 0.1	  
-	lam4 = 1000 # theta 1000	  
-	lam5 = 2 # omega 2	 
+	lam1 = lam1# modification of measurement 1000
+	lam2 = lam2 # acceleration 0
+	lam3 = lam3 # jerk 0.1	  
+	lam4 = lam4 # theta 1000	  
+	lam5 = lam5 # omega 2	 
 	niter = 0
 	
 	timestamps = df.Timestamp.values
@@ -103,7 +104,7 @@ def rectify_single_camera(df):
 			invalid = invalid | (meas<q1) | (meas>q3)
 	Y1[invalid,:] = np.nan
 	
-	plot_track(Y1)
+	# plot_track(Y1)
 	N = len(Y1)				
 	notNan = ~np.isnan(np.sum(Y1,axis=-1))
 	Y1 = Y1[notNan,:]
@@ -118,9 +119,7 @@ def rectify_single_camera(df):
 	avgv = np.sqrt((Y1[-1,2]-Y1[0,2])**2 + (Y1[-1,3]-Y1[0,3])**2)/(timestamps[notNan][-1]-timestamps[notNan][0]) #fbr
 	# avgv = np.sqrt((Y1[-1,0]-Y1[0,2])**2 + (Y1[-1,0]-Y1[0,0])**2)/(timestamps[notNan][-1]-timestamps[notNan][0])#bbr
 	v0 = np.array([np.abs(avgv)]*N)
-	sign = np.sign(Y1[-1,0]-Y1[0,0])		
-	
-	# v0 += np.random.normal(0,0.01,v0.shape)	
+	sign = np.sign(Y1[-1,0]-Y1[0,0])			
 
 	x0 = (Y1[0,0]+Y1[0,6])/2- sign*avgv*first_valid*1/30
 	y0 = (Y1[0,1]+Y1[0,7])/2
@@ -138,20 +137,31 @@ def rectify_single_camera(df):
 	bnds = [(0,50) for i in range(0,N)]+\
 			[(-np.pi/8+np.arccos(sign),np.pi/8+np.arccos(sign)) for i in range(N)]+\
 			[(-np.inf,np.inf),(0,np.inf),(1,4),(2,np.inf)]		
-	# Y0 = generate(w0,l0,x0, y0, theta0,v0)
+	Y0 = generate(w0,l0,x0, y0, theta0,v0)
+	diff = Y1-Y0[notNan,:]
+	c1max = np.nanmean(LA.norm(diff,axis=1))
 	# plot_track(Y0)
 
-	minimizer_kwargs = {"method":"L-BFGS-B", "args":(Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5),'bounds':bnds,'options':{'disp': False}}
+	# SOLVE FOR MAX C2-C5 BY SETTING LAM2-5 = 0
+	lams = (100,0,0,0,0)
+	minimizer_kwargs = {"method":"L-BFGS-B", "args":(Y1,N,dt,notNan,*lams),'bounds':bnds,'options':{'disp': False}}
 	res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
 
 	# res = minimize(obj1, X0, (Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5), method = 'SLSQP',
 					# bounds=bnds, options={'maxiter':100000, 'disp': False})# L-BFGS-B, SLSQP, Nelder-Mead,'maxiter':100000
 	# extract results	
 	Yre, x,y,v,a,theta,w,l = unpack1(res,N,dt)
-	# diff = Y1-Yre[notNan,:]
-	# score = np.nanmean(LA.norm(diff,axis=1))
-	# print('score:',score)
-	# print(LA.norm(a,2)/np.count_nonzero(notNan))	
+	_,c2max,c3max,c4max,c5max = get_costs(Yre, Y1, x,y,v,a,theta,notNan)
+	print('before norm',c1max,c2max,c3max,c4max,c5max)
+	
+	# SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
+	lams = (lam1/c1max,lam2/c2max,lam3/c3max,lam4/c4max,lam5/c5max)
+	minimizer_kwargs = {"method":"L-BFGS-B", "args":(Y1,N,dt,notNan,*lams),'bounds':bnds,'options':{'disp': False}}
+	res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
+	Yre, x,y,v,a,theta,w,l = unpack1(res,N,dt)
+	c1,c2,c3,c4,c5 = get_costs(Yre, Y1, x,y,v,a,theta,notNan,lams=lams)
+	print('after norm', c1,c2,c3,c4,c5)
+	
 	df.loc[:,pts] = Yre		
 	df.loc[:,'acceleration'] = a
 	df.loc[:,'speed'] = v	
@@ -160,10 +170,26 @@ def rectify_single_camera(df):
 	df.loc[:,'theta'] = theta
 	df.loc[:,'width'] = w	
 	df.loc[:,'length'] = l	
-	# plot_track_df(df)					  
-	return df				
+	# plot_track_df(df)	
+	
+	return df,c1,c2,c3,c4,c5	
 							
-							
+def get_costs(Yre, Y1, x,y,v,a,theta,notNan, lams = None):
+	if lams:
+		lam1, lam2, lam3, lam4, lam5 = lams
+	else:
+		lam1, lam2, lam3, lam4, lam5 = 1,1,1,1,1 # directly calculate 2-norm
+	dt = 1/30
+	diff = Y1-Yre[notNan,:]
+	c1 = lam1*np.nanmean(LA.norm(diff,axis=1))
+	c2 = lam2*LA.norm(a,2)/np.count_nonzero(notNan)/30
+	j = np.diff(a)/dt
+	c3 = lam3*LA.norm(j,2)/np.count_nonzero(notNan)/900
+	st = sin(theta)
+	c4 = lam4*LA.norm(st,2)/np.count_nonzero(notNan)
+	o = np.diff(theta)/dt
+	c5 = lam5*LA.norm(o,2)/np.count_nonzero(notNan)/30
+	return c1,c2,c3,c4,c5
 							
 def applyParallel(dfGrouped, func, args=None):
 	with Pool(cpu_count()) as p:
@@ -381,7 +407,8 @@ def calculate_score(Y1,Yre):
 	'''
 	for one box (frame)
 	'''
-	score = LA.norm(Y1-Yre,'fro')
+	diff = Y1-Yre
+	score = np.nanmean(LA.norm(diff,axis=1))
 	return score
 	
 def score_for_box(w,l,Y):
@@ -402,8 +429,8 @@ def score_for_box(w,l,Y):
 	res = minimize(calculate_score, X0, (Y), method = 'SLSQP',constraints=[eq_cons],
 				options={'disp': False})
 	print(res.fun)
-	plot_track(Y.reshape((1,8)))
-	plot_track(res.x.reshape((1,8)))
+	# plot_track(Y.reshape((1,8)))
+	# plot_track(res.x.reshape((1,8)))
 	return res
 	
 	

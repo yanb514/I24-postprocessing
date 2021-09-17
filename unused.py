@@ -901,4 +901,24 @@ def unpack(res,N,dt):
 	car_ext = pd.DataFrame.from_dict(car_ext)
 	car_ext[pts] = Yre[pos_frames,:]
 	return pd.concat([car, car_ext], sort=False, axis=0)	
-	
+
+
+import utils_optimization as opt
+importlib.reload(opt)
+import time
+
+
+
+
+fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(9,3))
+ax1.plot(c1_arr, c_arr,'o-')
+ax1.set_xlabel('c1, cost on perturbation')
+ax1.set_ylabel('c4, cost on sin(theta)')
+
+ax2.plot(lam_arr, c1_arr,'o-')
+ax2.set_xlabel('lam4')
+ax2.set_ylabel('c1')
+
+ax3.plot(lam_arr, c_arr,'o-')
+ax3.set_xlabel('lam4')
+ax3.set_ylabel('c4')
