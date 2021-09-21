@@ -153,7 +153,10 @@ def plot_vehicle_csv(
 				
 				lmcs_bbox = np.array([footprint[:,0],footprint[:,1],[1,1,1,1]])#.transpose()
 				
-				out = np.matmul(H,lmcs_bbox)
+				H = H+np.random.normal(0,0.000001,(3,3))
+				out = np.matmul(H,lmcs_bbox) # H might be ill-conditioned
+				
+				
 				im_footprint = np.zeros([2,4])
 				im_footprint[0,:] = out[0,:] / out[2,:]
 				im_footprint[1,:] = out[1,:] / out[2,:]

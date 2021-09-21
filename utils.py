@@ -397,7 +397,46 @@ def img_to_road(df,tform_path,camera_id,ds=1):
 		road_pts = np.transpose(road_pts_1[0:2,:])/3.281 # only use the first two rows, convert from ft to m
 		df[[pt+'_x', pt+'_y']] = pd.DataFrame(road_pts, index=df.index)
 	return df
-				
+
+def euclidean_distance(lat1, lon1, lat2, lon2):
+# https://math.stackexchange.com/questions/29157/how-do-i-convert-the-distance-between-two-lat-long-points-into-feet-meters
+	r = 6371000
+	lat1,lon1 = np.radians([lat1, lon1])
+	lat2 = np.radians(lat2)
+	lon2 = np.radians(lon2)
+	theta = (lat1+lat2)/2
+	dx = r*cos(theta)*(lon2-lon1)
+	dy = r*(lat2-lat1)
+	d = np.sqrt(dx**2+dy**2)
+	# d = r*np.sqrt((lat2-lat1)**2+(cos(theta)**2*(lon2-lon1)**2))
+	return d,dx,dy
+	
+def transform_pt_array(point_array,M):
+	"""
+	Applies 3 x 3  image transformation matrix M to each point stored in the point array
+	"""
+	
+	original_shape = point_array.shape
+	
+	num_points = int(np.size(point_array,0)*np.size(point_array,1)/2)
+	# resize array into N x 2 array
+	reshaped = point_array.reshape((num_points,2))   
+	
+	# add third row
+	ones = np.ones([num_points,1])
+	points3d = np.concatenate((reshaped,ones),1)
+	
+	# transform points
+	tf_points3d = np.transpose(np.matmul(M,np.transpose(points3d)))
+	
+	# condense to two-dimensional coordinates
+	tf_points = np.zeros([num_points,2])
+	tf_points[:,0] = tf_points3d[:,0]/tf_points3d[:,2]
+	tf_points[:,1] = tf_points3d[:,1]/tf_points3d[:,2]
+	
+	tf_point_array = tf_points.reshape(original_shape)
+	
+	return tf_point_array	
 	
 def img_to_road_box(img_pts_4,tform_path,camera_id):
 	'''

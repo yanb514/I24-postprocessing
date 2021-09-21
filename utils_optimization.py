@@ -52,6 +52,23 @@ def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 
 	return c1+c2+c3+c4+c5
 	
+def get_costs(Yre, Y1, x,y,v,a,theta,notNan, cmax=None):
+	if cmax: # using normalization
+		c1m, c2m, c3m, c4m, c5m = cmax
+	else: # not using normalization
+		c1m, c2m, c3m, c4m, c5m = 1,1,1,1,1 # directly calculate 2-norm
+	dt = 1/30
+	diff = Y1-Yre[notNan,:]
+	c1 = np.nanmean(LA.norm(diff,axis=1))/c1m
+	c2 = LA.norm(a,2)/np.count_nonzero(notNan)/30/c2m
+	j = np.diff(a)/dt
+	c3 = LA.norm(j,2)/np.count_nonzero(notNan)/900/c3m
+	st = sin(theta)
+	c4 = LA.norm(st,2)/np.count_nonzero(notNan)/c4m
+	o = np.diff(theta)/dt
+	c5 = LA.norm(o,2)/np.count_nonzero(notNan)/30/c5m
+	return c1,c2,c3,c4,c5
+
 	
 def unpack1(res,N,dt):
 	# extract results
@@ -69,21 +86,20 @@ def unpack1(res,N,dt):
 	return Yre, x,y,v,a,theta,w,l
 							
 
-def rectify_single_camera(df, lam1, lam2, lam3,lam4,lam5):
+def rectify_single_camera(df, args):
 	'''						
 	df: a single track in one camera view
 	'''			 
-	
+	lam1, lam2, lam3,lam4,lam5 = args
 	# print(df['ID'].iloc[0]) 
-	# print(len(df))  
-	# plot_track_df(df)	
+
 	# optimization parameters
 	lam1 = lam1# modification of measurement 1000
 	lam2 = lam2 # acceleration 0
 	lam3 = lam3 # jerk 0.1	  
 	lam4 = lam4 # theta 1000	  
 	lam5 = lam5 # omega 2	 
-	niter = 0
+	niter = 10
 	
 	timestamps = df.Timestamp.values
 	dt = np.diff(timestamps)
@@ -145,22 +161,22 @@ def rectify_single_camera(df, lam1, lam2, lam3,lam4,lam5):
 	# SOLVE FOR MAX C2-C5 BY SETTING LAM2-5 = 0
 	lams = (100,0,0,0,0)
 	minimizer_kwargs = {"method":"L-BFGS-B", "args":(Y1,N,dt,notNan,*lams),'bounds':bnds,'options':{'disp': False}}
-	res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
+	res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=0)
 
 	# res = minimize(obj1, X0, (Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5), method = 'SLSQP',
 					# bounds=bnds, options={'maxiter':100000, 'disp': False})# L-BFGS-B, SLSQP, Nelder-Mead,'maxiter':100000
 	# extract results	
 	Yre, x,y,v,a,theta,w,l = unpack1(res,N,dt)
 	_,c2max,c3max,c4max,c5max = get_costs(Yre, Y1, x,y,v,a,theta,notNan)
-	print('before norm',c1max,c2max,c3max,c4max,c5max)
+	# print('before norm',c1max,c2max,c3max,c4max,c5max)
 	
 	# SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
 	lams = (lam1/c1max,lam2/c2max,lam3/c3max,lam4/c4max,lam5/c5max)
 	minimizer_kwargs = {"method":"L-BFGS-B", "args":(Y1,N,dt,notNan,*lams),'bounds':bnds,'options':{'disp': False}}
 	res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
 	Yre, x,y,v,a,theta,w,l = unpack1(res,N,dt)
-	c1,c2,c3,c4,c5 = get_costs(Yre, Y1, x,y,v,a,theta,notNan,lams=lams)
-	print('after norm', c1,c2,c3,c4,c5)
+	c1,c2,c3,c4,c5 = get_costs(Yre, Y1, x,y,v,a,theta,notNan,cmax = (c1max, c2max, c3max, c4max, c5max)) # get ci/cimax, the normalized cost
+	# print('after norm', c1,c2,c3,c4,c5)
 	
 	df.loc[:,pts] = Yre		
 	df.loc[:,'acceleration'] = a
@@ -172,31 +188,15 @@ def rectify_single_camera(df, lam1, lam2, lam3,lam4,lam5):
 	df.loc[:,'length'] = l	
 	# plot_track_df(df)	
 	
-	return df,c1,c2,c3,c4,c5	
+	return df
 							
-def get_costs(Yre, Y1, x,y,v,a,theta,notNan, lams = None):
-	if lams:
-		lam1, lam2, lam3, lam4, lam5 = lams
-	else:
-		lam1, lam2, lam3, lam4, lam5 = 1,1,1,1,1 # directly calculate 2-norm
-	dt = 1/30
-	diff = Y1-Yre[notNan,:]
-	c1 = lam1*np.nanmean(LA.norm(diff,axis=1))
-	c2 = lam2*LA.norm(a,2)/np.count_nonzero(notNan)/30
-	j = np.diff(a)/dt
-	c3 = lam3*LA.norm(j,2)/np.count_nonzero(notNan)/900
-	st = sin(theta)
-	c4 = lam4*LA.norm(st,2)/np.count_nonzero(notNan)
-	o = np.diff(theta)/dt
-	c5 = lam5*LA.norm(o,2)/np.count_nonzero(notNan)/30
-	return c1,c2,c3,c4,c5
 							
 def applyParallel(dfGrouped, func, args=None):
 	with Pool(cpu_count()) as p:
 		if args is None:	
 			ret_list = list(tqdm(p.imap(func, [group for name, group in dfGrouped]), total=len(dfGrouped.groups)))
 		else:# if has extra arguments
-			ret_list = list(tqdm(p.imap(functools.partial(func, args=args), [group for name, group in dfGrouped]), total=len(dfGrouped.groups)))
+			ret_list = list(tqdm(p.imap(partial(func, args=args), [group for name, group in dfGrouped]), total=len(dfGrouped.groups)))
 	return pd.concat(ret_list)
 							
 def rectify(df):			
@@ -208,7 +208,8 @@ def rectify(df):
 	df = df.groupby("ID").filter(lambda x: len(x)>=2)
 	tqdm.pandas()			
 	# df = df.groupby('ID').apply(rectify_single_camera).reset_index(drop=True)
-	df = applyParallel(df.groupby("ID"), rectify_single_camera).reset_index(drop=True)
+	lams = (1,0.2,0.2,0.05,0.02) # lambdas
+	df = applyParallel(df.groupby("ID"), rectify_single_camera, args = lams).reset_index(drop=True)
 	return df				
 							
 def rectify_receding_horizon(df):
