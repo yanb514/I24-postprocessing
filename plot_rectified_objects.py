@@ -113,6 +113,8 @@ def plot_vehicle_csv(
 			#	  continue
 			
 			frame_idx = int(row[0])
+			if frame_idx<1800:
+				continue
 			id = int(row[2])
 			cls = row[3]
 		
@@ -153,9 +155,8 @@ def plot_vehicle_csv(
 				
 				lmcs_bbox = np.array([footprint[:,0],footprint[:,1],[1,1,1,1]])#.transpose()
 				
-				H = H+np.random.normal(0,0.000001,(3,3))
+				# H = H+np.random.normal(0,0.000001,(3,3))
 				out = np.matmul(H,lmcs_bbox) # H might be ill-conditioned
-				
 				
 				im_footprint = np.zeros([2,4])
 				im_footprint[0,:] = out[0,:] / out[2,:]
@@ -217,11 +218,13 @@ def plot_vehicle_csv(
 			out = cv2.VideoWriter(outfile,cv2.VideoWriter_fourcc(*'mp4v'), frame_rate, (3840,2160))
 	
 	cap= cv2.VideoCapture(sequence)
+	cap.set(1,2250)
 	ret,frame = cap.read()
-	frame_idx = 0
+	
+	frame_idx = 2250
 	
 	while ret:		  
-		
+			
 		if frame_idx in all_frame_data.keys():
 			for box in all_frame_data[frame_idx]:
 				
@@ -332,7 +335,7 @@ def plot_vehicle_csv(
 			key = cv2.waitKey(0)
 		else:
 			key = cv2.waitKey(int(1000/float(frame_rate)))
-		if key == ord('q') or frame_idx > 1800:
+		if key == ord('q') or frame_idx > 3600:
 			break
 		
 		if save:

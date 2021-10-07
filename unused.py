@@ -456,18 +456,7 @@ def predict_distance(n,group,dt):
 	# return np.append(group.Timestamp.values, time[1:]), np.append(group.distance, distance[1:])
 
 
-def euclidean_distance(lat1, lon1, lat2, lon2):
-# https://math.stackexchange.com/questions/29157/how-do-i-convert-the-distance-between-two-lat-long-points-into-feet-meters
-	r = 6371000
-	lat1,lon1 = np.radians([lat1, lon1])
-	lat2 = np.radians(lat2)
-	lon2 = np.radians(lon2)
-	theta = (lat1+lat2)/2
-	dx = r*cos(theta)*(lon2-lon1)
-	dy = r*(lat2-lat1)
-	d = np.sqrt(dx**2+dy**2)
-	# d = r*np.sqrt((lat2-lat1)**2+(cos(theta)**2*(lon2-lon1)**2))
-	return d,dx,dy
+
 	
 
 	

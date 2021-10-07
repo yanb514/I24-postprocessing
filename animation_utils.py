@@ -25,16 +25,110 @@ import random
 
 def getCarColor(speed, maxSpeed, carID) :
 	# based on speed
-	if(carID == 316120) : return 'black'
-	elif(carID == 344120) : return 'red'
-	elif(carID == 399120) : return 'white'
+	# if(carID == 316120) : return 'black'
+	# elif(carID == 344120) : return 'red'
+	# elif(carID == 399120) : return 'white'
+	
+	# p1c1
+	# if carID==3986: return 'blue'
+	# elif carID==4024: return 'black'
+	# elif carID==4152: return 'white'
+	# elif carID==4498: return 'lightsteelblue'
+	# elif carID==4834: return 'ghostwhite'
+	# elif carID==5030: return 'white'
+	# elif carID==5298: return 'black'
+	# elif carID==5485: return 'black'
+	# elif carID==5638: return 'white'
+	# elif carID==5704: return 'ghostwhite'
+	# elif carID==5828: return 'greenyellow'
+
+	# p1c2
+	# if carID==1244: return 'blue'
+	# elif carID==1279: return 'black'
+	# elif carID==1333: return 'white'
+	# elif carID==1375: return 'lightsteelblue'
+	# elif carID==1442: return 'ghostwhite'
+	# elif carID==1536: return 'white'
+	# elif carID==1578: return 'black'
+	# elif carID==1608: return 'black'
+	# elif carID==1674: return 'white'
+	# elif carID==1714: return 'ghostwhite'
+	# elif carID==1782: return 'greenyellow'
+	
+	# p1c3
+	# if carID==769: return 'blue'
+	# elif carID==800: return 'black'
+	# elif carID==865: return 'white'
+	# elif carID==894: return 'lightsteelblue'
+	# elif carID==913: return 'ghostwhite'
+	# elif carID==960: return 'white'
+	# elif carID==1034: return 'black'
+	# elif carID==1052: return 'black'
+	# elif carID==1095: return 'white'
+	# elif carID==1125: return 'ghostwhite'
+	# elif carID==1215: return 'greenyellow'
+	
+	# p1c4
+	# if carID==535: return 'blue'
+	# elif carID==549: return 'black'
+	# elif carID==589: return 'white'
+	# elif carID==622: return 'lightsteelblue'
+	# elif carID==635: return 'ghostwhite'
+	# elif carID==656: return 'white'
+	# elif carID==706: return 'black'
+	# elif carID==713: return 'black'
+	# elif carID==721: return 'white'
+	# elif carID==725: return 'ghostwhite'
+	# elif carID==759: return 'greenyellow'
+		
+	# p1c5
+	# if carID==1054: return 'blue'
+	# elif carID==1081: return 'black'
+	# elif carID==1142: return 'white'
+	# elif carID==1246: return 'lightsteelblue'
+	# elif carID==1293: return 'ghostwhite'
+	# elif carID==1365: return 'white'
+	# # elif carID==: return 'black'
+	# elif carID==1485: return 'black'
+	# elif carID==1515: return 'white'
+	# elif carID==1559: return 'ghostwhite'
+	# elif carID==1594: return 'greenyellow'
+	
+	# # p1c6
+	# if carID==1803: return 'blue'
+	# elif carID==1874: return 'black'
+	# elif carID==2008: return 'white'
+	# elif carID==2212: return 'lightsteelblue'
+	# elif carID==2438: return 'ghostwhite'
+	# elif carID==2537: return 'white'
+	# elif carID==2629: return 'black'
+	# elif carID==2718: return 'black'
+	# elif carID==2827: return 'white'
+	# # elif carID==5704: return 'ghostwhite'
+	# elif carID==2958: return 'greenyellow'
+	
+	# p1 all
+	if carID==9999: return 'blue'
+	elif carID==9998: return 'black'
+	elif carID==9997: return 'white'
+	elif carID==9996: return 'lightsteelblue'
+	elif carID==9995: return 'ghostwhite'
+	elif carID==9994: return 'white'
+	elif carID==9993: return 'black'
+	elif carID==9992: return 'black'
+	elif carID==9991: return 'white'
+	elif carID==9990: return 'ghostwhite'
+	elif carID==9989: return 'greenyellow'
+		
+	
 	else :
-		coolwarm = cm.get_cmap('coolwarm_r')
-		if speed > 34 :
-			return coolwarm(0.999)
-		else :
-			normVal = speed / 34.0
-			return coolwarm(normVal)
+		return 'orange'
+		# coolwarm = cm.get_cmap('coolwarm_r')
+		# if speed > 34 :
+			# return coolwarm(0.999)
+		# else :
+			# normVal = speed / 34.0
+			# return coolwarm(normVal)
 			
 def get_cmap(n, name='hsv'):
 	'''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
@@ -112,11 +206,12 @@ def generate_image_per_frame(i,df, dim, skip_frame, color_dic, image_folder):
 		except:# when a frameSnap is empty
 			frame_time = 1000000000
 		frameSnap = np.array(frameSnap[['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x','bbl_y',
-										'ID','direction','Timestamp', 'speed']])
+										'ID','direction','Timestamp', 'speed','Frame #']])
 		restructCoord(frameSnap)
 		# Looping thru every car in the frame
 		for j in range(len(frameSnap)):
 			carID = frameSnap[j,8]
+			frameID = frameSnap[j,12]
 			carSpeed = frameSnap[j,11]
 			coord = frameSnap[j,0:8]	 # Road Coordinates of the Car
 			coord = np.reshape(coord,(-1,2)).tolist()
@@ -130,14 +225,15 @@ def generate_image_per_frame(i,df, dim, skip_frame, color_dic, image_folder):
 #				  plt.text(xcoord, ycoord, str(int(carSpeed * 2.2369)) + ' mph', fontsize=8)	
 			# Setting up car color
 			# oneCarColor = getCarColor(carSpeed, maxSpeed, carID)
-			oneCarColor = color_dic[carID]
+			oneCarColor = color_dic[carID] # random color
 			# Plotting the car
 			newxs = fillBetweenX(xs)
 			newys = fillBetweenY(ys)
 			ax.plot(newxs, newys, c = oneCarColor)
 			ax.fill(newxs, newys, color = oneCarColor)
 		try:
-			plt.title(datetime.fromtimestamp(frame_time).strftime("%H:%M:%S"), pad=20)
+			# plt.title(datetime.fromtimestamp(frame_time).strftime("%H:%M:%S"), pad=20)
+			plt.title('Frame '+str(int(frameID)), pad=20)
 		except:
 			pass
 		fig.savefig(image_folder + '/' + format(i,"04d") + '.jpg', dpi=80)

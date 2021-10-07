@@ -1,23 +1,20 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy import arctan2,random,sin,cos,degrees, radians
-from bs4 import BeautifulSoup
-from IPython.display import IFrame
-import gmplot 
+from numpy import sin,cos
 import cv2
 import csv
 import sys
 import re
 import glob
 from tqdm import tqdm
-from utils_optimization import *
-from data_association import *
+import utils_optimization as opt
+import data_association as da
 from functools import partial
-import time
 import itertools
-from itertools import combinations
-from shapely.geometry import Polygon
+import os
+from multiprocessing import Pool, cpu_count
+
 
 # read data
 def read_data(file_name, skiprows = 0, index_col = False):	 
@@ -76,8 +73,6 @@ def filter_width_length(df):
 	outliers =	np.logical_or(abs(l1 - m) > 2 * s,abs(l2 - m) > 2 * s)
 	# print('length outlier:',np.count_nonzero(outliers))
 	Y[outliers,:] = np.nan
-	
-	isnan = np.isnan(np.sum(Y,axis=-1))
 	
 	# write into df
 	df.loc[:,pts] = Y
@@ -190,10 +185,10 @@ def preprocess(file_path, tform_path, skip_row = 0):
 	print('Constrain x,y range by camera FOV')
 	if 'camera' not in df:
 		df['camera'] = find_camera_name(file_path)
-	if len(df['camera'].unique())==1:
-		xmin, xmax, ymin, ymax = get_camera_range(df['camera'][0])
-	else:
-		xmin, xmax, ymin, ymax = get_camera_range('all')
+# 	if len(df['camera'].dropna().unique())==1:
+# 		xmin, xmax, ymin, ymax = get_camera_range([df['camera'][0]])
+# 	else:
+	xmin, xmax, ymin, ymax = get_camera_range(df['camera'].dropna().unique())
 		
 	print(xmin, xmax, ymin, ymax)
 	pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
@@ -208,7 +203,7 @@ def preprocess(file_path, tform_path, skip_row = 0):
 	df = get_x_direction(df)
 	print('Naive filter...')
 	df = naive_filter_3D(df)
-	
+	df = df.sort_values(by=['Frame #','Timestamp']).reset_index(drop=True) 
 	return df
 
 def remove_tailing_place_holders(car):
@@ -225,101 +220,7 @@ def find_camera_name(file_path):
 	return camera_name.group()
 
 
- # for visualization
-def insertapikey(fname):
-	apikey = 'AIzaSyDBo88RY_39Evn87johzUvFw5x_Yg6cfkI'
-#	  """put the google api key in a html file"""
-	print('\n###############################')
-	print('\n Beginning Key Insertion ...')
 
-	def putkey(htmltxt, apikey, apistring=None):
-#		  """put the apikey in the htmltxt and return soup"""
-		if not apistring:
-			apistring = "https://maps.googleapis.com/maps/api/js?key=%s&callback=initialize&libraries=visualization&sensor=true_or_false"
-		soup = BeautifulSoup(htmltxt, 'html.parser')
-		soup.script.decompose() #remove the existing script tag
-		body = soup.body
-		src = apistring % (apikey, )
-		tscript = soup.new_tag("script", src=src) #, async="defer"
-		body.insert(-1, tscript)
-		return soup
-
-	htmltxt = open(fname, 'r').read()
-	# htmltxt = open(fname,'r+').read()
-	soup = putkey(htmltxt, apikey)
-	newtxt = soup.prettify()
-	open(fname, 'w').write(newtxt)
-	print('\nKey Insertion Completed!!')
-
-
-def jupyter_display(gmplot_filename):
-	google_api_key = 'AIzaSyDBo88RY_39Evn87johzUvFw5x_Yg6cfkI'
-	
-#	  """Hack to display a gmplot map in Jupyter"""
-	with open(gmplot_filename, "r+b") as f:
-		f_string = f.read()
-		url_pattern = "https://maps.googleapis.com/maps/api/js?libraries=visualization&sensor=true_or_false"
-		newstring = url_pattern + "&key=%s" % google_api_key
-		f_string = f_string.replace(url_pattern.encode(), newstring.encode())
-		f.write(f_string)
-	return IFrame(gmplot_filename, width=900, height=600)
-
-def draw_map_scatter(x,y):
-	
-	map_name = "test.html"
-	gmap = gmplot.GoogleMapPlotter(x[0], y[0], 100) 
-
-	gmap.scatter(x, y, s=.9, alpha=.8, c='red',marker = False)
-	gmap.draw(map_name)
-	
-	insertapikey(map_name)
-	return jupyter_display(map_name)
-	
-def draw_map(df, latcenter, loncenter, nO):
-	
-	map_name = "test.html"
-	gmap = gmplot.GoogleMapPlotter(latcenter, loncenter, 100) 
-
-	groups = df.groupby('ID')
-	groupList = list(groups.groups)
-
-	for i in groupList[:nO]:   
-		group = groups.get_group(i)
-		gmap.scatter(group.lat, group.lon, s=.5, alpha=.8, label=group.loc[group.index[0],'ID'],marker = False)
-	gmap.draw(map_name)
-	
-	insertapikey(map_name)
-	return jupyter_display(map_name)
-
-# draw rectangles from 3D box on map
-def draw_map_box(Y, nO, lats, lngs):
-	
-	map_name = "test.html"
-	notNan = ~np.isnan(np.sum(Y,axis=-1))
-	Y = Y[notNan,:]
-	gmap = gmplot.GoogleMapPlotter(Y[0,0], Y[0,1], nO) 
-
-	# get the bottom 4 points gps coords
-	# Y = np.array(df[['bbrlat','bbrlon','fbrlat','fbrlon','fbllat','fbllon','bbllat','bbllon']])
-	
-
-	for i in range(len(Y)):
-		coord = Y[i,:]
-		coord = np.reshape(coord,(-1,2)).tolist()
-		coord.append(coord[0]) #repeat the first point to create a 'closed loop'
-		coord_tuple = [tuple(pt) for pt in coord]
-		rectangle = zip(*coord_tuple) #create lists of x and y values
-		gmap.polygon(*rectangle)	
-	lats = lats[~np.isnan(lats)]
-	lngs = lngs[~np.isnan(lngs)]
-	gmap.scatter(lats, lngs, color='red', size=1, marker=True)
-	gmap.scatter(Y[:,2], Y[:,3],color='red', size=0.1, marker=False)
-
-	gmap.draw(map_name)
-
-	insertapikey(map_name)
-	return jupyter_display(map_name)
-	
 def get_x_direction(df):
 	return df.groupby("ID").apply(ffill_direction).reset_index(drop=True)
 
@@ -505,14 +406,17 @@ def forward_predict(car,xmin,xmax,target, maxFrame):
 	xlast = car['x'].values[-1]
 	# vlast = car['speed'].values[-1]
 	vlast = np.nanmean(car['speed'].values)
+	# vlast = np.max(car['speed'].values)
 	# alast = car['acceleration'].values[-1]
 	if vlast < 1:
 		return car
-	thetalast = np.mean(car['theta'].values)
 	
 	w = car['width'].values[-1]
 	l = car['length'].values[-1]
+	h = car['height'].values[-1]
 	dir = car['direction'].values[-1]
+	# thetalast = np.mean(car['theta'].values)
+	thetalast = np.arccos(dir)
 	dt = 1/30
 
 	# v = []
@@ -545,7 +449,7 @@ def forward_predict(car,xmin,xmax,target, maxFrame):
 	timestamps = np.linspace(tlast+dt, tlast+dt+dt*len(v), len(v), endpoint=False)
 
 	# compute positions
-	Yre,x,y,a = generate(w,l,xlast+dt*vlast*cos(theta[0]),ylast+dt*vlast*sin(theta[0]),theta,v,outputall=True)
+	Yre,x,y,a = opt.generate(w,l,xlast+dt*vlast*cos(theta[0]),ylast+dt*vlast*sin(theta[0]),theta,v,outputall=True)
 	
 	frames = np.arange(framelast+1,framelast+1+len(x))
 	pos_frames = frames<=maxFrame
@@ -565,6 +469,7 @@ def forward_predict(car,xmin,xmax,target, maxFrame):
 				'theta': theta[pos_frames],
 				'width': w,
 				'length':l,
+				'height':h,
 				'ID': car['ID'].values[-1],
 				'direction': dir,
 				'acceleration': 0,
@@ -588,6 +493,7 @@ def backward_predict(car,xmin,xmax,target):
 	yfirst = car['y'].values[0]
 	xfirst = car['x'].values[0]
 	vfirst = np.nanmean(car['speed'].values)
+	# vfirst = np.max(car['speed'].values)
 	# vfirst = car['speed'].values[0]
 	# afirst = car['acceleration'].values[1]
 
@@ -596,12 +502,10 @@ def backward_predict(car,xmin,xmax,target):
 	# thetafirst = np.nanmean(car['theta'].values)
 	w = car['width'].values[-1]
 	l = car['length'].values[-1]
+	h = car['height'].values[-1]
 	dt = 1/30
 	dir = car['direction'].values[-1]
-	if dir>0:
-		thetafirst = 0
-	else:
-		thetafirst = np.pi
+	thetafirst = np.arccos(dir)
 	# v = []
 	x = []
 	y = []
@@ -646,7 +550,7 @@ def backward_predict(car,xmin,xmax,target):
 	yc = yb + w*cos(theta)
 	xd = xa - w*sin(theta)
 	yd = ya + w*cos(theta)
-	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)		
+# 	Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)		
 	
 	frames = np.arange(framefirst-len(x),framefirst)
 	pos_frames = frames>=0
@@ -666,6 +570,7 @@ def backward_predict(car,xmin,xmax,target):
 				'theta': thetafirst,
 				'width': w,
 				'length':l,
+				'height':h,
 				'ID': car['ID'].values[0],
 				'direction': dir,
 				'acceleration': 0,#a[pos_frames],
@@ -675,99 +580,7 @@ def backward_predict(car,xmin,xmax,target):
 	car_ext = pd.DataFrame.from_dict(car_ext)
 	return pd.concat([car_ext, car], sort=False, axis=0)
 	
-def plot_track(D,length=15,width=1):
-	fig, ax = plt.subplots(figsize=(length,width))
 
-	for i in range(len(D)):
-		coord = D[i,:]
-		coord = np.reshape(coord,(-1,2)).tolist()
-		coord.append(coord[0]) #repeat the first point to create a 'closed loop'
-		xs, ys = zip(*coord) #lon, lat as x, y
-		plt.plot(xs,ys,label=('t=0' if i==0 else ''),c='black')#alpha=i/len(D)
-		plt.scatter(D[i,2],D[i,3],color='black')
-	ax = plt.gca()
-	plt.xlabel('meter')
-	plt.ylabel('meter')
-	# plt.xlim([50,60])
-	# plt.ylim([0,60])
-	plt.legend()
-	# ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y)
-	plt.show() 
-	return
-	
-def plot_track_df(df,length=15,width=1,show=True, ax=None, color='black'):
-	D = np.array(df[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
-	if ax is None:
-		fig, ax = plt.subplots(figsize=(length,width))
-	
-	for i in range(len(D)):
-		coord = D[i,:]
-		coord = np.reshape(coord,(-1,2)).tolist()
-		coord.append(coord[0]) #repeat the first point to create a 'closed loop'
-		xs, ys = zip(*coord) #lon, lat as x, y
-		ax.plot(xs,ys,label='t=0' if i==0 else '',c=color)
-		ax.scatter(D[i,2],D[i,3],color=color)#,alpha=i/len(D)
-	ax.set_xlabel('meter')
-	ax.set_ylabel('meter')
-	if show:
-		plt.show() 
-		return
-	else:
-		return ax
-	
-from matplotlib import cm
-def plot_track_df_camera(df,tform_path,length=15,width=1, camera='varies'):
-	camera_list = ['p1c1','p1c2','p1c3','p1c4','p1c5','p1c6']
-	color=cm.rainbow(np.linspace(0,1,len(camera_list)))
-	camera_dict = dict(zip(camera_list,color))
-	ID = df['ID'].iloc[0]
-	fig, ax = plt.subplots(figsize=(length,width))
-	if camera == 'varies':
-		camera_group = df.groupby('camera')
-		print('ID:',ID,'# frames:',len(df),'# cameras:',len(camera_group))
-		for cameraID,cg in camera_group:
-			Y = np.array(cg[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
-			c=camera_dict[cameraID]
-			for i in range(len(Y)):
-				coord = Y[i,:]
-				coord = np.reshape(coord,(-1,2)).tolist()
-				coord.append(coord[0]) #repeat the first point to create a 'closed loop'
-				xs, ys = zip(*coord) #lon, lat as x, y	 
-				plt.plot(xs,ys,c=c,label=cameraID if i == 0 else "")
-
-			plt.scatter(Y[:,2],Y[:,3],color='black')
-			ax = plt.gca()
-			plt.xlabel('meter')
-			plt.ylabel('meter')
-			plt.legend()
-			ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y) 
-		
-	else:
-		c=camera_dict[camera]
-		img_pts = np.array(df[['bbrx','bbry', 'fbrx','fbry','fblx','fbly','bblx', 'bbly']])
-		Y = img_to_road_box(img_pts,tform_path,camera)
-		for i in range(len(Y)):
-			coord = Y[i,:]
-			coord = np.reshape(coord,(-1,2)).tolist()
-			coord.append(coord[0]) #repeat the first point to create a 'closed loop'
-			xs, ys = zip(*coord) #lon, lat as x, y	 
-			plt.plot(xs,ys,c=c,label=camera if i == 0 else "")
-
-		plt.scatter(Y[:,2],Y[:,3],color='black')
-		ax = plt.gca()
-		plt.xlabel('meter')
-		plt.ylabel('meter')
-		ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y) 
-
-		plt.legend()
-		plt.show()
-	
-	return
-
-def plot_track_compare(car,carre):
-	ax = plot_track_df(car,show=False, color='red')
-	ax = plot_track_df(carre, show=False, ax=ax, color='blue')
-	return
 	
 def overlap_score(car1, car2):
 	'''
@@ -794,7 +607,7 @@ def get_id_rem(df,SCORE_THRESHOLD):
 	'''
 	groups = df.groupby('ID')
 	groupList = list(groups.groups)
-	nO = len(groupList)
+# 	nO = len(groupList)
 	comb = itertools.combinations(groupList, 2)
 	id_rem = [] # ID's to be removed
 
@@ -802,8 +615,8 @@ def get_id_rem(df,SCORE_THRESHOLD):
 		car1 = groups.get_group(c1)
 		car2 = groups.get_group(c2)
 	#	  score = overlap_score(car1, car2)
-		score = IOU_score(car1,car2)
-		IOU.append(score)
+		score = da.IOU_score(car1,car2)
+# 		IOU.append(score)
 		if score > SCORE_THRESHOLD:
 			# remove the shorter track
 			if len(car1)>= len(car2):
@@ -872,23 +685,27 @@ def preprocess_multi_camera(data_path, tform_path):
 	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
 	return df
 	
-def preprocess_data_association(df):
+def preprocess_data_association(df,file,tform_path):
 	'''
 	stitch objects based on their predicted trajectories
 	associate objects based on obvious overlaps
 	'''
 	tqdm.pandas()
-	
+	# associate based on overlaps (IOU measure)
+	# parent = associate_overlaps(df)
+	# df['ID'] = df['ID'].apply(lambda x: parent[x] if x in parent else x)  
+	# print('After assocating overlaps: ', len(df['ID'].unique()), 'cars')
+	print('cars: ', len(df['ID'].unique()), 'cars',len(df))
+	df = da.remove_overlaps(df)
+	print('After removing overlaps: ', len(df['ID'].unique()), 'cars',len(df))
+
 	# stitch based on prediction (weighted distance measure)
 	print('Before DA: ', len(df['ID'].unique()), 'cars')
-	parent = stitch_objects(df)
+	parent = da.stitch_objects(df)
 	df['ID'] = df['ID'].apply(lambda x: parent[x] if x in parent else x)
 	print('After stitching: ', len(df['ID'].unique()), 'cars, checking for overlaps...')
 	
-	# associate based on overlaps (IOU measure)
-	parent = associate_overlaps(df)
-	df['ID'] = df['ID'].apply(lambda x: parent[x] if x in parent else x)  
-	print('After assocating overlaps: ', len(df['ID'].unique()), 'cars')
+	
 	print('Get the longest continuous frame chunk...')
 	df = df.groupby('ID').apply(findLongestSequence).reset_index(drop=True)
 	df = applyParallel(df.groupby("Frame #"), del_repeat_meas_per_frame).reset_index(drop=True)
@@ -906,73 +723,81 @@ def applyParallel(dfGrouped, func, args=None):
 			ret_list = list(tqdm(p.imap(partial(func, args=args), [group for name, group in dfGrouped]), total=len(dfGrouped.groups)))
 	return pd.concat(ret_list)	
 	
-def get_camera_range(camera_id):
+def get_camera_range(camera_id_list):
 	'''
 	return xmin, xmax, ymin, ymax (in meter)
 	'''
 	ymin = -5
 	ymax = 45
-	if camera_id=='p1c1':
-		xmin = 0
-		xmax = 520
-	elif camera_id=='p1c2':
-		xmin = 400
-		xmax = 740
-	elif camera_id=='p1c3':
-		xmin = 600
-		xmax = 800
-	elif camera_id=='p1c4':
-		xmin = 600
-		xmax = 800
-	elif camera_id=='p1c5':
-		xmin = 660
-		xmax = 960
-	elif camera_id=='p1c6':
-		xmin = 760
-		xmax = 1200
-	elif camera_id=='p2c1':
-		xmin = 400
-		xmax = 900
-	elif camera_id=='p2c2':
-		xmin = 600
-		xmax = 920
-	elif camera_id=='p2c3':
-		xmin = 700
-		xmax = 1040
-	elif camera_id=='p2c4':
-		xmin = 700
-		xmax = 1040
-	elif camera_id=='p2c5':
-		xmin = 780
-		xmax = 1060
-	elif camera_id=='p2c6':
-		xmin = 800
-		xmax = 1160
-	elif camera_id=='p3c1':
-		xmin = 800
-		xmax = 1400
-	elif camera_id=='p3c2':
-		xmin = 1150
-		xmax = 1450
-	elif camera_id=='p3c3':
-		xmin = 1220
-		xmax = 1600
-	elif camera_id=='p3c4':
-		xmin = 1220
-		xmax = 1600
-	elif camera_id=='p3c5':
-		xmin = 1350
-		xmax = 1800
-	elif camera_id=='p3c6':
-		xmin = 1580
-		xmax = 2000
-	elif camera_id=='all':
-		xmin = 0
-		xmax = 2000
-	else:
-		print('no camera ID in get_camera_range')
-		return
-	return xmin/3.281, xmax/3.281, ymin/3.281, ymax/3.281
+	xminfinal = 2000
+	xmaxfinal = 0
+    
+	for camera_id in camera_id_list:
+	
+		if camera_id=='p1c1':
+			xmin = 0
+			xmax = 520
+		elif camera_id=='p1c2':
+			xmin = 400
+			xmax = 740
+		elif camera_id=='p1c3':
+			xmin = 600
+			xmax = 800
+		elif camera_id=='p1c4':
+			xmin = 600
+			xmax = 800
+		elif camera_id=='p1c5':
+			xmin = 660
+			xmax = 960
+		elif camera_id=='p1c6':
+			xmin = 760
+			xmax = 1200
+		elif camera_id=='p2c1':
+			xmin = 400
+			xmax = 900
+		elif camera_id=='p2c2':
+			xmin = 600
+			xmax = 920
+		elif camera_id=='p2c3':
+			xmin = 700
+			xmax = 1040
+		elif camera_id=='p2c4':
+			xmin = 700
+			xmax = 1040
+		elif camera_id=='p2c5':
+			xmin = 780
+			xmax = 1060
+		elif camera_id=='p2c6':
+			xmin = 800
+			xmax = 1160
+		elif camera_id=='p3c1':
+			xmin = 800
+			xmax = 1400
+		elif camera_id=='p3c2':
+			xmin = 1150
+			xmax = 1450
+		elif camera_id=='p3c3':
+			xmin = 1220
+			xmax = 1600
+		elif camera_id=='p3c4':
+			xmin = 1220
+			xmax = 1600
+		elif camera_id=='p3c5':
+			xmin = 1350
+			xmax = 1800
+		elif camera_id=='p3c6':
+			xmin = 1580
+			xmax = 2000
+		elif camera_id=='all':
+			xmin = 0
+			xmax = 2000
+		else:
+			print('no camera ID in get_camera_range')
+			return
+		xminfinal = min(xminfinal, xmin)
+		xmaxfinal = max(xmaxfinal, xmax)
+		
+	return xminfinal/3.281, xmaxfinal/3.281, ymin, ymax
 	
 def post_process(df):
 	# print('remove overlapped cars...')
@@ -981,17 +806,19 @@ def post_process(df):
 	print('cap width at 2.59m...')
 	df = df.groupby("ID").apply(width_filter).reset_index(drop=True)
 	
-	print('extending tracks to edges of the frame...')
-	# del xmin, xmax
-	# global xmin, xmax, maxFrame
-	camera = df['camera'].iloc[0]
-	xmin, xmax, ymin, ymax = get_camera_range(camera)
-	maxFrame = max(df['Frame #'])
-	print(xmin, xmax)
-	args = (xmin, xmax, maxFrame)
-	tqdm.pandas()
-	# df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
-	df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
+	print('remove overlaps, before: ', len(df['ID'].unique()))
+	df = da.remove_overlaps(df)
+	print('remove overlaps, after: ', len(df['ID'].unique()))
+	
+	# print('extending tracks to edges of the frame...')
+	# camera = df['camera'].iloc[0]
+	# xmin, xmax, ymin, ymax = get_camera_range(camera)
+	# maxFrame = max(df['Frame #'])
+	# print(xmin, xmax)
+	# args = (xmin, xmax, maxFrame)
+	# tqdm.pandas()
+	# # df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
+	# df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
 	
 	print('standardize format for plotter...')
 	# if ('lat' in df):
@@ -1000,7 +827,7 @@ def post_process(df):
 			'vel_x','vel_y','Generation method',
 			'fbrx','fbry','fblx','fbly','bbrx','bbry','bblx','bbly','ftrx','ftry','ftlx','ftly','btrx','btry','btlx','btly',
 			'fbr_x','fbr_y','fbl_x','fbl_y','bbr_x','bbr_y','bbl_x','bbl_y',
-			'direction','camera','acceleration','speed','x','y','theta','width','length']]
+			'direction','camera','acceleration','speed','x','y','theta','width','length','height']]
 	return df
 
 def get_camera_x(x):
@@ -1046,7 +873,7 @@ def width_filter(car):
 	if (w < 2.59) & (notNan == len(car)):
 		return car
 	theta = car['theta'].values
-	dt=1/30
+# 	dt=1/30
 	
 	
 	if w > 2.59:
@@ -1094,22 +921,22 @@ def dashboard(cars):
 
 	fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(1, 5, figsize=(15,3))
 	# x
-	x1 = []
-	x2 = []
-	frames = cars[0]['Frame #'].values
+# 	x1 = []
+# 	x2 = []
+# 	frames = cars[0]['Frame #'].values
 	i = 0
 	for car in cars:
-		x1.append(car['fbr_x'].values)
-		x2.append(car['bbr_x'].values)
+		# x1.append(car['fbr_x'].values)
+		# x2.append(car['bbr_x'].values)
 		# ax1.scatter(car['Frame #'].values, car['fbr_x'].values, label=i, s=1)
-		# ax1.scatter(car['Frame #'].values, car['bbr_x'].values, label=i, s=1)
+		ax1.scatter(car['Frame #'].values, car['bbr_x'].values, label=i, s=1)
 		i+=1
-	for i in range(len(frames)):
-		ax1.scatter(frames[i],x1[0][i]-x1[1][i],c='b',s=1,label='fbr' if i==0 else '')
-		ax1.scatter(frames[i],x2[0][i]-x2[1][i],c='r',s=1,label='bbr' if i==0 else '')
+	# for i in range(len(frames)):
+		# ax1.scatter(frames[i],x1[0][i]-x1[1][i],c='b',s=1,label='fbr' if i==0 else '')
+		# ax1.scatter(frames[i],x2[0][i]-x2[1][i],c='r',s=1,label='bbr' if i==0 else '')
 	# ax1.scatter(cars[0]['Frame #'].values, xs[0]-xs[1], s=1)
-	ax1.legend()
-	ax1.set_title('x (m)')
+	# ax1.legend()
+	# ax1.set_title('x (m)')
 		
 	# y positions
 	i = 0
@@ -1146,3 +973,20 @@ def dashboard(cars):
 	
 	plt.show()
 	return
+
+def assign_lane(df):
+    '''
+    assign lane number to each measurement box based on y
+    assume lane width is 12ft
+    lane 1 is the right-most lane in +1 direction
+    '''
+    if 'y' in df:
+        y = df['y'].values
+    else:
+        y = (df['bbr_y'].values + df['bbl_y'].values)/2
+    # if y is nan, this current version will assign that to lane 11
+    lane_edges = np.arange(0,12*11,12)/3.281 # 10 lanes in total
+    lane_idx = np.digitize(y, lane_edges)
+    df['lane'] = lane_idx
+    df.loc[df.lane == 11, "lane"] = np.nan
+    return df

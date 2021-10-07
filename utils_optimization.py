@@ -1,21 +1,13 @@
 import pandas as pd
 import numpy as np
-from numpy import sin,cos,arccos
+from numpy import sin,cos
 from scipy.optimize import minimize, basinhopping
 import numpy.linalg as LA
-from utils import *
+import utils
 from tqdm import tqdm
 from functools import partial
 from multiprocessing import Pool, cpu_count
-from scipy import stats
-
-# global variables for normalizing costs
-# global c1max, c2max, c3max, c3max, c5max
-# c1max = 10
-# c2max = 30
-# c3max = 45
-# c4max = 0.55
-# c5max = 0.3
+import utils_vis as vis
 
 def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
 	"""The cost function
@@ -99,7 +91,7 @@ def rectify_single_camera(df, args):
 	lam3 = lam3 # jerk 0.1	  
 	lam4 = lam4 # theta 1000	  
 	lam5 = lam5 # omega 2	 
-	niter = 10
+	niter = 0
 	
 	timestamps = df.Timestamp.values
 	dt = np.diff(timestamps)
@@ -109,30 +101,33 @@ def rectify_single_camera(df, args):
 	Y1 = np.array(df[pts])	
 
 	# try removing outliers first
-	x = Y1[:,0]
+	y_avg = (Y1[:,3]+Y1[:,5])/2
 	l = np.abs(Y1[:,0]-Y1[:,2])
 	w = np.abs(Y1[:,1]-Y1[:,7])
 	invalid = [False]*len(Y1)
-	for meas in [w,l]:
+	for meas in [y_avg]:
 		valid = meas[~np.isnan(meas)]
 		if len(valid) > 5:
 			q1, q3 = np.percentile(valid,[10,90])
 			invalid = invalid | (meas<q1) | (meas>q3)
 	Y1[invalid,:] = np.nan
 	
-	# plot_track(Y1)
+# 	vis.plot_track(Y1)
 	N = len(Y1)				
 	notNan = ~np.isnan(np.sum(Y1,axis=-1))
 	Y1 = Y1[notNan,:]
 
-	if (len(Y1) < 3):		
+	if (len(Y1) <= 3):		
 		print('Not enough valid measurements: ', df['ID'].iloc[0])
 		# df.loc[:,pts] = np.nan
 		return None	
 		
 	first_valid = np.where(notNan==True)[0][0]
 	
-	avgv = np.sqrt((Y1[-1,2]-Y1[0,2])**2 + (Y1[-1,3]-Y1[0,3])**2)/(timestamps[notNan][-1]-timestamps[notNan][0]) #fbr
+	# avgv = np.sqrt((Y1[-1,2]-Y1[0,2])**2 + (Y1[-1,3]-Y1[0,3])**2)/(timestamps[notNan][-1]-timestamps[notNan][0]) #fbr
+	avgv = np.sqrt((Y1[-1,3]-Y1[0,3])**2 + (max(Y1[:,2])-min(Y1[:,2]))**2)/(timestamps[notNan][-1]-timestamps[notNan][0]) #fbr
+	# print(avgv)
+	# print((Y1[-1,3]-Y1[0,3]), (max(Y1[:,2])-min(Y1[:,2])), (timestamps[notNan][-1]-timestamps[notNan][0]))
 	# avgv = np.sqrt((Y1[-1,0]-Y1[0,2])**2 + (Y1[-1,0]-Y1[0,0])**2)/(timestamps[notNan][-1]-timestamps[notNan][0])#bbr
 	v0 = np.array([np.abs(avgv)]*N)
 	sign = np.sign(Y1[-1,0]-Y1[0,0])			
@@ -208,7 +203,8 @@ def rectify(df):
 	df = df.groupby("ID").filter(lambda x: len(x)>=2)
 	tqdm.pandas()			
 	# df = df.groupby('ID').apply(rectify_single_camera).reset_index(drop=True)
-	lams = (1,0.2,0.2,0.05,0.02) # lambdas
+	# lams = (1,0.2,0.2,0.05,0.02) # lambdas
+	lams = (1,0,0,0.02,0.02)
 	df = applyParallel(df.groupby("ID"), rectify_single_camera, args = lams).reset_index(drop=True)
 	return df				
 							
