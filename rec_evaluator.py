@@ -90,9 +90,9 @@ class MOT_Evaluator():
     
         Parameters
         ----------
-        a : array of size [1,8] 
+        a : tensor of size [8,3] 
             bounding boxes in relative coords
-        b : array of size [1,8] 
+        b : array of size [8,3] 
             bounding boxes in relative coords
     
         Returns
@@ -100,23 +100,43 @@ class MOT_Evaluator():
         iou - float between [0,1] if a, b are valid boxes, -1 otherwise
             average iou for a and b
         """
-        if ~np.isnan(np.sum([a,b])): # if no Nan in any measurements
-            p = Polygon([(a[2*i],a[2*i+1]) for i in range(int(len(a)/2))])
-            q = Polygon([(b[2*i],b[2*i+1]) for i in range(int(len(b)/2))])
-            if (p.intersects(q)):
-                intersection_area = p.intersection(q).area
-                union_area = p.union(q).area
-                iou = float(intersection_area/union_area)
-            else:
-                iou = 0 
-        else:
-            iou = 0
+        # # ignore the top
+        # a = a[:,:2]
+        # b = b[:,:2]
+        # if sum(sum(np.isnan(np.sum([a,b])))): # if no Nan in any measurements
+        #     p = Polygon([(a[2*i],a[2*i+1]) for i in range(int(len(a)/2))])
+        #     q = Polygon([(b[2*i],b[2*i+1]) for i in range(int(len(b)/2))])
+        #     if (p.intersects(q)):
+        #         intersection_area = p.intersection(q).area
+        #         union_area = p.union(q).area
+        #         iou = float(intersection_area/union_area)
+        #     else:
+        #         iou = 0 
+        # else:
+        #     iou = 0
+        
+        area_a = (a[2]-a[0]) * (a[3]-a[1])
+        area_b = (b[2]-b[0]) * (b[3]-b[1])
+        
+        minx = max(a[0], b[0])
+        maxx = min(a[2], b[2])
+        miny = max(a[1], b[1])
+        maxy = min(a[3], b[3])
+        
+        intersection = max(0, maxx-minx) * max(0,maxy-miny)
+        union = area_a + area_b - intersection + 1e-06
+        iou = intersection/union
+        
         return iou
 
     def score_trajectory(self):
         '''
         compute euclidean distance between GT trajectories and rec trajectories
         '''
+        # convert back to meter
+        cols_to_convert = ["fbr_x",	"fbr_y","fbl_x"	,"fbl_y","bbr_x","bbr_y","bbl_x","bbl_y", "speed","x","y","width","length","height"]
+        self.rec[cols_to_convert] = self.rec[cols_to_convert] / 3.281
+        
         gt_groups = self.gt.groupby('ID')
         rec_groups = self.rec.groupby('ID')
         
@@ -142,6 +162,10 @@ class MOT_Evaluator():
         return
     
     def evaluate(self):
+        # TODO: convert gt and rec unit from m to ft
+        cols_to_convert = ["fbr_x",	"fbr_y","fbl_x"	,"fbl_y","bbr_x","bbr_y","bbl_x","bbl_y", "speed","x","y","width","length","height"]
+        # self.gt[cols_to_convert] = self.gt[cols_to_convert] * 3.281
+        self.rec[cols_to_convert] = self.rec[cols_to_convert] * 3.281
         
         # for each frame:
         gt_frames = self.gt.groupby('Frame #')
@@ -177,15 +201,52 @@ class MOT_Evaluator():
                     
             # store ground truth as tensors
             gt_ids = gt['ID'].values
-            gt_space = np.array(gt[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
+           
+            gt_classes = gt["Object class"].values
             
-            # store rec as tensors (we start from state)
+            # TODO: fill nan as 0 for velocity
+            gt_im = np.array(gt[["fbrx","fbry",	"fblx",	"fbly",	"bbrx",	"bbry",	"bblx",	"bbly",	"ftrx",	"ftry",	"ftlx",	"ftly",	"btrx",	"btry",	"btlx",	"btly"]])   
+            gt_im = torch.from_numpy(np.stack(gt_im)).reshape(-1,8,2)
+            
+            # two pass estimate of object heights
+            heights = self.hg.guess_heights(gt_classes)
+            gt_state = self.hg.im_to_state(gt_im,heights = heights)
+            repro_boxes = self.hg.state_to_im(gt_state)
+            refined_heights = self.hg.height_from_template(repro_boxes,heights,gt_im)
+            
+            # get other formulations for boxes
+            gt_state = self.hg.im_to_state(gt_im,heights = refined_heights)
+            gt_space = self.hg.state_to_space(gt_state)
+            
+            gt_velocities = gt["speed"].values
+            gt_velocities = torch.tensor(gt_velocities).float()
+            gt_state = torch.cat((gt_state,gt_velocities.unsqueeze(1)),dim = 1)
+            
+            # store pred as tensors (we start from state)
             rec_ids = rec['ID'].values
-            rec_space = np.array(rec[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
-        
+            rec_classes = rec["Object class"].values
+            rec_state = np.array(rec[["x","y","length","width","height","direction","speed"]])
+            rec_state = torch.from_numpy(np.stack(rec_state)).reshape(-1,7).float()
+            rec_space = self.hg.state_to_space(rec_state)
+            rec_im = self.hg.state_to_im(rec_state)
+            
+            
             # compute matches based on space location ious
-            first = gt_space
-            second = rec_space
+            first = gt_space.clone()
+            boxes_new = torch.zeros([first.shape[0],4])
+            boxes_new[:,0] = torch.min(first[:,0:4,0],dim = 1)[0]
+            boxes_new[:,2] = torch.max(first[:,0:4,0],dim = 1)[0]
+            boxes_new[:,1] = torch.min(first[:,0:4,1],dim = 1)[0]
+            boxes_new[:,3] = torch.max(first[:,0:4,1],dim = 1)[0]
+            first = boxes_new
+            
+            second = rec_space.clone()
+            boxes_new = torch.zeros([second.shape[0],4])
+            boxes_new[:,0] = torch.min(second[:,0:4,0],dim = 1)[0]
+            boxes_new[:,2] = torch.max(second[:,0:4,0],dim = 1)[0]
+            boxes_new[:,1] = torch.min(second[:,0:4,1],dim = 1)[0]
+            boxes_new[:,3] = torch.max(second[:,0:4,1],dim = 1)[0]
+            second = boxes_new
         
             # find distances between first and second
             ious = np.zeros([len(first),len(second)])
@@ -226,6 +287,17 @@ class MOT_Evaluator():
                 if gt_id not in self.m["gt_ids"]:
                     self.m["gt_ids"].append(gt_id)    
 
+
+            # of the pred objects not in b, dont count as FP those that fall outside of frame 
+            for i in range(len(rec_ids)):
+                if i not in b: # no match
+                    obj = rec_im[i]
+                    if obj[0,0] < 0 or obj[2,0] < 0 or obj[0,0] > 1920 or obj[2,0] > 1920:
+                         self.m["FP edge-case"] += 1
+                         continue
+                    if obj[0,1] < 0 or obj[2,1] < 0 or obj[0,1] > 1080 or obj[2,1] > 1080:
+                         self.m["FP edge-case"] += 1
+                         
             self.m["TP"] += len(matches)
             self.m["FP"] += max(0,(len(rec_space) - len(matches)))
             self.m["FN"] += max(0,(len(gt_space) - len(matches)))
@@ -233,6 +305,17 @@ class MOT_Evaluator():
             self.m["FP @ 0.2"] += max(0,len(rec_space) - len(a))
             self.m["FN @ 0.2"] += max(0,len(gt_space) - len(a))
             
+            for match in matches:
+                # for each match, store error in L,W,H,x,y,velocity
+                state_err = torch.clamp(torch.abs(rec_state[match[1]] - gt_state[match[0]]),0,500)
+                self.m["state_err"].append(state_err)
+                
+                # for each match, store absolute 3D bbox pixel error for top and bottom
+                bot_err = torch.clamp(torch.mean(torch.sqrt(torch.sum(torch.pow(rec_im[match[1],0:4,:] - gt_im[match[0],0:4,:],2),dim = 1))),0,500)
+                top_err = torch.clamp(torch.mean(torch.sqrt(torch.sum(torch.pow(rec_im[match[1],4:8,:] - gt_im[match[0],4:8,:],2),dim = 1))),0,500)
+                self.m["im_bot_err"].append(bot_err)
+                self.m["im_top_err"].append(top_err)
+                
         # at the end:
         metrics = {}
         metrics["TP"] = self.m["TP"]
@@ -243,6 +326,7 @@ class MOT_Evaluator():
         metrics["iou_threshold"] = self.match_iou
         metrics["True unique objects"] = len(self.m["gt_ids"])
         metrics["recicted unique objects"] = len(self.m["rec_ids"])
+        metrics["FP edge-case"] = self.m["FP edge-case"]
         
         # Compute detection recall, detection precision, detection False alarm rate
         metrics["Recall"] = self.m["TP"]/(self.m["TP"]+self.m["FN"])
@@ -252,6 +336,7 @@ class MOT_Evaluator():
         # Compute fragmentations - # of IDs assocated with each GT
         metrics["Fragmentations"] = sum([len(self.m["ids"][key])-1 for key in self.m["ids"]])
         metrics["Matched IDs"] = self.m["ids"]
+        
         # Count ID switches - any time a rec ID appears in two GT object sets
         count = 0
         switched_ids = []
@@ -267,6 +352,12 @@ class MOT_Evaluator():
         metrics["ID switches"] = (count, switched_ids)
         metrics["Changed ID pair"] = self.m["Changed ID pair"]
          
+         # Compute MOTA
+        metrics["MOTA"] = 1 - (self.m["FN"] +  metrics["ID switches"][0] + self.m["FP"])/(self.m["TP"])
+        metrics["MOTA edge-case"]  = 1 - (self.m["FN"] +  metrics["ID switches"][0] + self.m["FP"]- self.m["FP edge-case"])/(self.m["TP"])
+        metrics["MOTA @ 0.2"] = 1 - (self.m["FN @ 0.2"] +  metrics["ID switches"][0] + self.m["FP @ 0.2"])/(self.m["TP"])
+        
+        
         # Compute average detection metrics in various spaces
         ious = np.array(self.m["match_IOU"])
         iou_mean_stddev = np.mean(ious),np.std(ious)
@@ -274,7 +365,15 @@ class MOT_Evaluator():
         pre_ious = np.array(self.m["pre_thresh_IOU"])
         pre_iou_mean_stddev = np.mean(pre_ious),np.std(pre_ious)
     
+        state = torch.stack(self.m["state_err"])
+        state_mean_stddev = torch.mean(state,dim = 0), torch.std(state,dim = 0)
         
+        metrics["Width precision"]     = state_mean_stddev[0][3],state_mean_stddev[1][3]
+        metrics["Height precision"]    = state_mean_stddev[0][4],state_mean_stddev[1][4]
+        metrics["Length precision"]    = state_mean_stddev[0][2],state_mean_stddev[1][2]
+        metrics["Velocity precision"]  = state_mean_stddev[0][6],state_mean_stddev[1][6]
+        metrics["X precision"]         = state_mean_stddev[0][0],state_mean_stddev[1][0]
+        metrics["Y precision"]         = state_mean_stddev[0][1],state_mean_stddev[1][1]
         metrics["Pre-threshold IOU"]   = pre_iou_mean_stddev
         metrics["Match IOU"]           = iou_mean_stddev
        

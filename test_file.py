@@ -31,7 +31,7 @@ if __name__ == "__main__":
     # %% rectify
     df = utils.read_data("E:\I24-postprocess\June_5min\DA\{}_{}.csv".format(camera_name, sequence))
     df = opt.rectify(df)
-    df.to_csv(r"E:\I24-postprocess\June_5min\rectified\{}_{}.csv".format(camera_name, sequence))
+    df.to_csv(r"E:\I24-postprocess\June_5min\rectified\{}_{}.csv".format(camera_name, sequence),index=False)
     
     # %% assign unique IDs to objects in each camera after DA on each camera independently
     df2 = utils.read_data(data_path.joinpath('p1c2_small_stitch.csv'))

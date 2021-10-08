@@ -183,7 +183,7 @@ class MOT_Evaluator():
             pred_ids = []
             pred_state = []
             for box in pred:
-                # x,y,l,w,h,v
+                # x,y,l,w,h,direction,v
                 # print(box)  
                 pred_state.append(np.array([box[39],box[40],box[43],box[42],box[44],box[35],box[38]]).astype(float))
                 pred_ids.append(int(box[2]))
