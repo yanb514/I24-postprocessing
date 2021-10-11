@@ -354,3 +354,52 @@ def plot_vehicle_csv(
 		out.release()
 	
 
+if __name__ == "__main__":
+    
+     #add argparse block here so we can optinally run from command line
+     try:
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("video_path",help = "path to video sequence")
+        parser.add_argument("csv_path",help = "path to csv label file")
+        
+        parser.add_argument("-fps",type = float, help = "Speed of video playback (0 pauses on each frame)", default = 10)
+        parser.add_argument("--show_2d",action = "store_true")
+        parser.add_argument("--show_3d",action = "store_true")
+        parser.add_argument("--show_lmcs",action = "store_true")
+        parser.add_argument("--show_rectified",action = "store_true")
+        parser.add_argument("--save",action = "store_true")
+        parser.add_argument("--ds",action = "store_true")
+
+
+        args = parser.parse_args()
+        sequence = args.video_path
+        csv_file = args.csv_path
+        show_2d = args.show_2d
+        show_3d = args.show_3d
+        show_LMCS = args.show_lmcs
+        show_rectified = args.show_rectified
+        save = args.save
+        frame_rate = args.fps
+        ds = args.ds
+
+        
+     except:
+         print("No path specified, using default paths and settings instead")
+         show_2d = False
+         show_3d = True
+         show_LMCS = True
+         show_rectified = False
+         save = False
+         frame_rate = 30
+         ds = False
+        
+         camera_name = "p1c4"
+         sequence_idx = 0
+         csv_file = r"E:\I24-postprocess\June_5min\rectified\{}_{}.csv".format(camera_name,sequence_idx)  
+         # csv_file = r"E:\I24-postprocess\June_5min\Automatic 3D (uncorrected)\{}_{}_track_outputs_3D.csv".format(camera_name,sequence_idx)
+         sequence = r"E:\I24-postprocess\June_5min\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
+         
+         BOI = [1244,1279,1333,1375,1437,1536,1578,1608,1669,1714,1782]
+    
+     plot_vehicle_csv(sequence,csv_file,frame_rate = frame_rate,show_2d = show_2d,show_3d = show_3d,show_LMCS = show_LMCS,show_rectified = show_rectified, save = save,ds=ds)

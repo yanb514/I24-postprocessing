@@ -99,6 +99,9 @@ def stitch_objects(df):
     # define the x,y range to keep track of cars in FOV (meter)
     camera_id_list = df['camera'].unique()
     xmin, xmax, ymin, ymax = utils.get_camera_range(camera_id_list)
+    xrange = xmax-xmin
+    alpha = 0.2
+    xmin, xmax = xmin - alpha*xrange, xmax + alpha*xrange # extended camera range for prediction
     ns = np.amin(np.array(df[['Frame #']])) # start frame
     nf = np.amax(np.array(df[['Frame #']])) # end frame
     tracks = dict() # a dictionary to store all current objects in view
@@ -370,8 +373,8 @@ def count_overlaps(df):
         else:
             continue
                 
-    print('{} of {} pairs overlap'.format(count,combs))
-    return    overlaps
+    # print('{} of {} pairs overlap'.format(count,combs))
+    return overlaps
 
 def remove_overlaps_per_id(car, args):
     id_rem = args
