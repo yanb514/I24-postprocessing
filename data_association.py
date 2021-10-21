@@ -301,7 +301,7 @@ def stitch_objects(df):
     10/20/2021
     keep running total of measurements matched in tracks
     '''
-    SCORE_THRESHOLD = 4
+    SCORE_THRESHOLD = 2.5 # Bayesian 2.5
     
     # define the x,y range to keep track of cars in FOV (meter)
     camera_id_list = df['camera'].unique()

@@ -30,7 +30,6 @@ if __name__ == "__main__":
     
     # %% data association
     df = utils.read_data(data_path+"\{}_{}.csv".format(camera_name, sequence))
-    # 
 
 #%%
     df = df[(df["Frame #"]<=1200)]
@@ -41,9 +40,9 @@ if __name__ == "__main__":
     # TODO: Bayesian approach. take the average of multiple measurements of the same ID at the same frame
     # print('Select from multiple measurments', len(df))
     # df = utils.applyParallel(df.groupby("Frame #"), utils.del_repeat_meas_per_frame).reset_index(drop=True)
-    # print('Connect tracks', len(df)) # Frames of a track (ID) might be disconnected after DA
-    # df = df.groupby("ID").apply(utils.connect_track).reset_index(drop=True)
-    # df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
+    print('Connect tracks', len(df)) # Frames of a track (ID) might be disconnected after DA
+    df = df.groupby("ID").apply(utils.connect_track).reset_index(drop=True)
+    df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
     
     #%%
     newcar=utils.connect_track(car)

@@ -231,7 +231,7 @@ class MOT_Evaluator():
         alpha = 0.5
         xmin, xmax = xmin + alpha*xrange, xmax-alpha*xrange # buffered 1-2*alpha%
         
-        # invalid if tracks don't cover xmin to xmax, or tracks has missing rate > 50%
+        # invalid if tracks don't cover xmin to xmax, or tracks has < 5 valid measurements
         print("Evaluating tracks...")
         gt_groups = self.gt.groupby("ID")
             
@@ -239,8 +239,9 @@ class MOT_Evaluator():
             x_df = gt[["bbr_x","bbl_x","fbr_x","fbl_x"]]
             xleft = x_df.min().min()
             xright = x_df.max().max()
-            missing_rate = x_df[["bbr_x"]].isna().sum().values[0]/len(x_df)
-            if xleft > xmin or xright < xmax or missing_rate > 0.5:
+            # missing_rate = x_df[["bbr_x"]].isna().sum().values[0]/len(x_df)
+            valid_meas = gt.count().bbr_x
+            if xleft > xmin or xright < xmax or valid_meas < 5:
                 invalid_gt.append(gt_id)
             else:
                 valid_gt.append(gt_id)
@@ -251,8 +252,8 @@ class MOT_Evaluator():
             x_df = rec[["bbr_x","bbl_x","fbr_x","fbl_x"]]
             xleft = x_df.min().min()
             xright = x_df.max().max()
-            missing_rate = x_df[["bbr_x"]].isna().sum().values[0]/len(x_df)
-            if xleft > xmin or xright < xmax or missing_rate > 0.5:
+            valid_meas = rec.count().bbr_x
+            if xleft > xmin or xright < xmax or valid_meas < 5:
                 invalid_rec.append(rec_id)
             else:
                 valid_rec.append(rec_id)
@@ -300,6 +301,7 @@ class MOT_Evaluator():
             except KeyError:
                 if f_idx in rec_frames.groups.keys():
                     frame = rec_frames.get_group(f_idx)
+                    print("303", frame)
                     self.m["FP"] += len(frame)
                     ids =  frame['ID'].values
                     for id in ids:
@@ -389,7 +391,7 @@ class MOT_Evaluator():
                 # get other formulations for boxes
                 rec_state = self.hg.im_to_state(rec_im,heights = refined_heights)
                 rec_space = self.hg.state_to_space(rec_state)
-                
+
                 rec_velocities = rec["speed"].values
                 rec_velocities = torch.tensor(rec_velocities).float()
                 rec_state = torch.cat((rec_state,rec_velocities.unsqueeze(1)),dim = 1)
@@ -538,10 +540,11 @@ class MOT_Evaluator():
                          self.m["FP edge-case"] += 1
                          
             self.m["TP"] += len(matches)
-            self.m["FP"] += max(0,(len(rec_space) - len(matches)))
+            invalid = torch.sum(torch.sum(torch.isnan(rec_space), dim=1),dim=1)>0
+            self.m["FP"] += max(0,(len(rec_space)-sum(invalid) - len(matches)))
             self.m["FN"] += max(0,(len(gt_space) - len(matches)))
             
-            self.m["FP @ 0.2"] += max(0,len(rec_space) - len(a))
+            self.m["FP @ 0.2"] += max(0,len(rec_space)-sum(invalid) - len(a))
             self.m["FN @ 0.2"] += max(0,len(gt_space) - len(a))
             
             if self.recmode == "state":
@@ -688,6 +691,7 @@ class MOT_Evaluator():
         ax1.grid()
         ax1.legend()
         
+        
         # plot rectification score distribution
         if hasattr(self, "m") and "trajectory_score" in self.m and self.recmode=="state":
             plt.figure()
@@ -701,6 +705,25 @@ class MOT_Evaluator():
         
         gt_groups = self.gt.groupby("ID")
         rec_groups = self.rec.groupby("ID")
+        
+        # valid frames distribution
+        gt_valid_frames = []
+        rec_valid_frames = []
+        for _,group in gt_groups:
+            gt_valid_frames.append(group.count().bbrx)
+        for _,group in rec_groups:
+            rec_valid_frames.append(group.count().bbrx)
+        bins=np.histogram(np.hstack((gt_valid_frames,rec_valid_frames)), bins=40)[1]
+        bw = bins[1]-bins[0]
+        fig, ax1 = plt.subplots(1, 1)
+        ax1.hist(gt_valid_frames, bins = bins, density = True, weights = [bw]*len(gt_valid_frames), facecolor='r', alpha=0.75, label="before")
+        ax1.hist(rec_valid_frames, bins = bins,  density = True, weights = [bw]*len(rec_valid_frames),facecolor='g', alpha=0.75, label="after")
+        ax1.set_xlabel("# Valid meas per track")
+        ax1.set_ylabel('Probability')
+        ax1.set_title('Valid measurements distribution')
+        ax1.grid()
+        ax1.legend()
+        
         
         # plot IDs above threshold
         if hasattr(self, "m") and "ids > score" in self.m and self.recmode =="state":
@@ -835,7 +858,7 @@ if __name__ == "__main__":
     vp_file = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\vp\{}_axes.csv".format(camera_name)
     point_file = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform\{}_im_lmcs_transform_points.csv".format(camera_name)
     tf_path = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform"
-    # sequenqce = r"E:\I24-postprocess\0616-dataset-alpha\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
+    sequenqce = r"E:\I24-postprocess\0616-dataset-alpha\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
     # sequencqe = r"E:\I24-postprocess\0806-CIRCLES\raw video\record_51_{}_00000.mp4".format(camera_name)
     
     # we have to define the scale factor for the transformation, which we do based on the first frame of data
