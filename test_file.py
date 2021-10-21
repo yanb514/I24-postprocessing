@@ -59,7 +59,7 @@ if __name__ == "__main__":
                 
     #%%# plot time space diagram (4 lanes +1 direction)
     df = utils.read_data(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence))
-    temp = df[df['ID'].isin([360.0, 373.0, 387.0])]
+    temp = df[df['ID'].isin([360.0, 387.0])]
     
     plt.figure()
     

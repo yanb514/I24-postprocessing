@@ -301,7 +301,7 @@ def stitch_objects(df):
     10/20/2021
     keep running total of measurements matched in tracks
     '''
-    SCORE_THRESHOLD = 3
+    SCORE_THRESHOLD = 4
     
     # define the x,y range to keep track of cars in FOV (meter)
     camera_id_list = df['camera'].unique()
@@ -313,6 +313,7 @@ def stitch_objects(df):
     nf = np.amax(np.array(df[['Frame #']])) # end frame
     tracks = dict() # a dictionary to store all current objects in view. key:ID, value:dataframe
     pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    pts_img = ["fbrx","fbry","fblx",	"fbly",	"bbrx",	"bbry",	"bblx",	"bbly",	"ftrx",	"ftry",	"ftlx",	"ftly",	"btrx",	"btry",	"btlx",	"btly"]
     newdf = pd.DataFrame()
     
     for k in range(ns,nf):
@@ -324,6 +325,7 @@ def stitch_objects(df):
         y = y[notnan] # remove rows with missing values (dim = mx8)
         frame = frame.iloc[notnan,:]
         frame = frame.reset_index(drop=True)
+        frame_vals = np.array(pts_img+pts)
         
         m_box = len(frame)
         n_car = len(tracks)
@@ -360,7 +362,7 @@ def stitch_objects(df):
             x, tracks = predict_tracks_df(tracks)
             n_car = len(tracks)
             curr_id = list(tracks.keys()) # should be n id's 
-            curr_meas_idx = set(np.arange(m_box))
+            m_unassociated = set(np.arange(m_box))
 
             score = np.ones([m_box,n_car])*(99)
             for m in range(m_box):
@@ -368,9 +370,9 @@ def stitch_objects(df):
                     score[m,n] = dist_score(x[n],y[m],'xyw')
 
             bool_arr1 = score == score.min(axis=1)[:,None] # every row has true:every measurement gets assigned
-            bool_arr0 = score == score.min(axis=0) # find the cloeset measurement for each prediction
+            # bool_arr0 = score == score.min(axis=0) # find the cloeset measurement for each prediction
             # 
-            bool_arr = np.logical_and(bool_arr1, bool_arr0) # only choose mutual matching
+            # bool_arr = np.logical_and(bool_arr1, bool_arr0) # only choose mutual matching
             # meas_del_bool = np.logical_xor(bool_arr,bool_arr1)
             # if sum(sum(meas_del_bool))>0:
             #     try:
@@ -387,8 +389,9 @@ def stitch_objects(df):
             # Bayesian way
             bool_arr1 = score<SCORE_THRESHOLD
             col = np.where(sum(bool_arr1)>1)[0] # curr_id[col] has multiple measurement candidates
-            w = 1/score[:,col]
-            w = w/sum(w) # normalized weights
+            w = 1/score[:,col]* bool_arr1[:,col] 
+            w = w / w.sum(axis=0)
+            
             score = bool_arr1*score+np.invert(bool_arr1)*(99) # get the min of each row
             pairs = np.transpose(np.where(score<SCORE_THRESHOLD)) # pair if score is under threshold
 
@@ -400,6 +403,7 @@ def stitch_objects(df):
                     pairs_d[n].append(m)
                     
             if len(pairs_d)>0:
+                i=0
                 for n_idx, m_idx in pairs_d.items():
                     new_id = curr_id[n_idx]
                     tracks[new_id] = tracks[new_id].reset_index(drop=True)
@@ -409,10 +413,14 @@ def stitch_objects(df):
                         tracks[new_id].drop(tracks[new_id].tail(1).index,inplace=True) # drop the last row (prediction)
                         tracks[new_id] = pd.concat([tracks[new_id], new_meas])  
                     else: # multiple measurements, take mean
-                        new_meas = frame.loc[m_idx]
-                        avg_meas = new_meas.mean(axis=0).to_frame()
+                        frame_vals = np.array(frame[pts_img+pts])
+                        avg_meas_vals = np.reshape(np.dot(w[:,i],frame_vals),(1,-1))
+                        avg_meas = pd.DataFrame(data=avg_meas_vals,  columns=pts_img + pts) 
+                        avg_meas["Frame #"] = k
                         tracks[new_id].drop(tracks[new_id].tail(1).index,inplace=True) # drop the last row (prediction)
-                        tracks[new_id] = pd.concat([tracks[new_id], avg_meas])  
+                        tracks[new_id] = pd.concat([tracks[new_id], avg_meas],ignore_index=True)  
+                        i+=1
+                    m_unassociated -= set(m_idx)
                     
             # if len(pairs) > 0:
             #     for m,n in pairs:
@@ -423,8 +431,9 @@ def stitch_objects(df):
             #         tracks[new_id] = pd.concat([tracks[new_id], new_meas])     
                     
             # measurements that have no cars associated, create new
-            if len(pairs) < m_box:
-                m_unassociated = list(set(np.arange(m_box)) - set(pairs[:,0]))
+            # if len(pairs) < m_box:
+                # m_unassociated = list(set(np.arange(m_box)) - set(pairs[:,0]))
+            if len(m_unassociated)>0:
                 for m in m_unassociated:
                     new_id = frame['ID'].iloc[m]
                     new_meas = frame.loc[m:m]
