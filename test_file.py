@@ -11,33 +11,147 @@ import pathlib
 import matplotlib.pyplot as plt
 import numpy as np
 import utils_vis as vis
+import numpy.linalg as LA
+import pandas as pd
 
 if __name__ == "__main__":
     # read & rectify each camera df individually
-    data_path = r"E:\I24-postprocess\3D tracking"
+    data_path = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking"
     tform_path = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform"
+    camera_name, sequence = "p1c3", "0"
     
-    # %% read data preprocess and save
-    camera_name, sequence = "p1c4", "0"
-    # file_path = data_path+"\{}_{}_track_outputs_3D.csv".format(camera_name, sequence)
-    file_path = data_path+r"\record_51_{}_00000_3D_track_outputs.csv".format(camera_name)
-    # df = utils.read_data(file_path)
+    # %% read data preprocess
+    
+    file_path = data_path+"\{}_{}_3D_track_outputs.csv".format(camera_name, sequence)
     df = utils.preprocess(file_path, tform_path, skip_row = 0)
+    df.to_csv(data_path+r"\{}_{}.csv".format(camera_name, sequence), index = False)
     # df = df[df['Frame #']<1800]
-    print('Before DA: ', len(df['ID'].unique()), 'cars')
-    df = da.stitch_objects(df)
-    print('After stitching: ', len(df['ID'].unique()), 'cars')
-    df.to_csv(data_path+"\DA\{}.csv".format(camera_name), index = False)
+
     
+    # %% data association
+    df = utils.read_data(data_path+"\{}_{}.csv".format(camera_name, sequence))
+    # 
+
+#%%
+    df = df[(df["Frame #"]<=1200)]
+    print('Before DA: ', len(df['ID'].unique()), 'cars', len(df))
+    df = da.stitch_objects(df)
+    print('After stitching: ', len(df['ID'].unique()), 'cars', len(df))
+    df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
+    # TODO: Bayesian approach. take the average of multiple measurements of the same ID at the same frame
+    # print('Select from multiple measurments', len(df))
+    # df = utils.applyParallel(df.groupby("Frame #"), utils.del_repeat_meas_per_frame).reset_index(drop=True)
+    # print('Connect tracks', len(df)) # Frames of a track (ID) might be disconnected after DA
+    # df = df.groupby("ID").apply(utils.connect_track).reset_index(drop=True)
+    # df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
+    
+    #%%
+    newcar=utils.connect_track(car)
+    #%%
+    # df = newdf
+    frames = df.groupby("Frame #")
+    ids = set()
+    for f_id, frame in frames:
+        groups = frame.groupby("ID")
+        for carid, group in groups:
+            if len(group)>1:
+                ids.add(carid)
+                
+    #%%# plot time space diagram (4 lanes +1 direction)
+    df = utils.read_data(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence))
+    temp = df[df['ID'].isin([360.0, 373.0, 387.0])]
+    
+    plt.figure()
+    
+    colors = ["blue","orange","green","red"]
+    groups = temp.groupby('ID')
+    j = 0
+    for carid, group in groups:
+        x = group['Frame #'].values
+        y1 = group['bbr_x'].values
+        y2 = group['fbr_x'].values
+        plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%4], label="id {}".format(carid))
+        j += 1
+    try:
+        plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    except:
+        pass
+    plt.xlabel('Frame #')
+    plt.ylabel('x (m)')
+    plt.title('Time-space diagram')  
+        
+    #%%
+    id1,id2=360,373
+    car1=df[df["ID"]==id1]
+    car2=df[df["ID"]==id2]
+    d = {id1:car1}
+    x,d = da.predict_tracks_df(d)
+    vis.plot_track_compare(car1,car2)
+    pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    # box1 = np.array(car1[pts]) 
+    box1=np.array(d[id1].tail(1)[pts])
+    box2 = np.array(car2[pts])[1]
+    print(da.dist_score(box1,box2,'xyw'))
+        # %%
+    temp = df[df["Frame #"]<300]
+    lens = []
+    ids = []
+    groups = temp.groupby("ID")
+    for carid, group in groups:
+        ids.append(carid)
+        lens.append(group["Frame #"].iloc[-1]-group["Frame #"].iloc[0])
+    vis.plot_lane_distribution(temp)
+    for lane in [1,2,3,4,7,8,9,10]:   
+        vis.plot_time_space(temp, lanes=[lane])
+        
     # %% rectify
-    df = utils.read_data(r"E:\I24-postprocess\3D tracking\DA\{}.csv".format(camera_name))
-    df = opt.rectify(df)
-    df.to_csv(r"E:\I24-postprocess\3D tracking\rectified\{}.csv".format(camera_name),index=False)
+    df = utils.read_data(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence))
+    # df = df[(df["ID"]>=2700) & (df["ID"]<2800)] # 2785 is too long
+    # df = opt.rectify(df)
+    # df.to_csv(data_path+r"\rectified\{}_{}.csv".format(camera_name, sequence), index = False)
+    
+    # %% post processing
+    df = utils.read_data(data_path+r"\rectified\{}_{}_l1.csv".format(camera_name, sequence))
+    df = utils.post_process(df)
+    df.to_csv(data_path+r"\rectified\{}_{}_l1_post.csv".format(camera_name, sequence), index = False)
+     
+    # %% diagnose rectification on single cars
+    dfda = utils.read_data(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence))
+    df = utils.read_data(data_path+r"\rectified\{}_{}_l1.csv".format(camera_name, sequence))
+    
+    # %%individual cars
+    carid = 1058
+    carda = dfda[dfda["ID"]==carid]
+    car = carda.copy()
+    car = opt.rectify_single_camera(car,  (1,0,0,0.02,0.02))
+    # car = df[df["ID"]==carid]
+    vis.plot_track_compare(carda, car)
+    utils.dashboard([carda, car])
+    # plt.title(carid)
+    Y1 = np.array(carda[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
+    Yre = np.array(car[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
+    diff = Y1-Yre
+    score = np.nanmean(LA.norm(diff,axis=1))
+    print(score)
+    #%% slow car
+    slow = df[df["speed"]<20]
     
     # %% assign unique IDs to objects in each camera after DA on each camera independently
     df2 = utils.read_data(data_path.joinpath('p1c2_small_stitch.csv'))
     df3 = utils.read_data(data_path.joinpath('p1c3_small_stitch.csv'))
     df3 = da.assign_unique_id(df2,df3)
+    
+    # %% visualization
+    gt_path = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\p1c24_gt.csv"
+    DA_path = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\p1c24.csv"
+    # gt = utils.read_data(gt_path)
+    da = utils.read_data(DA_path)
+    # gt = gt[gt["Frame #"]<200]
+    da = da[da["Frame #"]<200]
+    # vis.plot_lane_distribution(gt)
+    vis.plot_lane_distribution(da)
+    # vis.plot_time_space(gt)
+    vis.plot_time_space(da)
     
     # %% 
     # try removing outliers first
@@ -79,11 +193,16 @@ if __name__ == "__main__":
             dt = 0.1
         v = d/dt
         speed.append(v)
-        dist.append(d)
-    dist[0] = 0
     speed[0] = 0
-    gps["dist"] = dist
     gps["speed"] = speed
+    
+    # %% plot speed
+    plt.figure()
+    plt.scatter(gps.Gpstime.values, gps.speed.values,s=1)
+    plt.xlabel("Time")
+    plt.ylabel("Speed (m/s)")
+    plt.title("Speed")
+    plt.ylim([0,50])
     # calculate relataive coords given origin 0,0 -> 36.005437, -86.610796
     
     

@@ -22,20 +22,36 @@ class MOT_Evaluator():
         homography - Homography object containing relevant scene information
         params - dict of parameter values to change
         """
-        self.mode = ''
+        self.gtmode = ""
+        self.recmode = ""
         self.match_iou = 0
         self.cutoff_frame = 10000
     
         # store homography
         self.hg = homography
+        self.tf_path = tf_path
+        self.camera_name = camera_name
         
         # data is stored as a groupby object. get frame f_idx by "self.gt.get_group(f_idx)"
         # load ground truth data
+        # start with meter
+        cols_to_convert = ["speed","x","y","width","length","height"]
+        pts = ["fbr_x","fbr_y","fbl_x","fbl_y","bbr_x","bbr_y","bbl_x","bbl_y"]
         self.gt = utils.read_data(gt_path)
+        if np.mean(self.gt.y.values) > 40:      
+            self.gt[cols_to_convert] = self.gt[cols_to_convert] / 3.281
+        if "bbr_x" not in self.gt or np.mean(self.gt.bbr_y.values) > 40 or "Manual" in self.gt["Generation method"].unique():
+            self.gt = utils.img_to_road(self.gt, tf_path, camera_name)
         
         # load rec data
         self.rec = utils.read_data(rec_path)
-         
+        if "veh rear x" in self.rec:
+            self.rec = self.rec.rename(columns={"veh rear x": "x", "veh center y":"y", "Object ID": "ID"})
+        if np.mean(self.rec.y.values) > 40:      
+            self.rec[cols_to_convert] = self.rec[cols_to_convert] / 3.281
+        if "bbr_x" not in self.rec or np.mean(self.rec.bbr_y.values) > 40:
+            self.rec = utils.img_to_road(self.rec, tf_path, camera_name)
+           
         if params is not None:
             if "match_iou" in params.keys():
                 self.match_iou = params["match_iou"]
@@ -43,12 +59,18 @@ class MOT_Evaluator():
                 self.cutoff_frame = params["cutoff_frame"]
             if "sequence" in params.keys():
                 self.sequence = params["sequence"]
-            if "mode" in params.keys():
-                self.mode = params["mode"]
+            if "gtmode" in params.keys():
+                self.gtmode = params["gtmode"]
+            if "recmode" in params.keys():
+                self.recmode = params["recmode"]
             if "score_threshold" in params.keys():
                 self.score_threshold = params["score_threshold"]
                 
-        
+        # select under cut-off frames
+        if self.cutoff_frame:
+            self.gt = self.gt[self.gt["Frame #"]<=self.cutoff_frame]
+            self.rec = self.rec[self.rec["Frame #"]<=self.cutoff_frame]
+            
         # create dict for storing metrics
         n_classes = len(self.hg.class_heights.keys())
         class_confusion_matrix = np.zeros([n_classes,n_classes])
@@ -66,6 +88,7 @@ class MOT_Evaluator():
             "im_top_err":[],
             "cls":class_confusion_matrix,
             "ids":{}, # key: gt_id, value: matched rec_id
+            "ids_rec":{}, # key: rec_id, value: matched gt_id
             "gt_ids":[],
             "rec_ids":[],
             "Changed ID pair":[],
@@ -147,53 +170,30 @@ class MOT_Evaluator():
         gt_groups = self.gt.groupby('ID')
         rec_groups = self.rec.groupby('ID')
         
-        if self.metrics['Matched IDs']:
-           for gt_id in self.metrics['Matched IDs']:
-               rec_id = self.metrics['Matched IDs'][gt_id]
+        if self.metrics['Matched IDs rec']:
+           for rec_id in self.metrics['Matched IDs rec']:
+               gt_id = self.metrics['Matched IDs rec'][rec_id][0]
                gt_car = gt_groups.get_group(gt_id)
-               rec_car = rec_groups.get_group(rec_id[0])
+               rec_car = rec_groups.get_group(rec_id)
                start = max(gt_car['Frame #'].iloc[0],rec_car['Frame #'].iloc[0])
                end = min(gt_car['Frame #'].iloc[-1],rec_car['Frame #'].iloc[-1])
                gt_car = gt_car.loc[(gt_car['Frame #'] >= start) & (gt_car['Frame #'] <= end)]
                rec_car = rec_car.loc[(rec_car['Frame #'] >= start) & (rec_car['Frame #'] <= end)]
                Y1 = np.array(gt_car[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
                Yre = np.array(rec_car[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
-               diff = Y1-Yre
-               score = np.nanmean(LA.norm(diff,axis=1))
-               if score > self.score_threshold:
-                   self.m["ids > score"].append(gt_id)
-               self.m["trajectory_score"][gt_id] = score
+               try:
+                   diff = Y1-Yre
+                   score = np.nanmean(LA.norm(diff,axis=1))
+                   if score > self.score_threshold:
+                       self.m["ids > score"].append(rec_id)
+                   self.m["trajectory_score"][rec_id] = score
+               except ValueError:
+                   print("Encounter unmatched dimension when computing trajectory score")
         else:
             print('Run evaluate first.')
-        scores = list(self.m["trajectory_score"].values())
-        
-        # plot score histogram
-        plt.figure()
-        n, bins, patches = plt.hist(scores, 50, density=True, facecolor='g', alpha=0.75)
-        plt.xlabel('Trajectory score')
-        plt.ylabel('Probability')
-        plt.title('Trajectory score distribution')
-        plt.grid(True)
-        plt.show()
-        
-        # plot IDs above threshold
-        for i,rec_id in enumerate(self.m["ids > score"][:5]):
-            plt.figure()
-            if rec_id in self.metrics['Matched IDs'] and self.metrics['Matched IDs'][rec_id]==rec_id:
-                gt_car = gt_groups.get_group(rec_id)
-                rec_car = rec_groups.get_group(rec_id)
-                vis.plot_track_compare(gt_car, rec_car)
-                plt.title('Above score threshold:{}'.format(rec_id))
-                
-        # plot crashed IDs
-        for id1, id2 in self.m["overlap_rec_ids"]:
-            plt.figure()
-            car1 = rec_groups.get_group(id1)
-            car2 = rec_groups.get_group(id2)
-            vis.plot_track_compare(car1,car2)
-            plt.title("Crashed IDs in rec {}-{}".format(id1,id2))
-            
-        scores_mean_std = np.mean(scores),np.std(scores)
+        scores = list(self.m["trajectory_score"].values())   
+        scores = [x for x in scores if np.isnan(x) == False]
+        scores_mean_std = np.nanmean(scores),np.nanstd(scores)
         metrics = {}
         metrics["Trajectory score"] = scores_mean_std
         metrics["IDs > score threshold"] = self.m["ids > score"]
@@ -211,22 +211,19 @@ class MOT_Evaluator():
             - valid if x covers the range of camera FOV
             - invalid if otherwise or the ratio of missing data is > threshold
         # collisions
-
+        ** IN SPACE ** 
         Returns
         -------
         None.
 
         '''
-        # select under cut-off frames
-        if self.cutoff_frame:
-            self.gt = self.gt[self.gt["Frame #"]<=self.cutoff_frame]
-            self.rec = self.rec[self.rec["Frame #"]<=self.cutoff_frame]
             
         # convert units
         if self.units["df"] == "ft":
             cols_to_convert = ["fbr_x",	"fbr_y","fbl_x"	,"fbl_y","bbr_x","bbr_y","bbl_x","bbl_y", "speed","x","y","width","length","height"]
             self.gt[cols_to_convert] = self.gt[cols_to_convert] / 3.281
             self.rec[cols_to_convert] = self.rec[cols_to_convert] / 3.281
+            self.units["df"] = "m"
         
         invalid_gt, valid_gt, invalid_rec, valid_rec = [],[],[],[]
         xmin, xmax, _, _ = utils.get_camera_range(self.gt['camera'].dropna().unique())
@@ -237,6 +234,7 @@ class MOT_Evaluator():
         # invalid if tracks don't cover xmin to xmax, or tracks has missing rate > 50%
         print("Evaluating tracks...")
         gt_groups = self.gt.groupby("ID")
+            
         for gt_id, gt in gt_groups:
             x_df = gt[["bbr_x","bbl_x","fbr_x","fbl_x"]]
             xleft = x_df.min().min()
@@ -259,16 +257,11 @@ class MOT_Evaluator():
             else:
                 valid_rec.append(rec_id)
         
-        # check occurance of collision
-        # print("Check occurance of collision...")
-        # overlaps_gt = count_overlaps(self.gt)
-        # overlaps_rec = count_overlaps(self.rec)
-        
         # summarize
         metrics = {}
-        metrics["Invalid IDs before"] = "{} / {}".format(len(invalid_gt),gt_groups.ngroups)
-        metrics["Invalid IDs after"] = "{} / {}".format(len(invalid_rec),rec_groups.ngroups)
-        # metrics["Occurances of collision in GT"] = len(overlaps_gt)
+        metrics["# Invalid IDs/total (before)"] = "{} / {}".format(len(invalid_gt),gt_groups.ngroups)
+        metrics["# Invalid IDs/total (after)"] = "{} / {}".format(len(invalid_rec),rec_groups.ngroups)
+        metrics["Invalid rec IDs"] = invalid_rec
         # metrics["Occurances of collision in rec"] = len(overlaps_rec)
         if hasattr(self, "metrics"):
             self.metrics = dict(list(self.metrics.items()) + list(metrics.items()))
@@ -278,12 +271,16 @@ class MOT_Evaluator():
         # plot some invalid tracks
         for rec_id in invalid_rec[:5]:
             car = rec_groups.get_group(rec_id)
-            vis.plot_track_df(car)
+            vis.plot_track_df(car, title=str(rec_id))
         return
     
     def evaluate(self):
         # TODO: convert gt and rec unit from m to ft
         cols_to_convert = ["fbr_x",	"fbr_y","fbl_x","fbl_y","bbr_x","bbr_y","bbl_x","bbl_y", "speed","x","y","width","length","height"]
+        if "height" not in self.gt:
+            self.gt["height"] = 0
+        if "height" not in self.rec:
+            self.rec["height"] = 0
         if self.units["df"] == "m":
             self.gt[cols_to_convert] = self.gt[cols_to_convert] * 3.281
             self.rec[cols_to_convert] = self.rec[cols_to_convert] * 3.281
@@ -326,30 +323,44 @@ class MOT_Evaluator():
             gt_ids = gt['ID'].values
             gt_classes = gt["Object class"].values
             
-            # TODO: fill nan as 0 for velocity
-            gt_im = np.array(gt[["fbrx","fbry",	"fblx",	"fbly",	"bbrx",	"bbry",	"bblx",	"bbly",	"ftrx",	"ftry",	"ftlx",	"ftly",	"btrx",	"btry",	"btlx",	"btly"]])   
-            gt_im = torch.from_numpy(np.stack(gt_im)).reshape(-1,8,2)
-        
-            # two pass estimate of object heights
-            heights = self.hg.guess_heights(gt_classes)
-            gt_state = self.hg.im_to_state(gt_im,heights = heights)
-            repro_boxes = self.hg.state_to_im(gt_state)
-            refined_heights = self.hg.height_from_template(repro_boxes,heights,gt_im)
+            if self.gtmode == "im":
+                # TODO: fill nan as 0 for velocity
+                gt_im = np.array(gt[["fbrx","fbry",	"fblx",	"fbly",	"bbrx",	"bbry",	"bblx",	"bbly",	"ftrx",	"ftry",	"ftlx",	"ftly",	"btrx",	"btry",	"btlx",	"btly"]])   
+                gt_im = torch.from_numpy(np.stack(gt_im)).reshape(-1,8,2)
             
-            # get other formulations for boxes
-            gt_state = self.hg.im_to_state(gt_im,heights = refined_heights)
-            gt_space = self.hg.state_to_space(gt_state)
+                # two pass estimate of object heights
+                heights = self.hg.guess_heights(gt_classes)
+                gt_state = self.hg.im_to_state(gt_im,heights = heights)
+                repro_boxes = self.hg.state_to_im(gt_state)
+                refined_heights = self.hg.height_from_template(repro_boxes,heights,gt_im)
+                
+                # get other formulations for boxes
+                gt_state = self.hg.im_to_state(gt_im,heights = refined_heights)
+                gt_space = self.hg.state_to_space(gt_state)
+                
+                gt_velocities = gt["speed"].values
+                gt_velocities = torch.tensor(gt_velocities).float()
+                gt_state = torch.cat((gt_state,gt_velocities.unsqueeze(1)),dim = 1)
+                
+            elif self.gtmode == "space":
+                gt_space = np.array(gt[['fbr_x','fbr_y', 'fbl_x','fbl_y','bbr_x','bbr_y','bbl_x', 'bbl_y']])
+                gt_space = torch.from_numpy(np.stack(gt_space)).reshape(-1,4,2)
+                gt_space = torch.cat((gt_space,gt_space),dim = 1)
+                d = gt_space.size()[0]
+                zero_heights =  torch.zeros((d,8,1))
+                gt_space = torch.cat([gt_space,zero_heights],dim=2)
+                gt_im = self.hg.space_to_im(gt_space)
             
-            gt_velocities = gt["speed"].values
-            gt_velocities = torch.tensor(gt_velocities).float()
-            gt_state = torch.cat((gt_state,gt_velocities.unsqueeze(1)),dim = 1)
+            else:
+                print("unrecognized gt mode")
+                return
+            
             
             # store pred as tensors (we start from state)
             rec_ids = rec['ID'].values
             rec_classes = rec["Object class"].values
             
-            # DA doesn't have states, we start from space
-            if self.mode == 'DA':
+            if self.recmode == "space":
                 # rec_space = np.array(rec[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
                 rec_space = np.array(rec[['fbr_x','fbr_y', 'fbl_x','fbl_y','bbr_x','bbr_y','bbl_x', 'bbl_y']])
                 rec_space = torch.from_numpy(np.stack(rec_space)).reshape(-1,4,2)
@@ -357,15 +368,32 @@ class MOT_Evaluator():
                 d = rec_space.size()[0]
                 zero_heights =  torch.zeros((d,8,1))
                 rec_space = torch.cat([rec_space,zero_heights],dim=2)
-                
-                # rec_space = torch.cat((rec_space,gt_velocities.unsqueeze(1)),dim = 1)
                 rec_im = self.hg.space_to_im(rec_space)
-            else: # start from states
+                
+            elif self.recmode == "state": # start from states
                 rec_state = np.array(rec[["x","y","length","width","height","direction","speed"]])
                 rec_state = torch.from_numpy(np.stack(rec_state)).reshape(-1,7).float()
                 rec_space = self.hg.state_to_space(rec_state)
                 rec_im = self.hg.state_to_im(rec_state)                         
             
+            else: # start from image
+                rec_im = np.array(rec[["fbrx","fbry","fblx",	"fbly",	"bbrx",	"bbry",	"bblx",	"bbly",	"ftrx",	"ftry",	"ftlx",	"ftly",	"btrx",	"btry",	"btlx",	"btly"]])   
+                rec_im = torch.from_numpy(np.stack(rec_im)).reshape(-1,8,2)
+            
+                # two pass estimate of object heights
+                heights = self.hg.guess_heights(rec_classes)
+                rec_state = self.hg.im_to_state(rec_im,heights = heights)
+                repro_boxes = self.hg.state_to_im(rec_state)
+                refined_heights = self.hg.height_from_template(repro_boxes,heights,rec_im)
+                
+                # get other formulations for boxes
+                rec_state = self.hg.im_to_state(rec_im,heights = refined_heights)
+                rec_space = self.hg.state_to_space(rec_state)
+                
+                rec_velocities = rec["speed"].values
+                rec_velocities = torch.tensor(rec_velocities).float()
+                rec_state = torch.cat((rec_state,rec_velocities.unsqueeze(1)),dim = 1)
+                
             # compute matches based on space location ious
             first = gt_space.clone() # xmin,ymin,xmax,ymax
             boxes_new = torch.zeros([first.shape[0],4])
@@ -488,7 +516,11 @@ class MOT_Evaluator():
                         self.m["ids"][gt_id].append(rec_id)
                 except KeyError:
                     self.m["ids"][gt_id] = [rec_id]
-                    
+                try:
+                    if gt_id != self.m["ids_rec"][rec_id][-1]:
+                        self.m["ids_rec"][rec_id].append(gt_id)
+                except KeyError:
+                    self.m["ids_rec"][rec_id] = [gt_id]    
                 if rec_id not in self.m["rec_ids"]:
                     self.m["rec_ids"].append(rec_id)
                 if gt_id not in self.m["gt_ids"]:
@@ -512,7 +544,7 @@ class MOT_Evaluator():
             self.m["FP @ 0.2"] += max(0,len(rec_space) - len(a))
             self.m["FN @ 0.2"] += max(0,len(gt_space) - len(a))
             
-            if self.mode != "DA":
+            if self.recmode == "state":
                 for match in matches:
                     # for each match, store error in L,W,H,x,y,velocity
                     state_err = torch.clamp(torch.abs(rec_state[match[1]] - gt_state[match[0]]),0,500)
@@ -547,7 +579,9 @@ class MOT_Evaluator():
         
         # Compute fragmentations - # of IDs assocated with each GT
         metrics["Fragmentations"] = sum([len(self.m["ids"][key])-1 for key in self.m["ids"]])
+        metrics["Fragments"] = [self.m["ids"][key] for key in self.m["ids"] if len(self.m["ids"][key])>1]
         metrics["Matched IDs"] = self.m["ids"]
+        metrics["Matched IDs rec"] = self.m["ids_rec"]
         
         # Count ID switches - any time a rec ID appears in two GT object sets
         count = 0
@@ -562,7 +596,7 @@ class MOT_Evaluator():
                 switched_ids.append(rec_id)
                 count += (rec_id_count -1) # penalize for more than one gt being matched to the same rec_id
         metrics["ID switches"] = (count, switched_ids)
-        metrics["Changed ID pair"] = self.m["Changed ID pair"]
+        # metrics["Changed ID pair"] = self.m["Changed ID pair"]
          
          # Compute MOTA
         metrics["MOTA"] = 1 - (self.m["FN"] +  metrics["ID switches"][0] + self.m["FP"])/(self.m["TP"])
@@ -580,17 +614,6 @@ class MOT_Evaluator():
         spacing_rec = np.array(self.m["space_gap_rec"])
         spacing_rec_mean_stdev = np.mean(spacing_rec), np.std(spacing_rec)
         
-        # plot score histogram
-        fig, (ax1, ax2) = plt.subplots(1, 2)
-        n, bins, patches = ax1.hist(spacing_gt, 50, density=True, facecolor='g', alpha=0.75)
-        ax1.set_xlabel('GT Spacing ({})'.format(self.units["df"]))
-        ax1.set_ylabel('Probability')
-        ax1.set_title('GT Spacing')
-        n, bins, patches = ax2.hist(spacing_rec, 50, density=True, facecolor='g', alpha=0.75)
-        ax2.set_xlabel('rec Spacing ({})'.format(self.units["df"]))
-        ax2.set_ylabel('Probability')
-        ax2.set_title('rec Spacing')
-        
         metrics["Pre-threshold IOU"]   = pre_iou_mean_stddev
         metrics["Match IOU"]           = iou_mean_stddev
         metrics["Crashes"]          = "before:{}, after:{}".format(self.m["overlap_gt"],self.m["overlap_rec"])
@@ -598,7 +621,7 @@ class MOT_Evaluator():
         metrics["Spacing before"]          = spacing_gt_mean_stdev
         metrics["Spacing after"]          = spacing_rec_mean_stdev
         
-        if self.mode!="DA":
+        if self.recmode == "state":
             # Compute average detection metrics in various spaces
             
             state = torch.stack(self.m["state_err"])
@@ -622,7 +645,7 @@ class MOT_Evaluator():
         print("\n")
 
         for name in self.metrics:
-            if name == "Matched IDs": 
+            if "Matched IDs" in name: 
                 continue
             try: 
                 unit = self.units[name]
@@ -634,26 +657,186 @@ class MOT_Evaluator():
                     print("{:<30}: {}".format(name,self.metrics[name]))
 
 
+    def visualize(self):
+        # work in space coords
+        # convert back to meter
+        if self.units["df"] == "ft":
+            cols_to_convert = ["fbr_x",	"fbr_y","fbl_x"	,"fbl_y","bbr_x","bbr_y","bbl_x","bbl_y", "speed","x","y","width","length","height"]
+            self.rec[cols_to_convert] = self.rec[cols_to_convert] / 3.281
+            self.gt[cols_to_convert] = self.gt[cols_to_convert] / 3.281
+            self.units["df"] = "m"
+            
+        # get speed and acceleration
+        if self.gtmode == "im":
+            self.gt = utils.img_to_road(self.gt, self.tf_path, self.camera_name)
+            self.gt["x"] = (self.gt["bbr_x"]+self.gt["bbl_x"])/2
+            self.gt["y"] = (self.gt["bbr_y"]+self.gt["bbl_y"])/2
+            self.gt = utils.calc_dynamics(self.gt)
+        
+        # plot histogram of spacing
+        spacing_gt = np.array(self.m["space_gap_gt"])
+        spacing_rec = np.array(self.m["space_gap_rec"])
+        
+        bins=np.histogram(np.hstack((spacing_gt,spacing_rec)), bins=40)[1]
+        bw = bins[1]-bins[0]
+        fig, ax1 = plt.subplots(1, 1)
+        ax1.hist(spacing_gt, bins = bins, density = True, weights = [bw]*len(spacing_gt), facecolor='r', alpha=0.75, label="before")
+        ax1.hist(spacing_rec, bins = bins,  density = True, weights = [bw]*len(spacing_rec),facecolor='g', alpha=0.75, label="after")
+        ax1.set_xlabel("Spacing ({})".format(self.units["df"]))
+        ax1.set_ylabel('Probability')
+        ax1.set_title('Spacing distribution')
+        ax1.grid()
+        ax1.legend()
+        
+        # plot rectification score distribution
+        if hasattr(self, "m") and "trajectory_score" in self.m and self.recmode=="state":
+            plt.figure()
+            scores = list(self.m["trajectory_score"].values())
+            n, bins, patches = plt.hist(scores, 50, facecolor='g', alpha=0.75)
+            plt.xlabel('Trajectory score')
+            plt.ylabel('ID count')
+            plt.title('Trajectory score distribution')
+            plt.grid(True)
+            plt.show()
+        
+        gt_groups = self.gt.groupby("ID")
+        rec_groups = self.rec.groupby("ID")
+        
+        # plot IDs above threshold
+        if hasattr(self, "m") and "ids > score" in self.m and self.recmode =="state":
+            for i,rec_id in enumerate(self.m["ids > score"][:5]):
+                plt.figure()
+                if rec_id in self.metrics['Matched IDs rec'] :
+                    gt_car = gt_groups.get_group(self.metrics['Matched IDs rec'][rec_id][0])
+                    rec_car = rec_groups.get_group(rec_id)
+                    vis.plot_track_compare(gt_car, rec_car)
+                    plt.title('Above score threshold:{}'.format(rec_id))
+                
+        # plot crashed IDs
+        if hasattr(self, "m") and "overlap_rec_ids" in self.m:
+            count = 0
+            for id1, id2 in self.m["overlap_rec_ids"]:
+                if count > 5:
+                    break
+                plt.figure()
+                car1 = rec_groups.get_group(id1)
+                car2 = rec_groups.get_group(id2)
+                vis.plot_track_compare(car1,car2)
+                plt.title("Crashed IDs in rec {}-{}".format(id1,id2))
+                count += 1
+        
+        # plot speed distribution before and after TODO: compute states for before
+        if self.recmode=="state":
+            plt.figure() # speed
+            rec_speed = self.rec.speed.values
+            gt_speed = self.gt.speed.values
+            gt_speed = gt_speed[~np.isnan(gt_speed)]
+            bins=np.histogram(np.hstack((gt_speed,rec_speed)), bins=40)[1]
+            _,_,_ = plt.hist(gt_speed, bins = bins, density = True, facecolor='r', alpha=0.75, label="before")
+            _,_,_ = plt.hist(rec_speed, bins = bins, density = True, facecolor='g', alpha=0.75, label="after")
+            plt.title("Speed distribution")
+            plt.xlabel("Speed ({}/s)".format(self.units["df"]))
+            
+            # get IDs for slow cars
+            # speed_mean, speed_std = np.nanmean(rec_speed), np.std(rec_speed)
+            plt.figure() # acceleration
+            rec_accel = self.rec.acceleration.values
+            gt_accel = self.gt.acceleration.values
+            gt_accel = gt_accel[~np.isnan(gt_accel)]
+            bins=np.histogram(np.hstack((gt_accel,rec_accel)), bins=40)[1]
+            _,_,_ = plt.hist(gt_accel, bins = bins, facecolor='r', alpha=0.75, label="before")
+            _,_,_ = plt.hist(rec_accel, bins = bins, facecolor='g', alpha=0.75, label="after")
+            plt.title("Acceleration distribution")
+            plt.xlabel("Acceleration ({}/s2)".format(self.units["df"]))
+            
+        # plot lane distribution
+        plt.figure()
+        self.gt = utils.assign_lane(self.gt)
+        self.rec = utils.assign_lane(self.rec)
+        
+        width = 0.3
+        x1 = self.gt.groupby('lane').ID.nunique() # count unique IDs in each lane
+        plt.bar(x1.index-0.1,x1.values,color = "r", label="before",width = width)
+        x2 = self.rec.groupby('lane').ID.nunique() # count unique IDs in each lane
+        plt.bar(x2.index+0.1,x2.values,color = "g", label="after", width=width)
+        
+        plt.grid(axis='y', alpha=0.75)
+        plt.xlabel('Lane index')
+        plt.ylabel('ID count')
+        plt.title('Lane distribution')
+        plt.legend()
+        
+        # plot time space diagram (4 lanes +1 direction)
+        plt.figure()
+        lanes = [1,2,3,4]
+        colors = ["blue","orange","green","red"]
+        for i,lane_idx in enumerate(lanes):
+            lane = self.gt[self.gt['lane']==lane_idx]
+            groups = lane.groupby('ID')
+            j = 0
+            for carid, group in groups:
+                x = group['Frame #'].values
+                y1 = group['bbr_x'].values
+                y2 = group['fbr_x'].values
+                plt.fill_between(x,y1,y2,alpha=0.5,color = colors[i], label="lane {}".format(lane_idx) if j==0 else "")
+                j += 1
+            try:
+                plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            except:
+                pass
+            plt.xlabel('Frame #')
+            plt.ylabel('x ({})'.format(self.units["df"]))
+            plt.title('Time-space diagram (before)')
+
+        plt.figure()
+        for i,lane_idx in enumerate(lanes):
+            lane = self.rec[self.rec['lane']==lane_idx]
+            groups = lane.groupby('ID')
+            j = 0
+            for carid, group in groups:
+                x = group['Frame #'].values
+                y1 = group['bbr_x'].values
+                y2 = group['fbr_x'].values
+                plt.fill_between(x,y1,y2,alpha=0.5,color = colors[i], label="lane {}".format(lane_idx) if j==0 else "")
+                j += 1
+            try:
+                plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            except:
+                pass
+            plt.xlabel('Frame #')
+            plt.ylabel('x ({})'.format(self.units["df"]))
+            plt.title('Time-space diagram (after)')
+        
 if __name__ == "__main__":
     
-    camera_name = "p1c4"
+    camera_name = "p1c3"
     sequence_idx = 0
     sequence = None
     
-    # rec_path = r"E:\I24-postprocess\June_5min\Automatic 3D (uncorrected)\{}_{}_track_outputs_3D.csv".format(camera_name,sequence_idx) # original
-    # rec_path = r"E:\I24-postprocess\June_5min\rectified\{}_{}.csv".format(camera_name,sequence_idx) # rectified
-    # rec_path = r"E:\I24-postprocess\June_5min\DA\{}_{}.csv".format(camera_name,sequence_idx) # DA
+    # 0616-dataset-alpha (with ground truth, 3D tracking)
+    gt = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\rectified_{}_{}_track_outputs_3D.csv".format(camera_name,sequence_idx)
+    # gt = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\p1c24_gt.csv"
+    raw = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\{}_{}.csv".format(camera_name,sequence_idx)
+    DA = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\{}_{}.csv".format(camera_name,sequence_idx) 
+    # DA = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\p1c24.csv"
+    rectified = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\rectified\{}_{}.csv".format(camera_name,sequence_idx) 
+    gt_path = gt
+    rec_path = DA
     
-    rec_path = r"E:\I24-postprocess\3D tracking\rectified\{}.csv".format(camera_name) # CIRCLES 3D tracking
-    gt_path = r"E:\I24-postprocess\3D tracking\DA\{}.csv".format(camera_name) # CIRCLES 3D tracking DA
-    # gt_path = r"E:\I24-postprocess\June_5min\FOR ANNOTATORS\rectified_{}_{}_track_outputs_3D.csv".format(camera_name,sequence_idx) # manually annotated
-    # gt_path = r"E:\I24-postprocess\3D tracking\record_51_{}_00000_3D_track_outputs.csv".format(camera_name) # CIRCLES 3D tracking DA
+    # 0806-CIRCLES (no ground truth, 3D tracking)
+    # raw = r"E:\I24-postprocess\0806-CIRCLES\record_51_{}_00000_3D_track_outputs.csv".format(camera_name)
+    # DA = r"E:\I24-postprocess\0806-CIRCLES\DA\{}.csv".format(camera_name)
+    # rectified = r"E:\I24-postprocess\0806-CIRCLES\rectified\{}.csv".format(camera_name)
+    # gt_path = raw
+    # rec_path = rectified
     
+    
+    # other paths
     vp_file = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\vp\{}_axes.csv".format(camera_name)
     point_file = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform\{}_im_lmcs_transform_points.csv".format(camera_name)
     tf_path = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform"
-    # sequence = r"E:\I24-postprocess\June_5min\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
-    sequence = r"E:\I24-postprocess\3D tracking\raw video\record_51_{}_00000.mp4".format(camera_name)
+    # sequenqce = r"E:\I24-postprocess\0616-dataset-alpha\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
+    # sequencqe = r"E:\I24-postprocess\0806-CIRCLES\raw video\record_51_{}_00000.mp4".format(camera_name)
     
     # we have to define the scale factor for the transformation, which we do based on the first frame of data
     labels,data = load_i24_csv(gt_path)
@@ -679,13 +862,17 @@ if __name__ == "__main__":
         "cutoff_frame": 1000,
         "match_iou":0.51,
         "sequence":sequence,
-        "mode": "rec" ,# "DA","rec"
-        "score_threshold": 5
+        "gtmode": "im" , # "im", "state", "space"
+        "recmode": "im",
+        "score_threshold": 2
         }
     
     ev = MOT_Evaluator(gt_path,rec_path,tf_path, camera_name, hg, params = params)
     ev.evaluate_tracks()
     ev.evaluate()
-    if params["mode"] == "rec":
+    if params["recmode"] == "state":
         ev.score_trajectory()
     ev.print_metrics()
+    # %%
+    ev.visualize()
+    # %%

@@ -7,7 +7,7 @@ import cv2
 import queue
 import time
 import argparse
-from utils import *
+import utils
 
 def plot_vehicle_csv(
 		sequence,
@@ -56,7 +56,7 @@ def plot_vehicle_csv(
 	
 	# get the camera id - only these boxes will be parsed from the data file
 	# camera_id = sequence.split("/")[-1].split("_")[0]
-	camera_id = find_camera_name(sequence)
+	camera_id = utils.find_camera_name(sequence)
 	if camera_id[0] != "p":
 		camera_id = sequence.split("/")[-1].split("_")[1]
 		if camera_id[0] != "p":
@@ -115,7 +115,7 @@ def plot_vehicle_csv(
 			frame_idx = int(row[0])
 			if frame_idx<1800:
 				continue
-			id = int(row[2])
+			id = int(float(row[2]))
 			cls = row[3]
 		
 			if cls != '' and id not in obj_cls.keys():
@@ -338,6 +338,8 @@ def plot_vehicle_csv(
 		if key == ord('q') or frame_idx > 3600:
 			break
 		
+		if key == ord("p"):
+			cv2.waitKey(0)
 		if save:
 			out.write(frame)
 		
@@ -394,11 +396,14 @@ if __name__ == "__main__":
          frame_rate = 30
          ds = False
         
-         camera_name = "p1c4"
+         camera_name = "p1c3"
          sequence_idx = 0
-         csv_file = r"E:\I24-postprocess\June_5min\rectified\{}_{}.csv".format(camera_name,sequence_idx)  
-         # csv_file = r"E:\I24-postprocess\June_5min\Automatic 3D (uncorrected)\{}_{}_track_outputs_3D.csv".format(camera_name,sequence_idx)
-         sequence = r"E:\I24-postprocess\June_5min\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
+         # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\{}_{}_3D_track_outputs.csv".format(camera_name,sequence_idx)
+         csv_file = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\{}_{}.csv".format(camera_name,sequence_idx)
+         # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\p1c24_gt.csv"
+         # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\rectified\{}_{}.csv".format(camera_name,sequence_idx)  
+         # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\Automatic 3D (uncorrected)\{}_{}_track_outputs_3D.csv".format(camera_name,sequence_idx)
+         sequence = r"E:\I24-postprocess\0616-dataset-alpha\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
          
          BOI = [1244,1279,1333,1375,1437,1536,1578,1608,1669,1714,1782]
     
