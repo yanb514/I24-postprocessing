@@ -89,25 +89,27 @@ def iou(a,b):
         iou - float between [0,1] if a, b are valid boxes, -1 otherwise
             average iou for a and b
         """
+        a,b = np.reshape(a,(1,-1)), np.reshape(b,(1,-1))
         # if has invalid measurements
-        if np.isnan(sum(a)) or np.isnan(sum(b)):
+        if np.isnan(sum(sum(a))) or np.isnan(sum(sum(b))):
             return 0
 
-        ax = np.sort(a[[0,2,4,6]])
-        ay = np.sort(a[[1,3,5,7]])
-        bx = np.sort(b[[0,2,4,6]])
-        by = np.sort(b[[1,3,5,7]])
-        # ignore the top
-        area_a = (ax[[3]]-ax[[0]]) * (ay[[3]]-ay[[0]])
-        area_b = (bx[[3]]-bx[[0]]) * (by[[3]]-by[[0]])
+        ax = np.sort(a[0,[0,2,4,6]])
+        ay = np.sort(a[0,[1,3,5,7]])
+        bx = np.sort(b[0,[0,2,4,6]])
+        by = np.sort(b[0,[1,3,5,7]])
+
+        area_a = (ax[3]-ax[0]) * (ay[3]-ay[0])
+        area_b = (bx[3]-bx[0]) * (by[3]-by[0])
         
-        minx = max(ax[[0]], bx[[0]]) # left
-        maxx = min(ax[[2]], bx[[2]])
-        miny = max(ay[[1]], by[[1]])
-        maxy = min(ay[[3]], by[[3]])
+        minx = max(ax[0], bx[0]) # left
+        maxx = min(ax[2], bx[2])
+        miny = max(ay[1], by[1])
+        maxy = min(ay[3], by[3])
         
         intersection = max(0, maxx-minx) * max(0,maxy-miny)
-        union = area_a + area_b - intersection + 1e-06
+        # union = area_a + area_b - intersection + 1e-06
+        union = min(area_a,area_b)
         iou = intersection/union
         
         return iou
@@ -279,17 +281,20 @@ def predict_tracks_df(tracks):
         direction = track_df["direction"].iloc[0]
         track = np.array(track_df[pts])
     
-        # if len(track)>1:   # TODO: change to average speed
-        #     # delta = (track[-1,:] - track[0,:])/(len(track)-1)
-        #     temp = track_df[~track_df["bbr_x"].isna()]
-        #     time_range = (len(tracks)-1)/30
-        #     vx_bbr = (max(temp.bbr_x.values)-min(temp.bbr_x.values))/time_range
-        #     vx_fbr = (max(temp.fbr_x.values)-min(temp.fbr_x.values))/time_range
-        #     vx = min(45,max(vx_bbr,vx_fbr))
-        #     delta = np.array([vx,0,vx,0,vx,0,vx,0])/30
-        #     x_pred = track[-1,:] + direction*delta  
-        # else:
-        x_pred = track[-1,:] + direction* np.array([mpf,0,mpf,0,mpf,0,mpf,0])
+        if len(track)>1:   # average speed
+            # temp = track_df[~track_df["bbr_x"].isna()]
+            # time_range = (len(temp)-1)/30
+            # vx_bbr = (max(temp.bbr_x.values)-min(temp.bbr_x.values))/time_range
+            # vx_fbr = (max(temp.fbr_x.values)-min(temp.fbr_x.values))/time_range
+            # vx = (vx_bbr+vx_fbr)/2
+            # print(vx)
+            # delta = np.array([vx,0,vx,0,vx,0,vx,0])/30
+            # x_pred = track[-1,:] + direction*delta 
+            frames = np.arange(0,len(track))
+            fit = np.polyfit(frames,track,1)
+            x_pred = np.polyval(fit, len(track))
+        else:
+            x_pred = track[-1,:] + direction* np.array([mpf,0,mpf,0,mpf,0,mpf,0])
         x_pred = np.reshape(x_pred,(1,-1))
         x.append(x_pred) # prediction next frame, dim=nx8
         new_row = pd.DataFrame(x_pred, columns=pts)
@@ -297,10 +302,10 @@ def predict_tracks_df(tracks):
     return x, tracks
 
     
-def stitch_objects(df, SCORE_THRESHOLD = 2.5):
+def stitch_objects_bayes(df, SCORE_THRESHOLD = 2.5):
     '''
     10/20/2021
-    keep running total of measurements matched in tracks
+    Weighted average DA
     SCORE_THRESHOLD: c3,4: 2.5 (Bayesian)
     '''
     
@@ -370,25 +375,7 @@ def stitch_objects(df, SCORE_THRESHOLD = 2.5):
                 for n in range(n_car):
                     score[m,n] = dist_score(x[n],y[m],'xyw')
 
-            # bool_arr1 = score == score.min(axis=1)[:,None] # every row has true:every measurement gets assigned
-            # bool_arr0 = score == score.min(axis=0) # find the cloeset measurement for each prediction
-            # bool_arr = np.logical_and(bool_arr1, bool_arr0) # only choose mutual matching
-            # meas_del_bool = np.logical_xor(bool_arr,bool_arr1)
-            # if sum(sum(meas_del_bool))>0:
-            #     try:
-            #         r,_ = np.where(meas_del_bool) # r is the index of meas to be deleted
-            #         frame = frame.drop(r)
-            #         frame = frame.reset_index(drop=True)
-            #         curr_meas_idx = curr_meas_idx - set(r)
-            #         m_box = len(curr_meas_idx)
-                    
-            #     except ValueError: # no meas to be deleted
-            #         pass
-            # score = bool_arr*score+np.invert(bool_arr)*(99) # get the min of each row
-            
             # Bayesian way
-            if k == 67:
-                print(k)
             bool_arr1 = score<SCORE_THRESHOLD
             col = np.where(sum(bool_arr1)>1)[0] # curr_id[col] has multiple measurement candidates
             w = 1/score[:,col]* bool_arr1[:,col] 
@@ -423,18 +410,7 @@ def stitch_objects(df, SCORE_THRESHOLD = 2.5):
                         tracks[new_id] = pd.concat([tracks[new_id], avg_meas],ignore_index=True)  
                         i+=1
                     m_unassociated -= set(m_idx)
-                    
-            # if len(pairs) > 0:
-            #     for m,n in pairs:
-            #         new_id = curr_id[n]
-            #         tracks[new_id] = tracks[new_id].reset_index(drop=True)
-            #         new_meas = frame.loc[m:m]   
-            #         tracks[new_id].drop(tracks[new_id].tail(1).index,inplace=True) # drop the last row (predictino)
-            #         tracks[new_id] = pd.concat([tracks[new_id], new_meas])     
-                    
-            # measurements that have no cars associated, create new
-            # if len(pairs) < m_box:
-            #     m_unassociated = list(set(np.arange(m_box)) - set(pairs[:,0]))
+
             if len(m_unassociated)>0:
                 for m in m_unassociated:
                     new_id = frame['ID'].iloc[m]
@@ -445,6 +421,114 @@ def stitch_objects(df, SCORE_THRESHOLD = 2.5):
     newdf = newdf.groupby("ID").apply(utils.connect_track).reset_index(drop=True)    
     return newdf  
  
+def stitch_objects(df, SCORE_THRESHOLD = 2.5, IOU_THRESHOLD=0.2):
+    '''
+    10/20/2021
+    make sure each meas is either associated to an existing track
+    or create a new track
+    '''
+    
+    # define the x,y range to keep track of cars in FOV (meter)
+    camera_id_list = df['camera'].unique()
+    xmin, xmax, ymin, ymax = utils.get_camera_range(camera_id_list)
+    xrange = xmax-xmin
+    alpha = 0.4
+    xmin, xmax = xmin - alpha*xrange, xmax + alpha*xrange # extended camera range for prediction
+    ns = np.amin(np.array(df[['Frame #']])) # start frame
+    nf = np.amax(np.array(df[['Frame #']])) # end frame
+    tracks = dict() # a dictionary to store all current objects in view. key:ID, value:dataframe
+    pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    pts_img = ["fbrx","fbry","fblx",	"fbly",	"bbrx",	"bbry",	"bblx",	"bbly",	"ftrx",	"ftry",	"ftlx",	"ftly",	"btrx",	"btry",	"btlx",	"btly"]
+    newdf = pd.DataFrame()
+    
+    for k in range(ns,nf):
+        print("\rFrame {}/{}".format(k,nf),end = "\r",flush = True)
+        
+        frame = df.loc[(df['Frame #'] == k)] # TODO: use groupby frame to save time
+        y = np.array(frame[pts])
+        notnan = ~np.isnan(y).any(axis=1)
+        y = y[notnan] # remove rows with missing values (dim = mx8)
+        frame = frame.iloc[notnan,:]
+        frame = frame.reset_index(drop=True)
+        
+        m_box = len(frame)
+        n_car = len(tracks)
+        
+        if (n_car > 0): # delete track that are out of view
+            for car_id in list(tracks.keys()):
+                last_frame = tracks[car_id].iloc[-1]
+                last_frame_x = np.array(last_frame[pts])[[0,2,4,6]]
+                x1,x2 = min(last_frame_x),max(last_frame_x)
+                frames = tracks[car_id]["Frame #"].values
+                matched_bool = ~np.isnan(frames)
+                frames_matched = tracks[car_id].loc[matched_bool]
+
+                if (x1<xmin) or (x2>xmax):
+                    if len(frames_matched) > 0: # TODO: this threshold could be a ratio
+                        newid = frames_matched["ID"].iloc[0] 
+                        frames_matched["ID"] = newid #unify ID
+                        newdf = pd.concat([newdf,frames_matched])
+                    del tracks[car_id]
+                    n_car -= 1
+        
+        if (m_box == 0) and (n_car == 0): # simply advance to the next frame
+            continue
+            
+        elif (m_box == 0) and (n_car > 0): # if no measurements in current frame, simply predict
+            x, tracks = predict_tracks_df(tracks)
+            
+        elif (m_box > 0) and (n_car == 0): # create new tracks (initialize)
+            for i, row in frame.iterrows():
+                row = frame.loc[i:i,:]
+                tracks[row['ID'].iloc[0]] = row
+        
+        else: # try biparte matching
+            x, tracks = predict_tracks_df(tracks)
+            n_car = len(tracks)
+            curr_id = list(tracks.keys()) # should be n id's 
+
+            score = np.ones([m_box,n_car])*(99)
+            for m in range(m_box):
+                for n in range(n_car):
+                    score[m,n] = dist_score(x[n],y[m],'xyw')
+
+            bool_arr1 = score == score.min(axis=1)[:,None] # every row has true:every measurement gets assigned
+            valid = score<SCORE_THRESHOLD
+            bool_arr = np.logical_and(bool_arr1,valid)
+            multiple_meas = np.sum(bool_arr,axis=0) # multiple meas match to the same ID
+            c=np.where(multiple_meas>1)[0] # index of curr_id that's got multiple meas candidates
+            if len(c)>0: # exists multiple_meas match, select the nearest one
+                bool_arr0 = score == score.min(axis=0) # every col has a true: find the nearest measurement for each prediction
+                bool_arr = np.logical_and(bool_arr1, bool_arr0) # only choose mutual matching
+                  
+            pairs = np.transpose(np.where(bool_arr)) # pair if score is under threshold
+
+            if len(pairs) > 0:
+                for m,n in pairs:
+                    new_id = curr_id[n]
+                    tracks[new_id] = tracks[new_id].reset_index(drop=True)
+                    new_meas = frame.loc[m:m]   
+                    tracks[new_id].drop(tracks[new_id].tail(1).index,inplace=True) # drop the last row (predictino)
+                    tracks[new_id] = pd.concat([tracks[new_id], new_meas])  
+                    x[n] = np.array(new_meas[pts])
+                    
+            # measurements that have no cars associated, create new
+            if len(pairs) < m_box:
+                m_unassociated = list(set(np.arange(m_box)) - set(pairs[:,0]))
+                for m in m_unassociated:
+                    # only create new if m does not overlap with x
+                    iou_m = []
+                    for xn in x:
+                        iou_m.append(iou(y[m], xn))
+                    if all(np.array(iou_m)<IOU_THRESHOLD): # if ym does not overlap with any existing tracks
+                        new_id = frame['ID'].iloc[m]
+                        new_meas = frame.loc[m:m]
+                        tracks[new_id] = new_meas
+
+    print('Connect tracks', len(newdf)) # Frames of a track (ID) might be disconnected after DA
+    newdf = newdf.groupby("ID").apply(utils.connect_track).reset_index(drop=True)    
+    return newdf  
+
 def associate_cross_camera(df_original):
     '''
     this function is essentially the same as associate_overlaps

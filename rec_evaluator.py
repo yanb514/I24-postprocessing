@@ -897,7 +897,7 @@ class MOT_Evaluator():
             
 if __name__ == "__main__":
     
-    camera_name = "p1c2"
+    camera_name = "p1c3"
     sequence_idx = 0
     sequence = None
     
@@ -915,7 +915,7 @@ if __name__ == "__main__":
     vp_file = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\vp\{}_axes.csv".format(camera_name)
     point_file = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform\{}_im_lmcs_transform_points.csv".format(camera_name)
     tf_path = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform"
-    sequence = r"E:\I24-postprocess\0616-dataset-alpha\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
+    # sequence = r"E:\I24-postprocess\0616-dataset-alpha\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
     # sequence = r"E:\I24-postprocess\0806-CIRCLES\raw video\record_51_{}_00000.mp4".format(camera_name)
     
     # we have to define the scale factor for the transformation, which we do based on the first frame of data
@@ -939,7 +939,7 @@ if __name__ == "__main__":
     hg.scale_Z(boxes,heights,name = camera_name)
     
     params = {
-        "cutoff_frame": 150,
+        "cutoff_frame": 1000,
         "match_iou":0.51,
         "sequence":sequence,
         "gtmode": "im" , # "im", "state", "space"

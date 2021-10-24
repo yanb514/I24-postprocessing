@@ -18,7 +18,7 @@ if __name__ == "__main__":
     # read & rectify each camera df individually
     data_path = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking"
     tform_path = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform"
-    camera_name, sequence = "p1c2", "0"
+    camera_name, sequence = "p1c3", "0"
     
     # %% read data preprocess
     
@@ -32,9 +32,9 @@ if __name__ == "__main__":
     df = utils.read_data(data_path+"\{}_{}.csv".format(camera_name, sequence))
 
 #%%
-    df = df[(df["Frame #"]<=300)]
+    df = df[(df["Frame #"]<=1200)]
     print('Before DA: ', len(df['ID'].unique()), 'cars', len(df))
-    df = da.stitch_objects(df,2.5)
+    df = da.stitch_objects(df,2.5,0.2)
     print('After stitching: ', len(df['ID'].unique()), 'cars', len(df))
     df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
 
