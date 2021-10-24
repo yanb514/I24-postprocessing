@@ -23,6 +23,7 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 import time
+import utils_vis as vis
 
 
 class Experiment():
@@ -89,7 +90,7 @@ class Experiment():
                 missing_idx = [i for i in range(len(nans)) if ~nans[i]]
         meas.loc[missing_idx,["speed","acceleration","x","y","theta","width","length"]] = np.nan
         meas.loc[missing_idx, self.pts] = np.nan
-        
+        # vis.plot_track_df(meas)
         return meas
         
     def mae(self, true_state, rec_state):
@@ -110,6 +111,7 @@ class Experiment():
                 error = self.mae(self.states[state], rec[state].values)
             except TypeError:
                 error = -1
+            # state_err.append(error)
             state_err[state] = error
         return state_err
         
@@ -123,29 +125,29 @@ class Experiment():
         grid = np.zeros((len(missing_list), len(noise_list))) # dummy 2D array to store the error of each state
         self.err_grid = {state: grid.copy() for state in self.states} # dict of 2D-array
         
-        lams = (1, 0, 0, 0.02, 0.02)
         for i,m in enumerate(missing_list):
             for j, n in enumerate(noise_list):
                 print("\rEvaluating {}/{}".format(i*len(noise_list)+j+1,len(missing_list)*len(noise_list)),end = "\r",flush = True)
                 for e in range(self.params["epoch"]):
                     meas = self.downgrade(m,n)
-                    rec = opt.rectify_single_camera(meas, lams)
+                    rec = opt.rectify_single_camera(meas, self.params["lams"])
                     state_err = self.evaluate(rec)
+                    # print(m,n,state_err)
                     for state in state_err:
+                        # grid[i][j] += err
                         self.err_grid[state][i][j] += state_err[state]
                     del meas, rec
-                for state in state_err:# get the mean
-                    self.err_grid[state] /= self.params["epoch"]
-                    
+        for state in state_err:# get the mean
+            self.err_grid[state] /= self.params["epoch"]
+        # self.err_grid = np.array(grid)/self.params["epoch"]
     def runtime_analysis(self):
         missing = 0.2
         noise = 0.2
         run_time = []
-        lams = (1, 0, 0, 0.02, 0.02)
         for n in self.N:
             meas = self.downgrade(missing, noise)
             start = time.time()
-            rec = opt.rectify_single_camera(meas, lams)
+            rec = opt.rectify_single_camera(meas, self.params["lams"])
             end = time.time()
             run_time.append(end-start)
         self.run_time = run_time
@@ -187,7 +189,7 @@ class Experiment():
         
     
 if __name__ == "__main__":
-    N = 50 # number of frames
+    N = 20 # number of frames
     state = {"width": 2,
              "length": 4,
              "x0": 0,
@@ -195,15 +197,18 @@ if __name__ == "__main__":
              "theta": [0] * N,
              "speed": [30] * N
              }
-    params = {"missing": np.arange(0,0.9,0.1), # missing rate
-              "noise":np.arange(0,0.9,0.1), # gaussian noise variance on measurement boxes
+    params = {"missing": np.arange(0,0.7,0.1), # missing rate
+               "noise": np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
               "N": N,
-              "epoch": 10 # number of random runs of generate
+              "epoch": 10, # number of random runs of generate
+              "lams" : (1,0,0,0.1,0.1,0)
         }
+    
     ex = Experiment(state, params)
     ex.grid_evaluate()
     if isinstance(N,list): # trigger run time analysis
         ex.runtime_analysis()
         # %%
     ex.visualize()
+
     

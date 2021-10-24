@@ -112,9 +112,9 @@ def plot_vehicle_csv(
 			# if camera != relevant_camera:
 			#	  continue
 			
-			frame_idx = int(row[0])
-			if frame_idx<1800:
-				continue
+			frame_idx = int(float(row[0]))
+# 			if frame_idx<1800:
+# 				continue
 			id = int(float(row[2]))
 			cls = row[3]
 		
@@ -398,10 +398,10 @@ if __name__ == "__main__":
         
          camera_name = "p1c3"
          sequence_idx = 0
-         # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\{}_{}_3D_track_outputs.csv".format(camera_name,sequence_idx)
-         csv_file = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\{}_{}.csv".format(camera_name,sequence_idx)
+         # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\{}_{}.csv".format(camera_name,sequence_idx)
+         # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\{}_{}.csv".format(camera_name,sequence_idx)
          # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\p1c24_gt.csv"
-         # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\rectified\{}_{}.csv".format(camera_name,sequence_idx)  
+         csv_file = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\rectified\{}_{}.csv".format(camera_name,sequence_idx)  
          # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\Automatic 3D (uncorrected)\{}_{}_track_outputs_3D.csv".format(camera_name,sequence_idx)
          sequence = r"E:\I24-postprocess\0616-dataset-alpha\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
          

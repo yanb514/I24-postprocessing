@@ -26,7 +26,14 @@ def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
     # min perturbation
     diff = Y1-Yre[notNan,:]
     # c1 = lam1*np.nanmean(LA.norm(diff,axis=1)) # L2 norm
-    c1 = lam1*np.nanmean(LA.norm(diff,ord=1,axis=1)) # L1 norm
+    # c1 = lam1*np.nanmean(LA.norm(diff,ord=1,axis=1)) # L1 norm
+    # weighted distance
+    mae_x = np.abs(diff[:,[0,2,4,6]])
+    mae_y = np.abs(diff[:,[1,3,5,7]]) 
+    alpha = 0.3
+    mae_xy = alpha*mae_x + (1-alpha)*mae_y
+    c1 = lam1*LA.norm(mae_xy,ord=1)
+    
     # regularize acceleration # not the real a or j, multiply a constant dt
     c2 = lam2*LA.norm(a,2)/nvalid/30
     
@@ -82,8 +89,8 @@ def rectify_single_camera(df, args):
     '''                        
     df: a single track in one camera view
     '''             
-    lam1, lam2, lam3,lam4,lam5 = args
-    print(df['ID'].iloc[0]) 
+    lam1, lam2, lam3,lam4,lam5,niter = args
+    # print(df['ID'].iloc[0]) 
 
     # optimization parameters
     lam1 = lam1# modification of measurement 1000
@@ -91,15 +98,15 @@ def rectify_single_camera(df, args):
     lam3 = lam3 # jerk 0.1      
     lam4 = lam4 # theta 1000      
     lam5 = lam5 # omega 2     
-    niter = 0
+    niter = niter
     
     timestamps = df.Timestamp.values
     dt = np.diff(timestamps)
-                            
+    sign = df["direction"].iloc[0]
     # get bottom 4 points coordinates
     pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
     Y1 = np.array(df[pts])    
-
+    
     # try removing outliers first
     # y_avg = (Y1[:,3]+Y1[:,5])/2
     # l = np.abs(Y1[:,0]-Y1[:,2])
@@ -120,19 +127,21 @@ def rectify_single_camera(df, args):
     if (len(Y1) <= 3):        
         print('Not enough valid measurements: ', df['ID'].iloc[0])
         # df.loc[:,pts] = np.nan
-        return None    
-        
+        return None 
+    
+    # reorder Y1 to deal with backward traveling measurements
+    new_order = np.argsort(np.sum(Y1[:, [0,2,4,6]],axis=1))[::int(sign)]
+    Y1 = Y1[new_order,:]
+    
     first_valid = np.where(notNan==True)[0][0]
     
-    # avgv = np.sqrt((Y1[-1,2]-Y1[0,2])**2 + (Y1[-1,3]-Y1[0,3])**2)/(timestamps[notNan][-1]-timestamps[notNan][0]) #fbr
-    # avgv = np.sqrt((Y1[-1,3]-Y1[0,3])**2 + (max(Y1[:,2])-min(Y1[:,2]))**2)/(timestamps[notNan][-1]-timestamps[notNan][0]) #fbr
     temp = df[~df["bbr_x"].isna()]
     v_bbr = (max(temp.bbr_x.values)-min(temp.bbr_x.values))/(max(temp.Timestamp.values)-min(temp.Timestamp.values))
     v_fbr = (max(temp.fbr_x.values)-min(temp.fbr_x.values))/(max(temp.Timestamp.values)-min(temp.Timestamp.values))
-    avgv = max(min(v_bbr,50), min(v_fbr,50))
+    # avgv = max(min(v_bbr,50), min(v_fbr,50))
+    avgv = (v_bbr+v_fbr)/2
     # print(avgv)
-    v0 = np.array([np.abs(avgv)]*N)
-    sign = np.sign(Y1[-1,0]-Y1[0,0])            
+    v0 = np.array([np.abs(avgv)]*N)            
 
     x0 = (Y1[0,0]+Y1[0,6])/2- sign*avgv*first_valid*1/30
     y0 = (Y1[0,1]+Y1[0,7])/2
@@ -153,27 +162,22 @@ def rectify_single_camera(df, args):
     Y0 = generate(w0,l0,x0, y0, theta0,v0)
     diff = Y1-Y0[notNan,:]
     c1max = np.nanmean(LA.norm(diff,axis=1))
-    if c1max == 0:
-        c1max = 1e-4
+    c1max = max(c1max, 1e-4)
+    
     # SOLVE FOR MAX C2-C5 BY SETTING LAM2-5 = 0
     lams = (100,0,0,0,0)
     minimizer_kwargs = {"method":"L-BFGS-B", "args":(Y1,N,dt,notNan,*lams),'bounds':bnds,'options':{'disp': False}}
     res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=0)
 
-    # res = minimize(obj1, X0, (Y1,N,dt,notNan,lam1,lam2,lam3,lam4,lam5), method = 'SLSQP',
-                    # bounds=bnds, options={'maxiter':100000, 'disp': False})# L-BFGS-B, SLSQP, Nelder-Mead,'maxiter':100000
     # extract results    
     Yre, x,y,v,a,theta,w,l = unpack1(res,N,dt)
     _,c2max,c3max,c4max,c5max = get_costs(Yre, Y1, x,y,v,a,theta,notNan)
-    # print('before norm',c1max,c2max,c3max,c4max,c5max)
-    
+    c2max,c3max,c4max,c5max = max(c2max, 1e-4), max(c3max, 1e-4), max(c4max, 1e-4), max(c5max, 1e-4)
     # SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
     lams = (lam1/c1max,lam2/c2max,lam3/c3max,lam4/c4max,lam5/c5max)
     minimizer_kwargs = {"method":"L-BFGS-B", "args":(Y1,N,dt,notNan,*lams),'bounds':bnds,'options':{'disp': False}}
     res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
     Yre, x,y,v,a,theta,w,l = unpack1(res,N,dt)
-#     c1,c2,c3,c4,c5 = get_costs(Yre, Y1, x,y,v,a,theta,notNan,cmax = (c1max, c2max, c3max, c4max, c5max)) # get ci/cimax, the normalized cost
-    # print('after norm', c1,c2,c3,c4,c5)
     
     df.loc[:,pts] = Yre        
     df.loc[:,'acceleration'] = a
@@ -182,8 +186,7 @@ def rectify_single_camera(df, args):
     df.loc[:,'y'] = y        
     df.loc[:,'theta'] = theta
     df.loc[:,'width'] = w    
-    df.loc[:,'length'] = l    
-    # plot_track_df(df)    
+    df.loc[:,'length'] = l       
     
     return df
                             
@@ -205,9 +208,9 @@ def rectify(df):
     df = df.groupby("ID").filter(lambda x: len(x)>=2)
     tqdm.pandas()            
     # lams = (1,0.2,0.2,0.05,0.02) # lambdas
-    lams = (1,0,0,0.02,0.02) # 1:data perturb 2: acceleration 3: jerk 4: theta 5: omega
-    # df = applyParallel(df.groupby("ID"), rectify_single_camera, args = lams).reset_index(drop=True)
-    df = df.groupby('ID').apply(rectify_single_camera, args=lams).reset_index(drop=True)
+    lams = (1,0,0,0.1,0.1,0) # 1:data perturb 2: acceleration 3: jerk 4: theta 5: omega
+    df = applyParallel(df.groupby("ID"), rectify_single_camera, args = lams).reset_index(drop=True)
+    # df = df.groupby('ID').apply(rectify_single_camera, args=lams).reset_index(drop=True)
     return df                
                             
 def rectify_receding_horizon(df):

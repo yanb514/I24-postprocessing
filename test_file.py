@@ -18,7 +18,7 @@ if __name__ == "__main__":
     # read & rectify each camera df individually
     data_path = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking"
     tform_path = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform"
-    camera_name, sequence = "p1c3", "0"
+    camera_name, sequence = "p1c2", "0"
     
     # %% read data preprocess
     
@@ -32,17 +32,12 @@ if __name__ == "__main__":
     df = utils.read_data(data_path+"\{}_{}.csv".format(camera_name, sequence))
 
 #%%
-    df = df[(df["Frame #"]<=1200)]
+    df = df[(df["Frame #"]<=300)]
     print('Before DA: ', len(df['ID'].unique()), 'cars', len(df))
-    df = da.stitch_objects(df)
+    df = da.stitch_objects(df,2.5)
     print('After stitching: ', len(df['ID'].unique()), 'cars', len(df))
     df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
-    # TODO: Bayesian approach. take the average of multiple measurements of the same ID at the same frame
-    # print('Select from multiple measurments', len(df))
-    # df = utils.applyParallel(df.groupby("Frame #"), utils.del_repeat_meas_per_frame).reset_index(drop=True)
-    print('Connect tracks', len(df)) # Frames of a track (ID) might be disconnected after DA
-    df = df.groupby("ID").apply(utils.connect_track).reset_index(drop=True)
-    df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
+
     
     #%%
     newcar=utils.connect_track(car)
@@ -106,8 +101,8 @@ if __name__ == "__main__":
     # %% rectify
     df = utils.read_data(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence))
     # df = df[(df["ID"]>=2700) & (df["ID"]<2800)] # 2785 is too long
-    # df = opt.rectify(df)
-    # df.to_csv(data_path+r"\rectified\{}_{}.csv".format(camera_name, sequence), index = False)
+    df = opt.rectify(df)
+    df.to_csv(data_path+r"\rectified\{}_{}.csv".format(camera_name, sequence), index = False)
     
     # %% post processing
     df = utils.read_data(data_path+r"\rectified\{}_{}_l1.csv".format(camera_name, sequence))
@@ -116,13 +111,14 @@ if __name__ == "__main__":
      
     # %% diagnose rectification on single cars
     dfda = utils.read_data(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence))
-    df = utils.read_data(data_path+r"\rectified\{}_{}_l1.csv".format(camera_name, sequence))
+    df = utils.read_data(data_path+r"\rectified\{}_{}.csv".format(camera_name, sequence))
     
     # %%individual cars
-    carid = 1058
+    import utils_optimization as opt
+    carid = 88
     carda = dfda[dfda["ID"]==carid]
     car = carda.copy()
-    car = opt.rectify_single_camera(car,  (1,0,0,0.02,0.02))
+    car = opt.rectify_single_camera(car,  (1,0,0,0.1,0.1,0))
     # car = df[df["ID"]==carid]
     vis.plot_track_compare(carda, car)
     utils.dashboard([carda, car])
