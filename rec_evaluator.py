@@ -12,6 +12,7 @@ from data_association import count_overlaps
 import numpy.linalg as LA
 import matplotlib.pyplot as plt
 import utils_vis as vis
+import pickle
 
 class MOT_Evaluator():
     
@@ -55,7 +56,8 @@ class MOT_Evaluator():
             self.rec[cols_to_convert] = self.rec[cols_to_convert] / 3.281
         if "bbr_x" not in self.rec or np.mean(self.rec.bbr_y.values) > 40:
             self.rec = utils.img_to_road(self.rec, tf_path, camera_name)
-           
+         
+        
         if params is not None:
             if "match_iou" in params.keys():
                 self.match_iou = params["match_iou"]
@@ -69,7 +71,10 @@ class MOT_Evaluator():
                 self.recmode = params["recmode"]
             if "score_threshold" in params.keys():
                 self.score_threshold = params["score_threshold"]
-                
+        
+        if self.recmode != "rec":
+            self.rec = self.rec.groupby("ID").apply(utils.calc_dynamics_car).reset_index(drop=True)
+            
         # select under cut-off frames
         if self.cutoff_frame:
             self.gt = self.gt[self.gt["Frame #"]<=self.cutoff_frame]
@@ -338,7 +343,7 @@ class MOT_Evaluator():
             gt_ids = gt['ID'].values
             gt_classes = gt["Object class"].values
             
-            if self.gtmode == "im":
+            if self.gtmode == "gt": # start from image
                 # TODO: fill nan as 0 for velocity
                 gt_im = np.array(gt[["fbrx","fbry",	"fblx",	"fbly",	"bbrx",	"bbry",	"bblx",	"bbly",	"ftrx",	"ftry",	"ftlx",	"ftly",	"btrx",	"btry",	"btlx",	"btly"]])   
                 gt_im = torch.from_numpy(np.stack(gt_im)).reshape(-1,8,2)
@@ -357,7 +362,7 @@ class MOT_Evaluator():
                 gt_velocities = torch.tensor(gt_velocities).float()
                 gt_state = torch.cat((gt_state,gt_velocities.unsqueeze(1)),dim = 1)
                 
-            elif self.gtmode == "space":
+            else: # start from space (raw, DA)
                 gt_space = np.array(gt[['fbr_x','fbr_y', 'fbl_x','fbl_y','bbr_x','bbr_y','bbl_x', 'bbl_y']])
                 gt_space = torch.from_numpy(np.stack(gt_space)).reshape(-1,4,2)
                 gt_space = torch.cat((gt_space,gt_space),dim = 1)
@@ -366,16 +371,12 @@ class MOT_Evaluator():
                 gt_space = torch.cat([gt_space,zero_heights],dim=2)
                 gt_im = self.hg.space_to_im(gt_space)
             
-            else:
-                print("unrecognized gt mode")
-                return
-            
             
             # store pred as tensors (we start from state)
             rec_ids = rec['ID'].values
             rec_classes = rec["Object class"].values
             
-            if self.recmode == "space":
+            if self.recmode == "da":
                 # rec_space = np.array(rec[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
                 rec_space = np.array(rec[['fbr_x','fbr_y', 'fbl_x','fbl_y','bbr_x','bbr_y','bbl_x', 'bbl_y']])
                 rec_space = torch.from_numpy(np.stack(rec_space)).reshape(-1,4,2)
@@ -392,7 +393,7 @@ class MOT_Evaluator():
                 rec_velocities = torch.tensor(rec_velocities).float()
                 rec_state = torch.cat((rec_state,rec_velocities.unsqueeze(1)),dim = 1)
                 
-            elif self.recmode == "state": # start from states
+            elif self.recmode == "rec": # start from states
                 rec_state = np.array(rec[["x","y","length","width","height","direction","speed"]])
                 rec_state = torch.from_numpy(np.stack(rec_state)).reshape(-1,7).float()
                 rec_space = self.hg.state_to_space(rec_state)
@@ -565,8 +566,8 @@ class MOT_Evaluator():
             self.m["FP"] += max(0,(len(rec_space)-sum(invalid_rec) - len(matches)))
             self.m["FN"] += max(0,(len(gt_space)-sum(invalid_gt) - len(matches)))
             
-            self.m["FP @ 0.2"] += max(0,len(rec_space)-sum(invalid_rec) - len(a))
-            self.m["FN @ 0.2"] += max(0,len(gt_space)-sum(invalid_gt) - len(a))
+            # self.m["FP @ 0.2"] += max(0,len(rec_space)-sum(invalid_rec) - len(a))
+            # self.m["FN @ 0.2"] += max(0,len(gt_space)-sum(invalid_gt) - len(a))
             
             # if self.recmode == "state":
             for match in matches:
@@ -589,9 +590,9 @@ class MOT_Evaluator():
         metrics["TP"] = self.m["TP"]
         metrics["FP"] = self.m["FP"]
         metrics["FN"] = self.m["FN"]
-        metrics["FP @ 0.2"] = self.m["FP @ 0.2"]
-        metrics["FN @ 0.2"] = self.m["FN @ 0.2"]
-        metrics["iou_threshold"] = self.match_iou
+        # metrics["FP @ 0.2"] = self.m["FP @ 0.2"]
+        # metrics["FN @ 0.2"] = self.m["FN @ 0.2"]
+        # metrics["iou_threshold"] = self.match_iou
         metrics["True unique objects"] = len(self.m["gt_ids"])
         metrics["recicted unique objects"] = len(self.m["rec_ids"])
         metrics["FP edge-case"] = self.m["FP edge-case"]
@@ -625,7 +626,7 @@ class MOT_Evaluator():
          # Compute MOTA
         metrics["MOTA"] = 1 - (self.m["FN"] +  metrics["ID switches"][0] + self.m["FP"])/(self.m["TP"])
         metrics["MOTA edge-case"]  = 1 - (self.m["FN"] +  metrics["ID switches"][0] + self.m["FP"]- self.m["FP edge-case"])/(self.m["TP"])
-        metrics["MOTA @ 0.2"] = 1 - (self.m["FN @ 0.2"] +  metrics["ID switches"][0] + self.m["FP @ 0.2"])/(self.m["TP"])
+        # metrics["MOTA @ 0.2"] = 1 - (self.m["FN @ 0.2"] +  metrics["ID switches"][0] + self.m["FP @ 0.2"])/(self.m["TP"])
         
         ious = np.array(self.m["match_IOU"])
         iou_mean_stddev = np.mean(ious),np.std(ious)
@@ -645,7 +646,7 @@ class MOT_Evaluator():
         metrics["Spacing before"]          = spacing_gt_mean_stdev
         metrics["Spacing after"]          = spacing_rec_mean_stdev
         
-        # if self.recmode == "state":
+        # if self.recmode == "rec":
         # Compute average detection metrics in various spaces
         
         state = torch.stack(self.m["state_err"])
@@ -691,7 +692,7 @@ class MOT_Evaluator():
             self.units["df"] = "m"
             
         # get speed and acceleration
-        if self.gtmode == "im":
+        if self.gtmode == "gt":
             self.gt = utils.img_to_road(self.gt, self.tf_path, self.camera_name)
             self.gt["x"] = (self.gt["bbr_x"]+self.gt["bbl_x"])/2
             self.gt["y"] = (self.gt["bbr_y"]+self.gt["bbl_y"])/2
@@ -714,7 +715,7 @@ class MOT_Evaluator():
         
         
         # plot rectification score distribution
-        if hasattr(self, "m") and "trajectory_score" in self.m and self.recmode=="state":
+        if hasattr(self, "m") and "trajectory_score" in self.m and self.recmode=="rec":
             plt.figure()
             scores = list(self.m["trajectory_score"].values())
             n, bins, patches = plt.hist(scores, 50, facecolor='g', alpha=0.75)
@@ -747,7 +748,7 @@ class MOT_Evaluator():
         
         
         # plot IDs above threshold
-        if hasattr(self, "m") and "ids > score" in self.m and self.recmode =="state":
+        if hasattr(self, "m") and "ids > score" in self.m and self.recmode =="rec":
             for i,rec_id in enumerate(self.m["ids > score"][:5]):
                 plt.figure()
                 if rec_id in self.metrics['Matched IDs rec'] :
@@ -770,7 +771,7 @@ class MOT_Evaluator():
         #         count += 1
 
         # plot speed distribution before and after 
-        # if self.recmode=="state":
+        # if self.recmode=="rec":
         plt.figure() # speed
         rec_speed = self.rec.speed.values
         gt_speed = self.gt.speed.values
@@ -897,14 +898,15 @@ class MOT_Evaluator():
             
 if __name__ == "__main__":
     
-    camera_name = "p1c3"
+    camera_name = "p1c2"
     sequence_idx = 0
     sequence = None
     
     # 0616-dataset-alpha (with ground truth, 3D tracking)
     gt = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\rectified_{}_{}_track_outputs_3D.csv".format(camera_name,sequence_idx)
+    # gtda = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\p1c2_0_gtda.csv"
     # gt = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\p1c24_gt.csv"
-    raw = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\{}_{}.csv".format(camera_name,sequence_idx)
+    raw = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\{}_{}_3D_track_outputs.csv".format(camera_name,sequence_idx)
     DA = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\{}_{}.csv".format(camera_name,sequence_idx) 
     # DA = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\p1c24.csv"
     rectified = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\rectified\{}_{}.csv".format(camera_name,sequence_idx) 
@@ -942,17 +944,20 @@ if __name__ == "__main__":
         "cutoff_frame": 1000,
         "match_iou":0.51,
         "sequence":sequence,
-        "gtmode": "im" , # "im", "state", "space"
-        "recmode": "space",
+        "gtmode": "gt" , # "gt", "raw", "da", "rec"
+        "recmode": "da",
         "score_threshold": 3
         }
     
     ev = MOT_Evaluator(gt_path,rec_path,tf_path, camera_name, hg, params = params)
     # ev.evaluate_tracks()
     ev.evaluate()
-    if params["recmode"] == "state":
+    if params["recmode"] == "rec":
         ev.score_trajectory()
     ev.print_metrics()
-    # %%
     ev.visualize()
-    # %%
+    
+    # save as pickle
+    # filehandler = open("{}_{}_{}.pkl".format(camera_name,sequence_idx,params["recmode"]), 'wb') 
+    # pickle.dump(ev, filehandler)
+    

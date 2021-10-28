@@ -33,6 +33,16 @@ def remove_wrong_direction(car):
         return car
     else:
         return None
+    
+def remove_wrong_direction_df(df):
+    direction = np.sign(df["fbr_x"].values-df["bbr_x"].values).copy()
+    ys = df["y"].values.copy()
+    ys[ys<18.5] = 1
+    ys[ys>=18.5] = -1
+    valid = direction==ys
+    df = df[valid].reset_index(drop=True)
+    return df
+    
 def reorder_points(df):
     '''
         make sure points in the road-plane do not flip
@@ -207,13 +217,13 @@ def preprocess(file_path, tform_path, skip_row = 0):
     df = get_x_direction(df)
     print('Total # car:', len(df['ID'].unique()),len(df))
     
-    print("Remove wrong direction...") # for MOTA accuracy only
-    df = df.groupby("ID").apply(remove_wrong_direction).reset_index(drop=True)
-    print('Total # car:', len(df['ID'].unique()),len(df))
+    # print("Remove wrong direction...") # for MOTA accuracy only
+    # df = df.groupby("ID").apply(remove_wrong_direction).reset_index(drop=True)
+    # print('Total # car:', len(df['ID'].unique()),len(df))
     
-    print("reorder points...")
-    df = df.groupby("ID").apply(reorder_points).reset_index(drop=True)
-    print('Total # car:', len(df['ID'].unique()),len(df))
+    # print("reorder points...")
+    # df = df.groupby("ID").apply(reorder_points).reset_index(drop=True)
+    # print('Total # car:', len(df['ID'].unique()),len(df))
     
     # print('filter width length:', len(df['ID'].unique()))
     # df = df.groupby("ID").apply(filter_width_length).reset_index(drop=True)
@@ -945,66 +955,6 @@ def connect_track(car):
 
     return car
     
-def dashboard(cars):
-    '''
-    cars: list of dfs
-    show acceleration/speed/theta/... of each car
-    '''
-
-    fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(1, 5, figsize=(15,3))
-    # x
-#     x1 = []
-#     x2 = []
-#     frames = cars[0]['Frame #'].values
-    i = 0
-    for car in cars:
-        # x1.append(car['fbr_x'].values)
-        # x2.append(car['bbr_x'].values)
-        # ax1.scatter(car['Frame #'].values, car['fbr_x'].values, label=i, s=1)
-        ax1.scatter(car['Frame #'].values, car['bbr_x'].values, label=i, s=1)
-        i+=1
-    # for i in range(len(frames)):
-        # ax1.scatter(frames[i],x1[0][i]-x1[1][i],c='b',s=1,label='fbr' if i==0 else '')
-        # ax1.scatter(frames[i],x2[0][i]-x2[1][i],c='r',s=1,label='bbr' if i==0 else '')
-    # ax1.scatter(cars[0]['Frame #'].values, xs[0]-xs[1], s=1)
-    # ax1.legend()
-    # ax1.set_title('x (m)')
-        
-    # y positions
-    i = 0
-    for car in cars:
-        ax2.scatter(car['Frame #'].values, car['fbr_y'].values, s=1)
-        i+=1
-    ax2.set_title('y (m)')
-    
-    # speed
-    i = 0
-    for car in cars:
-        # notnan=~np.isnan(car.bbl_x.values)
-        # ax3.scatter(car['Frame #'].values[notnan][:-1], -np.diff(car['bbl_x'].values[notnan])/(4/30))
-        ax3.scatter(car['Frame #'].values, car['speed'].values, s=1)
-        i+=1
-    ax3.set_title('speed (m/s)')
-    
-    # acceleration
-    i = 0
-    for car in cars:
-        try:
-            ax4.scatter(car['Frame #'].values, car['acceleration'].values, s=1)
-        except:
-            ax4.scatter(car['Frame #'].values, car['acceleration'], s=1)
-        i+=1
-    ax4.set_title('acceleration (m/s2)')
-    
-    # theta
-    i = 0
-    for car in cars:
-        ax5.scatter(car['Frame #'].values, car['theta'].values, s=1)
-        i+=1
-    ax5.set_title('theta (rad)')
-    
-    plt.show()
-    return
 
 def assign_lane(df):
     '''
@@ -1025,11 +975,12 @@ def assign_lane(df):
 
 def calc_dynamics_car(car):
     # dt = np.diff(car["Timestamp"].values)
+    direction = car['direction'].iloc[0]
     if len(car)<3:
         return
     dt = np.array([1/30]*(len(car)-1))
     dx = np.diff(car.x.values)
-    speed = dx/dt
+    speed = dx/dt*direction
     speed = np.append(speed, speed[-1])
     dv = np.diff(speed)
     a = dv/dt
@@ -1037,7 +988,17 @@ def calc_dynamics_car(car):
     car.loc[:,"speed"] = speed
     car.loc[:,"acceleration"] = a
     return car
-    
+
+def constant_speed(car):
+    temp = car[~car["bbr_x"].isna()]
+    if len(temp)<2:
+        return None
+    v_bbr = (max(temp.bbr_x.values)-min(temp.bbr_x.values))/(max(temp.Timestamp.values)-min(temp.Timestamp.values))
+    v_fbr = (max(temp.fbr_x.values)-min(temp.fbr_x.values))/(max(temp.Timestamp.values)-min(temp.Timestamp.values))
+    avgv = (v_bbr+v_fbr)/2
+    car["speed"] = avgv if avgv<50 else np.nan
+    return car    
+
 def calc_dynamics(df):
     df = df.groupby("ID").apply(calc_dynamics_car).reset_index(drop=True)
     return df

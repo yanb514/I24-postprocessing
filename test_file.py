@@ -18,29 +18,67 @@ if __name__ == "__main__":
     # read & rectify each camera df individually
     data_path = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking"
     tform_path = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform"
-    camera_name, sequence = "p1c3", "0"
+    camera_name, sequence = "p1c2", "0"
     
     # %% read data preprocess
     
     file_path = data_path+"\{}_{}_3D_track_outputs.csv".format(camera_name, sequence)
+    # file_path = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\rectified_p1c2_0_track_outputs_3D.csv"
     df = utils.preprocess(file_path, tform_path, skip_row = 0)
+    # df = utils.img_to_road(df, tform_path, camera_name)
+    # df["camera"] = camera_name
+    # df["x"] = np.array((df["bbr_x"].values+df["bbl_x"].values)/2)
+    # df["y"] = np.array((df["bbr_y"].values+df["bbl_y"].values)/2)
     df.to_csv(data_path+r"\{}_{}.csv".format(camera_name, sequence), index = False)
     # df = df[df['Frame #']<1800]
 
     
     # %% data association
-    df = utils.read_data(data_path+"\{}_{}.csv".format(camera_name, sequence))
-
+    # df = utils.read_data(data_path+"\{}_{}.csv".format(camera_name, sequence))
+    df = utils.read_data(data_path+r"\{}_{}.csv".format(camera_name, sequence))
+    
 #%%
     df = df[(df["Frame #"]<=1200)]
     print('Before DA: ', len(df['ID'].unique()), 'cars', len(df))
-    df = da.stitch_objects(df,2.5,0.2)
+    df = da.stitch_objects(df,2.5, 0.2)
     print('After stitching: ', len(df['ID'].unique()), 'cars', len(df))
     df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
-
+    # df.to_csv(data_path+r"\{}_{}_gtda.csv".format(camera_name, sequence), index = False)
     
     #%%
-    newcar=utils.connect_track(car)
+    def plot_track(x, y, x_id, y_id, camera, frame_id = 0, length=15,width=4):
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(length,width))
+    
+        for i in range(len(x)):
+            coord = x[i,:]
+            coord = np.reshape(coord,(-1,2)).tolist()
+            coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+            xs, ys = zip(*coord) #lon, lat as x, y
+            plt.plot(xs,ys, c='r', label='pred' if i==0 else '')#alpha=i/len(D)
+            plt.text(xs[0], ys[0], str(x_id[i]), fontsize=8)
+            plt.scatter(x[i,2],x[i,3],color='black') # 
+    
+        for i in range(len(y)):
+            coord = y[i,:]
+            coord = np.reshape(coord,(-1,2)).tolist()
+            coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+            xs, ys = zip(*coord) #lon, lat as x, y
+            plt.plot(xs,ys, c='b', label='meas' if i==0 else '')#alpha=i/len(D)
+            plt.text(xs[0], ys[0], str(y_id[i]), fontsize=8)
+            plt.scatter(y[i,2],y[i,3],color='black') # 
+            
+        plt.xlabel('meter')
+        plt.ylabel('meter')
+        xmin,xmax,ymin,ymax = utils.get_camera_range(camera)
+        plt.xlim([180,260])
+        plt.ylim([ymin,ymax])
+        plt.title(frame_id)
+        plt.legend()
+        plt.show() 
+        return
+    
+    plot_track(np.vstack(x), y, curr_id, frame["ID"].values, ["p1c3"], frame["Frame #"].iloc[0])
     #%%
     # df = newdf
     frames = df.groupby("Frame #")

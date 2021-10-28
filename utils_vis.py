@@ -10,6 +10,7 @@ import numpy as np
 import gmplot 
 import matplotlib.pyplot as plt
 import utils
+from matplotlib.ticker import FormatStrFormatter
 
 # for visualization
 def insertapikey(fname):
@@ -106,23 +107,34 @@ def draw_map_box(Y, nO, lats, lngs):
     insertapikey(map_name)
     return jupyter_display(map_name)
     
-def plot_track(D,length=15,width=1):
+def plot_track(x, y, x_id, y_id, camera, frame_id = 0, length=15,width=4):
     fig, ax = plt.subplots(figsize=(length,width))
 
-    for i in range(len(D)):
-        coord = D[i,:]
+    for i in range(len(x)):
+        coord = x[i,:]
         coord = np.reshape(coord,(-1,2)).tolist()
         coord.append(coord[0]) #repeat the first point to create a 'closed loop'
         xs, ys = zip(*coord) #lon, lat as x, y
-        plt.plot(xs,ys,label=('t=0' if i==0 else ''),c='black')#alpha=i/len(D)
-        plt.scatter(D[i,2],D[i,3],color='black')
-    ax = plt.gca()
+        plt.plot(xs,ys, c='r', label='pred' if i==0 else '')#alpha=i/len(D)
+        plt.text(xs[0], ys[0], str(x_id[i]), fontsize=8)
+        plt.scatter(x[i,2],x[i,3],color='black') # 
+
+    for i in range(len(y)):
+        coord = y[i,:]
+        coord = np.reshape(coord,(-1,2)).tolist()
+        coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+        xs, ys = zip(*coord) #lon, lat as x, y
+        plt.plot(xs,ys, c='b', label='meas' if i==0 else '')#alpha=i/len(D)
+        plt.text(xs[0], ys[0], str(y_id[i]), fontsize=8)
+        plt.scatter(y[i,2],y[i,3],color='black') # 
+        
     plt.xlabel('meter')
     plt.ylabel('meter')
-    # plt.xlim([50,60])
-    # plt.ylim([0,60])
+    xmin,xmax,ymin,ymax = utils.get_camera_range(camera)
+    plt.xlim([90,240])
+    plt.ylim([ymin,ymax])
+    plt.title(frame_id)
     plt.legend()
-    # ax.format_coord = lambda x,y: '%.6f, %.6f' % (x,y)
     plt.show() 
     return
     
@@ -243,4 +255,84 @@ def plot_time_space(df, lanes=[1]):
         plt.title('Time-space diagram')
     return
 
+
+def dashboard(cars, legends=None):
+    '''
+    cars: list of dfs
+    show acceleration/speed/theta/... of each car
+    '''
+    if not legends:
+        legends = [""]*len(cars)
+        
+    fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(1, 5, figsize=(18,3))
+
+    colors = ["blue","orange","green","red"]
+    i=0
+    carid = cars[0]["ID"].iloc[0]
+    for caridx,car in enumerate(cars):
+        
+        if legends[caridx] != 'rectified':
+            car = utils.calc_dynamics_car(car)
+         
+        x = car['Frame #'].values
+        c = colors[caridx%len(colors)]
+        
+        # time vs. x
+        xx = (car['bbr_x'].values+car['fbr_x'].values)/2
+        ax1.scatter(x,xx,color=c,s=2,label="{}".format(legends[caridx]))
+        ax1.plot(x,xx,color=c)
+        ax1.legend()
+        
+        # time vs. y
+        y = (car['bbr_y'].values+car['bbl_y'].values)/2
+        ax2.scatter(x,y,color=c,s=2,label="{}".format(legends[caridx]))
+        ax2.plot(x,y,color=c)
+
+        # time vs. speed
+        speed =  car['speed'].values
+        ax3.scatter(x,speed, color=c, s=2)
+        ax3.plot(x,speed,color=c)
+        
+        # time vs. accel
+        accel =  car['acceleration'].values
+        ax4.scatter(x,accel, color=c, s=2)
+        ax4.plot(x,accel,color=c)
+        
+        
+        # time vs. theta
+        if legends[caridx]!='rectified':
+            continue
+        theta =  car['theta'].values
+        ax5.scatter(x,theta, color=c, s=2)
+        ax5.plot(x,theta,color=c)
+        i += 1
+        
+    ax1.set_xlabel('Frame #')
+    ax1.set_ylabel('x (m)')
+    ax1.set_title('Time-space (x) for ID {}'.format(int(carid)))  
+        
+    # y positions
+    ax2.set_xlabel('Frame #')
+    ax2.set_ylabel('y (m)')
+    ax2.set_title('Time-space (y)')  
+    
+    # speed
+    ax3.set_xlabel('Frame #')
+    ax3.set_title('Speed (m/s)')
+    ax3.set_ylim([10,50])
+    ax3.yaxis.set_major_formatter(FormatStrFormatter('%.0f'))
+    
+    # acceleration
+    ax4.set_xlabel('Frame #')
+    ax4.set_title('acceleration (m/s2)')
+    ax4.set_ylim([-10,10])
+    ax4.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    
+    # theta
+    ax5.set_xlabel('Frame #')
+    ax5.set_title('theta (rad)')
+    ax5.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+    
+    plt.show()
+    return
    
