@@ -107,7 +107,7 @@ def draw_map_box(Y, nO, lats, lngs):
     insertapikey(map_name)
     return jupyter_display(map_name)
     
-def plot_track(x, y, x_id, y_id, camera, frame_id = 0, length=15,width=4):
+def plot_track(x, y, x_id, y_id, xmin, xmax, frame_id = 0, length=15,width=4):
     fig, ax = plt.subplots(figsize=(length,width))
 
     for i in range(len(x)):
@@ -117,7 +117,7 @@ def plot_track(x, y, x_id, y_id, camera, frame_id = 0, length=15,width=4):
         xs, ys = zip(*coord) #lon, lat as x, y
         plt.plot(xs,ys, c='r', label='pred' if i==0 else '')#alpha=i/len(D)
         plt.text(xs[0], ys[0], str(x_id[i]), fontsize=8)
-        plt.scatter(x[i,2],x[i,3],color='black') # 
+        plt.scatter(x[i,2],x[i,3],color='r') # 
 
     for i in range(len(y)):
         coord = y[i,:]
@@ -126,13 +126,13 @@ def plot_track(x, y, x_id, y_id, camera, frame_id = 0, length=15,width=4):
         xs, ys = zip(*coord) #lon, lat as x, y
         plt.plot(xs,ys, c='b', label='meas' if i==0 else '')#alpha=i/len(D)
         plt.text(xs[0], ys[0], str(y_id[i]), fontsize=8)
-        plt.scatter(y[i,2],y[i,3],color='black') # 
+        plt.scatter(y[i,2],y[i,3],color='b') # 
         
     plt.xlabel('meter')
     plt.ylabel('meter')
-    xmin,xmax,ymin,ymax = utils.get_camera_range(camera)
-    plt.xlim([90,240])
-    plt.ylim([ymin,ymax])
+    
+    plt.xlim([xmin,xmax])
+    plt.ylim([0,45])
     plt.title(frame_id)
     plt.legend()
     plt.show() 
@@ -230,7 +230,7 @@ def plot_lane_distribution(df):
     plt.title('Lane distribution')
     return
 
-def plot_time_space(df, lanes=[1]):
+def plot_time_space(df, lanes=[1], time="frame"):
         
     # plot time space diagram (4 lanes +1 direction)
     plt.figure()
@@ -241,17 +241,25 @@ def plot_time_space(df, lanes=[1]):
         groups = lane.groupby('ID')
         j = 0
         for carid, group in groups:
-            x = group['Frame #'].values
-            # x = group['Timestamp'].values
+            if time=="frame":
+                x = group['Frame #'].values
+            else:
+                x = group['Timestamp'].values
             y1 = group['bbr_x'].values
             y2 = group['fbr_x'].values
-            plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%4], label="lane {}".format(lane_idx) if j==0 else "")
+            if len(lanes)>1:
+                plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%4], label="lane {}".format(lane_idx) if j==0 else "")
+            else:
+                plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%4], label="{}".format(carid))
             j += 1
         try:
             plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
         except:
             pass
-        plt.xlabel('Frame')
+        if time=="frame":
+            plt.xlabel('Frame')
+        else:
+            plt.xlabel('Time')
         plt.ylabel('x (m)')
         plt.title('Time-space diagram')
     return

@@ -14,16 +14,33 @@ import utils_vis as vis
 import numpy.linalg as LA
 import pandas as pd
 
-#%%
 if __name__ == "__main__":
     # MC tracking
-    file_path = r"E:\I24-postprocess\MC_tracking\3D_tracking_results_10_27.csv"
+    data_path = r"E:\I24-postprocess\MC_tracking"
+    file_path = data_path+r"\3D_tracking_results_10_27.csv"
+    
+    #%%
     df = utils.preprocess_MC(file_path, "")
     
-    # %% visualize
-    df = df[:6000]
-    vis.plot_time_space(df, lanes=[7])
+    # assign frame idx TODO: may have issues
+    df['Frame #'] = df.groupby("Timestamp").ngroup()
+    plt.scatter(df["Frame #"].values, df["Timestamp"].values, s=0.1)
+    df.to_csv(data_path+r"\MC.csv", index = False)
     
+    # %%
+    # df = utils.read_data(data_path+r"\DA\MC.csv")
+    df = df[(df["Frame #"]<1200)]
+        
+    print('Before DA: ', len(df['ID'].unique()), 'cars', len(df))
+    df = da.stitch_objects(df,3,3, mc=True)
+    print('After stitching: ', len(df['ID'].unique()), 'cars', len(df))
+    df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
+    # df.to_csv(data_path+r"\DA\MC.csv", index = False)
+    
+    #%% visualize
+
+    for lane_idx in [1,2,3,4,7,8,9,10]:
+        vis.plot_time_space(df, lanes=[lane_idx], time="frame")
         
     # %%
     # read & rectify each camera df individually
@@ -47,12 +64,7 @@ if __name__ == "__main__":
     df = df[(df["Frame #"]<=1200)]
     df = utils.assign_lane(df)
     vis.plot_time_space(df, lanes=[8])
-    # %%
-    print('Before DA: ', len(df['ID'].unique()), 'cars', len(df))
-    df = da.stitch_objects(df,3,3)
-    print('After stitching: ', len(df['ID'].unique()), 'cars', len(df))
-    df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
-    # df.to_csv(data_path+r"\{}_{}_gtda.csv".format(camera_name, sequence), index = False)
+    
     
                 
     #%%# plot time space diagram (4 lanes +1 direction)

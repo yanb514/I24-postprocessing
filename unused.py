@@ -1161,7 +1161,222 @@ def stitch_objects_bayes(df, SCORE_THRESHOLD = 2.5):
     return newdf 
 
     
+    
+def assign_unique_id(df1, df2):
+    '''
+    modify df2 such that no IDs in df2 is a duplicate of that in df1
+    '''
+    set1 = dict(zip(list(df1['ID'].unique()),list(df1['ID'].unique()))) # initially is carid:map to the same carid
+    g2 = df2.groupby('ID')
+    max_id = max(max(df1['ID'].values),max(df2['ID'].values))
+    for carid, group in g2:
+        if carid in set1:
+            set1[carid] = max_id + 1
+            max_id += 1
+    df2['ID'] = df2['ID'].apply(lambda x: set1[x] if x in set1 else x)
+    return df2
+    
 
+def associate_cross_camera(df_original):
+    '''
+    this function is essentially the same as associate_overlaps
+    '''
+    df = df_original.copy() # TODO: make this a method
+    
+    camera_list = ['p1c1','p1c2','p1c3','p1c4','p1c5','p1c6']
+    # camera_list = ['p1c5','p1c6'] # for debugging
+    groups = df.groupby('ID')
+    gl = list(groups.groups)
+    
+    # initialize tree
+    parent = {}
+    for g in gl:
+        parent[g] = g
+            
+    df = df.groupby(['ID']).filter(lambda x: len(x['camera'].unique()) != len(camera_list)) # filter
+    SCORE_THRESHOLD = 0 # IOU score
+    
+    for i in range(len(camera_list)-1):
+        camera1, camera2 = camera_list[i:i+2]
+        print('Associating ', camera1, camera2)
+        df2 = df[(df['camera']==camera1) | (df['camera']==camera2)]
+        df2 = df2.groupby(['ID']).filter(lambda x: len(x['camera'].unique()) < 2) # filter
+        
+        groups2 = df2.groupby('ID')
+        gl2 = list(groups2.groups)
+        
+        # initialize tree
+        # parent = {}
+        # for g in gl:
+            # parent[g] = g
+            
+        comb = itertools.combinations(gl2, 2)
+        
+        for c1,c2 in comb:
+            car1 = groups2.get_group(c1)
+            car2 = groups2.get_group(c2)
+            if ((car1['Object class'].iloc[0]) == (car2['Object class'].iloc[0])) & ((car1['camera'].iloc[0])!=(car2['camera'].iloc[0])):
+                score = IOU_score(car1,car2)
+                if score > SCORE_THRESHOLD:
+                    # associate!
+                    # parent[c2] = c1
+                    parent = union(parent, c1, c2)
+            else:
+                continue
+                
+        # path compression (part of union find): compress multiple ID's to the same object            
+    parent = compress(parent, gl)
+        # change ID to first appeared ones
+        # df2['ID'] = df2['ID'].apply(lambda x: parent[x] if x in parent else x)
+        
+    return parent
+
+
+            
+def associate_overlaps(df_original):
+    '''
+    get all the ID pairs that associated to the same car based on overlaps
+    '''
+    df = df_original.copy() # TODO: make this a method
+    
+    groups = df.groupby('ID')
+    gl = list(groups.groups)
+    
+    # initialize tree
+    parent = {}
+    for g in gl:
+        parent[g] = g
+            
+    SCORE_THRESHOLD = 0 # IOU score
+                
+    comb = itertools.combinations(gl, 2)
+    for c1,c2 in comb:
+        car1 = groups.get_group(c1)
+        car2 = groups.get_group(c2)
+        if ((car1['direction'].iloc[0])==(car2['direction'].iloc[0])):
+            score = IOU_score(car1,car2)
+            if score > SCORE_THRESHOLD:
+                # associate!
+                if len(car1)>len(car2): # change car2's id to car1's
+                    parent = union(parent, c2, c1)
+                else:
+                    parent = union(parent, c1, c2)
+        else:
+            continue
+    # with multiprocessing.Pool() as pool:
+        # parent = pool.map(partial(check_overlaps,groups=groups,parent=parent), range(comb))
+                
+    # path compression (part of union find): compress multiple ID's to the same object            
+    parent = compress(parent, gl)
+        
+    return parent
+
+def remove_overlaps(df):
+    '''
+    based on the occasions where multiple boxes and IDs are associated with the same object at the same time
+    remove the shorter track
+    '''
+    # df = df_original.copy() # TODO: make this a method
+    
+    groups = df.groupby('ID')
+    gl = list(groups.groups)
+    
+    id_rem = {} # the ID's to be removed
+    
+    SCORE_THRESHOLD = 0 # IOU score
+                
+    comb = itertools.combinations(gl, 2)
+    for c1,c2 in comb:
+        car1 = groups.get_group(c1)
+        car2 = groups.get_group(c2)
+        if ((car1['direction'].iloc[0])==(car2['direction'].iloc[0])):
+            score = IOU_score(car1,car2)
+            if score > SCORE_THRESHOLD:
+                first1 = car1['Frame #'][car1['bbr_x'].notna().idxmax()]
+                first2 = car2['Frame #'][car2['bbr_x'].notna().idxmax()]
+                last1 = car1['Frame #'][car1['bbr_x'].notna()[::-1].idxmax()]
+                last2 = car2['Frame #'][car2['bbr_x'].notna()[::-1].idxmax()]
+                # end = min(car1['Frame #'].iloc[-1],car2['Frame #'].iloc[-1])
+                # start = max(car1['Frame #'].iloc[0],car2['Frame #'].iloc[0])
+                start = max(first1, first2)
+                end = min(last1, last2)
+                # associate!
+                if len(car1)>len(car2): # change removes the overlaps from car 2
+                    id_rem[c2] = (start,end)
+
+                else:
+                    id_rem[c1] = (start,end)
+        else:
+            continue
+                
+    # remove ID that are not in the id_rem set    
+    # df = df.groupby("ID").filter(lambda x: (x['ID'].iloc[0] not in id_rem))
+    print('id_rem',len(id_rem))
+    df = df.groupby("ID").apply(remove_overlaps_per_id, args = id_rem).reset_index(drop=True)
+    return df
+
+def count_overlaps(df):
+    '''
+    similar to remove_overlap
+    '''
+    # df = df_original.copy() # TODO: make this a method
+    
+    groups = df.groupby('ID')
+    gl = list(groups.groups)
+    
+    count = 0 # number of pairs that overlaps
+    combs = 0
+    SCORE_THRESHOLD = 0 # IOU score
+    overlaps = set()    
+    comb = itertools.combinations(gl, 2)
+    for c1,c2 in comb:
+        combs+=1
+        car1 = groups.get_group(c1)
+        car2 = groups.get_group(c2)
+        if ((car1['direction'].iloc[0])==(car2['direction'].iloc[0])):
+            score = IOU_score(car1,car2)
+            if score > SCORE_THRESHOLD:
+                count+=1
+                overlaps.add((c1,c2))
+        else:
+            continue
+                
+    # print('{} of {} pairs overlap'.format(count,combs))
+    return overlaps
+
+def remove_overlaps_per_id(car, args):
+    id_rem = args
+    if car['ID'].iloc[0] in id_rem:
+        start,end = id_rem[car['ID'].iloc[0]] # remove all frames between start and end, including
+        car = car[(car['Frame #']<start) | (car['Frame #']>end)] # what to keep
+        # car = car[car['Frame #']>end]
+        if len(car)==0:
+            return None
+        return car
+    else:
+        return car
+# path compression
+def find(parent, i):
+    # if parent[parent[i]] == i:
+        # parent[i] = i
+    if parent[i] == i:
+        return i
+    # if (parent[i] != i):
+        # print(i, parent[i])
+        # parent[i] = find(parent, parent[i])
+    # return parent[i]
+    return find(parent, parent[i])
+
+def union(parent, x,y):
+    xset = find(parent,x)
+    yset = find(parent,y)
+    parent[xset] = yset
+    return parent
+    
+def compress(parent, groupList):    
+    for i in groupList:
+        find(parent, i)
+    return parent 
 
 
 
