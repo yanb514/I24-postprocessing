@@ -183,6 +183,9 @@ def preprocess(file_path, tform_path, skip_row = 0):
     if "bbr_x" not in df or np.mean(df.bbr_y.values) > 40:
         print("convert ft to m")
         df = img_to_road(df, tform_path, camera_name)
+        
+    df["x"] = np.array((df["bbr_x"].values+df["bbl_x"].values)/2)
+    df["y"] = np.array((df["bbr_y"].values+df["bbl_y"].values)/2)
     
     print('Interpret missing timestamps...')
     frames = [min(df['Frame #']),max(df['Frame #'])]
@@ -231,6 +234,47 @@ def preprocess(file_path, tform_path, skip_row = 0):
     df = df.sort_values(by=['Frame #','Timestamp']).reset_index(drop=True) 
     print('Total # car:', len(df['ID'].unique()),len(df))
     return df
+
+def preprocess_MC(file_path, tform_path, skip_row = 0):
+    '''
+    preprocess for MC tracking data
+    10/28/2021
+    '''
+    print('Reading data...')
+    df = read_data(file_path,skip_row)
+    if (df.columns[0] != 'Frame #'):
+        df = read_data(file_path,9)
+    if 'Object ID' in df:
+        df = df.rename(columns={"Object ID": "ID"})
+    if "veh rear x" in df:
+        df = df.rename(columns={"veh rear x": "x", "veh center y":"y"})
+    if 'frx' in df:
+        df = df.rename(columns={"frx":"fbr_x", "fry":"fbr_y", "flx":"fbl_x", "fly":"fbl_y","brx":"bbr_x","bry":"bbr_y","blx":"bbl_x","bly":"bbl_y"})
+    
+    print('Total # cars before preprocessing:', len(df['ID'].unique()), len(df))
+
+    if np.mean(df.y.values) > 40: 
+        print("Converting units to meter...")
+        cols_to_convert = ["speed","x","y","width","length","height"]
+        pts = ["fbr_x","fbr_y","fbl_x","fbl_y","bbr_x","bbr_y","bbl_x","bbl_y"]
+        df[cols_to_convert+pts] = df[cols_to_convert+pts] / 3.281
+        
+    df["x"] = np.array((df["bbr_x"].values+df["bbl_x"].values)/2)
+    df["y"] = np.array((df["bbr_y"].values+df["bbl_y"].values)/2)
+
+    
+    print('Get x direction...')
+    df = get_x_direction(df)
+    print('Total # car:', len(df['ID'].unique()),len(df))
+    
+    df = df.sort_values(by=['Frame #','Timestamp']).reset_index(drop=True) 
+    
+    print("Assign lane ID...")
+    df = assign_lane(df)
+    
+    
+    return df
+
 
 def remove_tailing_place_holders(car):
     notnan = ~np.isnan(np.sum(np.array(car[['bbr_x']]),axis=1))

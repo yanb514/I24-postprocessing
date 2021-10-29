@@ -16,18 +16,16 @@ def dist_score(B, B_data, DIST_MEAS='xy'):
     B = np.reshape(B,(-1,8))
     B_data = np.reshape(B_data,(-1,8))
     # check sign
-    if np.sign(B[0,[2]]-B[0,[0]])!=np.sign(B_data[0,[2]]-B_data[0,[0]]): # if not the same direction
+    # if np.sign(B[0,[2]]-B[0,[0]])!=np.sign(B_data[0,[2]]-B_data[0,[0]]): # if not the same direction
+    #     return 99
+    
+    if (np.sign(B[0,[2]]-B[0,[0]])!=np.sign(B_data[0,[2]]-B_data[0,[0]])) : # if not the same x direction
         return 99
+    
     diff = B-B_data
     diff = diff[0]
     mae_x = np.mean(np.abs(diff[[0,2,4,6]])) 
     mae_y = np.mean(np.abs(diff[[1,3,5,7]])) 
-    
-    # weighted x,y based on dimension of boxes
-    # l = np.abs(B_data[0,[0]]-B_data[0,[3]])
-    # w = w = np.abs(B_data[0,[1]]-B_data[0,[7]])
-    # mae_x = mae_x/l
-    # mae_y = mae_y/w
     
     if DIST_MEAS == 'xy':
         # return np.linalg.norm(B-B_data,2) # RMSE
@@ -101,12 +99,14 @@ def iou(a,b):
             average iou for a and b
         """
         a,b = np.reshape(a,(1,-1)), np.reshape(b,(1,-1))
-        if np.sign(a[0,[2]]-a[0,[0]])!=np.sign(b[0,[2]]-b[0,[0]]): # if not the same direction
-            return -1
+
         # if has invalid measurements
         if np.isnan(sum(sum(a))) or np.isnan(sum(sum(b))):
             return 0
-
+        
+        if (np.sign(a[0,[2]]-a[0,[0]])!=np.sign(b[0,[2]]-b[0,[0]])):# if not the same x / y direction
+            return -1
+        
         ax = np.sort(a[0,[0,2,4,6]])
         ay = np.sort(a[0,[1,3,5,7]])
         bx = np.sort(b[0,[0,2,4,6]])
@@ -151,7 +151,7 @@ def predict_tracks_df(tracks):
         # direction = np.sign(track_df["fbr_x"].iloc[-1]-track_df["bbr_x"].iloc[-1])
         track = np.array(track_df[pts])
         direction = np.sign(track[-1][2]-track[-1][0])
-        # if len(track)>1:   # average speed
+        if len(track)>1:   # average speed
         #     temp = track_df[~track_df["bbr_x"].isna()]
         #     time_range = (len(temp)-1)/30
         #     vx_bbr = (max(temp.bbr_x.values)-min(temp.bbr_x.values))/time_range
@@ -161,9 +161,13 @@ def predict_tracks_df(tracks):
         #     delta = np.array([vx,0,vx,0,vx,0,vx,0])/30
         #     x_pred = track[-1,:] + direction*delta 
             
-        #     frames = np.arange(0,len(track))
-        #     fit = np.polyfit(frames,track,1)
-        #     x_pred = np.polyval(fit, len(track))
+            frames = np.arange(0,len(track))
+            fit = np.polyfit(frames,track,1)
+            est_speed = np.mean(fit[0,[0,2,4,6]])
+            if abs(est_speed)<mpf/2 or (np.sign(est_speed)!=direction): # too slow
+                x_pred = track[-1,:] + direction* np.array([mpf,0,mpf,0,mpf,0,mpf,0])
+            else:
+                x_pred = np.polyval(fit, len(track)) # have "backward" moving cars
             
         # if track_df["Frame #"].count()>1: # predict based on places that have measurements
         # if len(track)>1:
@@ -172,8 +176,8 @@ def predict_tracks_df(tracks):
         #     x_curr = np.polyval(fit, len(track)-1)
         #     x_pred = x_curr + direction* np.array([mpf,0,mpf,0,mpf,0,mpf,0])   
 
-        # else:
-        x_pred = track[-1,:] + direction* np.array([mpf,0,mpf,0,mpf,0,mpf,0])
+        else:
+            x_pred = track[-1,:] + direction* np.array([mpf,0,mpf,0,mpf,0,mpf,0])
         x_pred = np.reshape(x_pred,(1,-1))
         x.append(x_pred) # prediction next frame, dim=nx8
         new_row = pd.DataFrame(x_pred, columns=pts)
@@ -181,7 +185,7 @@ def predict_tracks_df(tracks):
     return x, tracks
 
     
-def stitch_objects(df, SCORE_THRESHOLD = 2.5, IOU_THRESHOLD = 0.2):
+def stitch_objects(df, THRESHOLD_1 = 2.5, THRESHOLD_2 = 2.5):
     '''
     10/20/2021
     make sure each meas is either associated to an existing track
@@ -255,40 +259,32 @@ def stitch_objects(df, SCORE_THRESHOLD = 2.5, IOU_THRESHOLD = 0.2):
                 for n in range(n_car):
                     score_dist[m,n] = dist_score(x[n],y[m],'xyw')
                     score_iou[m,n] = iou(x[n],y[m])
-            # if (k<10) or (45<k<62):  
-            #     vis.plot_track(np.array(np.vstack(x), dtype=float), np.array(y,dtype=float), curr_id, frame["ID"].values, ["p1c2"], k)
+ 
+            if  (150<k<160):  
+                vis.plot_track(np.array(np.vstack(x), dtype=float), np.array(y,dtype=float), curr_id, frame["ID"].values, ["p1c2"], k)
             
+            # lienar sum assignment for biparte matching
+            # pairs = []
+            # matched_meas = set()
+            # a, b = scipy.optimize.linear_sum_assignment(score_dist)
+            # for i in range(len(a)):
+            #     m,n = a[i], b[i]
+            #     if score_dist[m,n] < SCORE_THRESHOLD:
+            #         pairs.append([m,n])
+            #         matched_meas.add(m)
+                    
             # distance score
             bool_arr1 = score_dist == score_dist.min(axis=1)[:,None] # every row has true:every measurement gets assigned
-            valid = score_dist<SCORE_THRESHOLD
+            valid = score_dist<THRESHOLD_1
             bool_arr = np.logical_and(bool_arr1,valid)
             multiple_meas = np.sum(bool_arr,axis=0) # multiple meas match to the same ID
             c=np.where(multiple_meas>1)[0] # index of curr_id that's got multiple meas candidates
             if len(c)>0: # exists multiple_meas match, select the nearest one
                 bool_arr0 = score_dist == score_dist.min(axis=0) # every col has a true: find the nearest measurement for each prediction
-                bool_arr = np.logical_and(bool_arr1, bool_arr0) # only choose mutual matching
+                bool_arr = np.logical_and(bool_arr, bool_arr0) # only choose mutual matching
               
-            # IOU
-            # bool_arr1 = score == score.max(axis=1)[:,None] # every row has true:every measurement gets assigned
-            # valid = score>SCORE_THRESHOLD
-            # bool_arr = np.logical_and(bool_arr1,valid)
-            # multiple_meas = np.sum(bool_arr,axis=0) # multiple meas match to the same ID
-            # c=np.where(multiple_meas>1)[0] # index of curr_id that's got multiple meas candidates
-            # if len(c)>0: # exists multiple_meas match, select the nearest one
-            #     bool_arr0 = score == score.max(axis=0) # every col has a true: find the nearest measurement for each prediction
-            #     bool_arr = np.logical_and(bool_arr1, bool_arr0) # only choose mutual matching
             
-            # both (or)
-            # bool_arr_dist = score_dist == score_dist.min(axis=1)[:,None] # every row has true:every measurement gets assigned
-            # bool_arr_iou = score_iou == score_iou.max(axis=1)[:,None]
-            # valid = np.logical_or(score_dist<SCORE_THRESHOLD, score_iou>IOU_THRESHOLD)
-            # bool_arr = np.logical_and(np.logical_or(bool_arr_dist, bool_arr_iou),valid)
-            # multiple_meas = np.sum(bool_arr,axis=0) # multiple meas match to the same ID
-            # c=np.where(multiple_meas>1)[0] # index of curr_id that's got multiple meas candidates
-            # if len(c)>0: # exists multiple_meas match, select the nearest one
-            #     bool_arr0 = score_dist == score_dist.min(axis=0) # every col has a true: find the nearest measurement for each prediction
-            #     bool_arr = np.logical_and(np.logical_or(bool_arr_dist, bool_arr_iou), bool_arr0) # only choose mutual matching
-               
+    
             pairs = np.transpose(np.where(bool_arr)) # pair if score is under threshold
 
             if len(pairs) > 0:
@@ -310,7 +306,7 @@ def stitch_objects(df, SCORE_THRESHOLD = 2.5, IOU_THRESHOLD = 0.2):
                     #     iou_m.append(iou(y[m], xn))
                     score_m_dist = [dist_score(y[m], xn,'xyw') for xn in x]
                     score_m_iou = [iou(y[m], xn) for xn in x]
-                    if all(np.array(score_m_iou)<=0) and all(np.array(score_m_dist)>SCORE_THRESHOLD): # if ym does not overlap with any existing tracks
+                    if all(np.array(score_m_iou)<=0) and all(np.array(score_m_dist)>THRESHOLD_2): # if ym does not overlap with any existing tracks
                         new_id = frame['ID'].iloc[m]
                         new_meas = frame.loc[m:m]
                         tracks[new_id] = new_meas

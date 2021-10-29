@@ -898,7 +898,7 @@ class MOT_Evaluator():
             
 if __name__ == "__main__":
     
-    camera_name = "p1c2"
+    camera_name = "p1c3"
     sequence_idx = 0
     sequence = None
     

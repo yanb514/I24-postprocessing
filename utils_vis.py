@@ -242,6 +242,7 @@ def plot_time_space(df, lanes=[1]):
         j = 0
         for carid, group in groups:
             x = group['Frame #'].values
+            # x = group['Timestamp'].values
             y1 = group['bbr_x'].values
             y2 = group['fbr_x'].values
             plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%4], label="lane {}".format(lane_idx) if j==0 else "")
@@ -250,7 +251,7 @@ def plot_time_space(df, lanes=[1]):
             plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
         except:
             pass
-        plt.xlabel('Frame #')
+        plt.xlabel('Frame')
         plt.ylabel('x (m)')
         plt.title('Time-space diagram')
     return
