@@ -17,79 +17,50 @@ import pandas as pd
 if __name__ == "__main__":
     # MC tracking
     data_path = r"E:\I24-postprocess\MC_tracking"
-    file_path = data_path+r"\3D_tracking_results_10_27.csv"
+    file_path = data_path+r"\MC.csv"
+    df= utils.read_data(file_path)
+    df= utils.remove_wrong_direction_df(df)
+    # read & rectify each camera df individually
+    # data_path = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking"
+    # tform_path = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform"
+    # camera_name, sequence = "p1c2", "0"
     
-    #%%
+    #%% preprocess MC
     df = utils.preprocess_MC(file_path, "")
-    
     # assign frame idx TODO: may have issues
     df['Frame #'] = df.groupby("Timestamp").ngroup()
     plt.scatter(df["Frame #"].values, df["Timestamp"].values, s=0.1)
     df.to_csv(data_path+r"\MC.csv", index = False)
     
-    # %%
-    # df = utils.read_data(data_path+r"\DA\MC.csv")
-    df = df[(df["Frame #"]<1200)]
-        
-    print('Before DA: ', len(df['ID'].unique()), 'cars', len(df))
-    df = da.stitch_objects(df,3,3, mc=True)
-    print('After stitching: ', len(df['ID'].unique()), 'cars', len(df))
-    df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
-    # df.to_csv(data_path+r"\DA\MC.csv", index = False)
-    
-    #%% visualize
-
-    for lane_idx in [1,2,3,4,7,8,9,10]:
-        vis.plot_time_space(df, lanes=[lane_idx], time="frame")
-        
-    # %%
-    # read & rectify each camera df individually
-    data_path = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking"
-    tform_path = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform"
-    camera_name, sequence = "p1c3", "0"
-    
-    # %% read data preprocess
-    
-    file_path = data_path+"\{}_{}_3D_track_outputs.csv".format(camera_name, sequence)
-    # file_path = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\rectified_p1c2_0_track_outputs_3D.csv"
-    df = utils.preprocess(file_path, tform_path, skip_row = 0)
-    df.to_csv(data_path+r"\{}_{}.csv".format(camera_name, sequence), index = False)
-
+    # preprocess individual camera
+    # file_path = data_path+"\{}_{}_3D_track_outputs.csv".format(camera_name, sequence)
+    # # file_path = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\rectified_p1c2_0_track_outputs_3D.csv"
+    # df = utils.preprocess(file_path, tform_path, skip_row = 0)
+    # df.to_csv(data_path+r"\{}_{}.csv".format(camera_name, sequence), index = False)
     
     # %% data association
-    # df = utils.read_data(data_path+"\{}_{}.csv".format(camera_name, sequence))
-    df = utils.read_data(data_path+r"\{}_{}.csv".format(camera_name, sequence))
-    df = df[(df["Frame #"]<=1200)]
-#%%
-    df = df[(df["Frame #"]<=1200)]
-    df = utils.assign_lane(df)
-    vis.plot_time_space(df, lanes=[8])
+    # df = utils.read_data(data_path+r"\DA\MC.csv")
+    df = df[(df["Frame #"]<1200)]
+    print('Before DA: ', len(df['ID'].unique()), 'cars', len(df))
+    df = da.stitch_objects_playground(df,1, mc=True)
+    print('After stitching: ', len(df['ID'].unique()), 'cars', len(df))
+    # df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
+    df.to_csv(data_path+r"\DA\MC_jpda.csv", index = False)
     
+    #%% visualize
+    temp = df[(df["Frame #"]<1000)]
+    # temp = utils.remove_wrong_direction_df(temp)
+    for lane_idx in [1,2,3,4,7,8,9,10]:
+        vis.plot_time_space(temp, lanes=[lane_idx], time="frame")
+
+    # %% rectify
+    # df = utils.read_data(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence))
+    df = utils.read_data(data_path+r"\DA\MC.csv")
+    df = df[df["Frame #"]<1000]
+    # df = df[(df["ID"]>=2700) & (df["ID"]<2800)] # 2785 is too long
+    df = opt.rectify(df)
+    df.to_csv(data_path+r"\rectified\MC.csv", index = False)
     
-                
-    #%%# plot time space diagram (4 lanes +1 direction)
-    df = utils.read_data(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence))
-    temp = df[df['ID'].isin([360.0, 387.0])]
-    
-    plt.figure()
-    
-    colors = ["blue","orange","green","red"]
-    groups = temp.groupby('ID')
-    j = 0
-    for carid, group in groups:
-        x = group['Frame #'].values
-        y1 = group['bbr_x'].values
-        y2 = group['fbr_x'].values
-        plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%4], label="id {}".format(carid))
-        j += 1
-    try:
-        plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-    except:
-        pass
-    plt.xlabel('Frame #')
-    plt.ylabel('x (m)')
-    plt.title('Time-space diagram')  
-        
     #%%
     id1,id2=360,373
     car1=df[df["ID"]==id1]
@@ -114,11 +85,7 @@ if __name__ == "__main__":
     for lane in [1,2,3,4,7,8,9,10]:   
         vis.plot_time_space(temp, lanes=[lane])
         
-    # %% rectify
-    df = utils.read_data(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence))
-    # df = df[(df["ID"]>=2700) & (df["ID"]<2800)] # 2785 is too long
-    df = opt.rectify(df)
-    df.to_csv(data_path+r"\rectified\{}_{}.csv".format(camera_name, sequence), index = False)
+   
     
     # %% post processing
     df = utils.read_data(data_path+r"\rectified\{}_{}_l1.csv".format(camera_name, sequence))

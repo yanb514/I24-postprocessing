@@ -6,6 +6,7 @@ import pandas as pd
 import collections
 import utils_vis as vis
 import scipy
+import matplotlib.pyplot as plt
 
 def dist_score(B, B_data, DIST_MEAS='xyw', DIRECTION=True):
     '''
@@ -23,23 +24,32 @@ def dist_score(B, B_data, DIST_MEAS='xyw', DIRECTION=True):
     
     diff = B-B_data
     diff = diff[0]
-    mae_x = np.mean(np.abs(diff[[0,2,4,6]])) 
-    mae_y = np.mean(np.abs(diff[[1,3,5,7]])) 
     
     if DIST_MEAS == 'xy':
         # return np.linalg.norm(B-B_data,2) # RMSE
+        mae_x = np.mean(np.abs(diff[[0,2,4,6]])) 
+        mae_y = np.mean(np.abs(diff[[1,3,5,7]])) 
         return (mae_x + mae_y)/2
 
     # weighted x,y displacement, penalize y more heavily
     elif DIST_MEAS == 'xyw':
         alpha = 0.2
+        mae_x = np.mean(np.abs(diff[[0,2,4,6]])) 
+        mae_y = np.mean(np.abs(diff[[1,3,5,7]])) 
         # return alpha*np.linalg.norm(B[[0,2,4,6]]-B_data[[0,2,4,6]],2) + (1-alpha)*np.linalg.norm(B[[1,3,5,7]]-B_data[[1,3,5,7]],2)
         return alpha*mae_x + (1-alpha)*mae_y
+    
+    # mahalanobis distance
+    elif DIST_MEAS == 'maha':
+        alpha = 0.05 # weight on x
+        S = np.diag(np.tile([alpha,1-alpha],4)) # covariance matrix of x,y distances
+        d = np.sqrt(np.dot(np.dot(diff.T, S),diff))/4
+        return d
     else:
         return
 
 
-def iou(a,b,DIRECTION=True):
+def iou(a,b,DIRECTION=True,AREA=False):
         """
         Description
         -----------
@@ -61,10 +71,9 @@ def iou(a,b,DIRECTION=True):
 
         # if has invalid measurements
         if np.isnan(sum(sum(a))) or np.isnan(sum(sum(b))):
-            return 0,-1,-1
-        if DIRECTION==True:
-            if (np.sign(a[0,[2]]-a[0,[0]])!=np.sign(b[0,[2]]-b[0,[0]])):# if not the same x / y direction
-                return -1,-1,-1
+            if AREA==True:    
+                return 0,-1,-1
+            else: return 0
         
         ax = np.sort(a[0,[0,2,4,6]])
         ay = np.sort(a[0,[1,3,5,7]])
@@ -73,6 +82,13 @@ def iou(a,b,DIRECTION=True):
 
         area_a = (ax[3]-ax[0]) * (ay[3]-ay[0])
         area_b = (bx[3]-bx[0]) * (by[3]-by[0])
+        
+        if DIRECTION==True:
+            if (np.sign(a[0,[2]]-a[0,[0]])!=np.sign(b[0,[2]]-b[0,[0]])):# if not the same x / y direction
+                if AREA==True:    
+                    return -1,area_a,area_b
+                else:
+                    return -1
         
         minx = max(ax[0], bx[0]) # left
         maxx = min(ax[2], bx[2])
@@ -83,8 +99,9 @@ def iou(a,b,DIRECTION=True):
         # union = area_a + area_b - intersection + 1e-06
         union = min(area_a,area_b)
         iou = intersection/union
-        
-        return iou,area_a,area_b
+        if AREA==True:
+            return iou,area_a,area_b
+        else: return iou
     
 
             
@@ -110,6 +127,7 @@ def predict_tracks_df(tracks):
         direction = np.sign(track[-1][2]-track[-1][0])
         
         if len(track)>1:   # average speed
+
             frames = np.arange(0,len(track))
             fit = np.polyfit(frames,track,1)
             est_speed = np.mean(fit[0,[0,2,4,6]])
@@ -313,11 +331,7 @@ def IOU_score(car1, car2):
         D1 = Y1[j,:]
         # try:
         D2 = Y2[j,:]
-        # except:
-            # print(Y2.shape)
-            # print(j)
-            # print(car1)
-            # print(car2)
+
         if ~np.isnan(np.sum([D1,D2])): # if no Nan in any measurements
             p = Polygon([(D1[2*i],D1[2*i+1]) for i in range(int(len(D1)/2))])
             q = Polygon([(D2[2*i],D2[2*i+1]) for i in range(int(len(D2)/2))])
@@ -333,4 +347,126 @@ def IOU_score(car1, car2):
         return -1
     return IOU / N
  
+def stitch_objects_playground(df, THRESHOLD_1 = 2.5, mc=True):
+    '''
+    10/20/2021
+    use JPDA, weighted average of all meas that fall into a gate (defined by IOU and mahalanobis distance)
+    create new ID for meas out side of the gate
+    '''
+    
+    # define the x,y range to keep track of cars in FOV (meter)
+    if mc==True:
+        xmin, xmax = min(df["x"].values)-10,max(df["x"].values)+10
+    else:
+        camera_id_list = df['camera'].unique()
+        xmin, xmax, ymin, ymax = utils.get_camera_range(camera_id_list)
+        xrange = xmax-xmin
+        alpha = 0.4
+        xmin, xmax = xmin - alpha*xrange, xmax + alpha*xrange # extended camera range for prediction
+    
+    ns = int(np.amin(np.array(df[['Frame #']]))) # start frame
+    nf = int(np.amax(np.array(df[['Frame #']]))) # end frame
+    tracks = dict() # a dictionary to store all current objects in view. key:ID, value:dataframe
+    pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    pts_img = ["fbrx","fbry","fblx","fbly",	"bbrx",	"bbry",	"bblx",	"bbly",	"ftrx",	"ftry",	"ftlx",	"ftly",	"btrx",	"btry",	"btlx",	"btly"]
+    newdf = pd.DataFrame()
+    
+    for k in range(ns,nf):
+        print("\rFrame {}/{}".format(k,nf),end = "\r",flush = True)
+        
+        frame = df.loc[(df['Frame #'] == k)] # TODO: use groupby frame to save time
+        y = np.array(frame[pts])
+        notnan = ~np.isnan(y).any(axis=1)
+        y = y[notnan] # remove rows with missing values (dim = mx8)
+        frame = frame.iloc[notnan,:]
+        frame = frame.reset_index(drop=True)
+        
+        m_box = len(frame)
+        n_car = len(tracks)
+        
+        if (n_car > 0): # delete track that are out of view
+            for car_id in list(tracks.keys()):
+                # delete track if total matched frames < 
+                last_frame = tracks[car_id].iloc[-1]
+                last_frame_x = np.array(last_frame[pts])[[0,2,4,6]]
+                x1,x2 = min(last_frame_x),max(last_frame_x)
+                frames = tracks[car_id]["Frame #"].values
+                matched_bool = ~np.isnan(frames)
+                frames_matched = tracks[car_id].loc[matched_bool]
 
+                if (x1<xmin) or (x2>xmax):
+                    if len(frames_matched) > 0: # TODO: this threshold could be a ratio
+                        newid = frames_matched["ID"].iloc[0] 
+                        frames_matched["ID"] = newid #unify ID
+                        newdf = pd.concat([newdf,frames_matched])
+                    del tracks[car_id]
+                    n_car -= 1
+        
+        if (m_box == 0) and (n_car == 0): # simply advance to the next frame
+            continue
+            
+        elif (m_box == 0) and (n_car > 0): # if no measurements in current frame, simply predict
+            x, tracks = predict_tracks_df(tracks)
+            
+        elif (m_box > 0) and (n_car == 0): # create new tracks (initialize)
+            for i, row in frame.iterrows():
+                row = frame.loc[i:i,:]
+                tracks[row['ID'].iloc[0]] = row
+        
+        else: 
+            x, tracks = predict_tracks_df(tracks)
+            n_car = len(tracks)
+            curr_id = list(tracks.keys()) # should be n id's 
+
+            # score = np.ones([m_box,n_car])*(99)
+            score_dist = np.zeros([m_box,n_car])
+            score_iou =np.zeros([m_box,n_car])
+            
+            invalid_meas = []
+            for m in range(m_box):
+                for n in range(n_car):
+                    score_dist[m,n] = dist_score(x[n],y[m],'maha')
+                    score_iou[m,n], areaa, areab = iou(x[n],y[m],DIRECTION=False,AREA=True)
+
+                if areab < 2: # invalid measurement
+                    score_dist[m,:] = 99
+                    score_iou[m,:] = -1
+                    invalid_meas.append(m)
+ 
+            # if (800<k<810):  
+            #     vis.plot_track(np.array(np.vstack(x), dtype=float), np.array(y,dtype=float), curr_id, frame["ID"].values, xmin,xmax, k)
+            # if k == 409:
+            #     print("")
+            # matching
+            gate = np.logical_or(score_dist<THRESHOLD_1, score_iou>0)
+            for n in range(n_car):
+                if any(gate[:,n]):
+                    # calculate weighted average
+                    tracks[curr_id[n]] = tracks[curr_id[n]].reset_index(drop=True)
+                    frames_in_gate = frame.iloc[gate[:,n]]
+                    if len(frames_in_gate) == 1:
+                        avg_meas = frames_in_gate
+                    else:
+                        w = 1/score_dist[gate[:,n],n]
+                        w = w / w.sum(axis=0)
+                        frame_vals = np.array(frames_in_gate[pts_img+pts])
+                        avg_meas_vals = np.reshape(np.dot(w,frame_vals),(1,-1))
+                        avg_meas = pd.DataFrame(data=avg_meas_vals,  columns=pts_img + pts) 
+                        avg_meas["Frame #"] = k
+                    tracks[curr_id[n]].drop(tracks[curr_id[n]].tail(1).index,inplace=True) # drop the last row (prediction)
+                    tracks[curr_id[n]] = pd.concat([tracks[curr_id[n]], avg_meas],ignore_index=True)  
+                    
+            m_unassociated = np.where(np.sum(gate, axis=1)==0)[0]
+
+            for m in m_unassociated:
+                # !TODO: make sure that y[m] at not in the gate of each other
+                if m not in invalid_meas:
+                    new_id = frame['ID'].iloc[m]
+                    new_meas = frame.loc[m:m]
+                    tracks[new_id] = new_meas
+
+    # print("Remove wrong direction", len(newdf))
+    # newdf = utils.remove_wrong_direction_df(newdf)
+    # print('Connect tracks', len(newdf)) # Frames of a track (ID) might be disconnected after DA
+    # newdf = newdf.groupby("ID").apply(utils.connect_track).reset_index(drop=True)    
+    return newdf

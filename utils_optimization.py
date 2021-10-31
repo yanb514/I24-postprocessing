@@ -90,7 +90,6 @@ def rectify_single_camera(df, args):
     df: a single track in one camera view
     '''             
     lam1, lam2, lam3,lam4,lam5,niter = args
-    # print(df['ID'].iloc[0]) 
 
     # optimization parameters
     lam1 = lam1# modification of measurement 1000
@@ -103,23 +102,11 @@ def rectify_single_camera(df, args):
     timestamps = df.Timestamp.values
     dt = np.diff(timestamps)
     sign = df["direction"].iloc[0]
+    
     # get bottom 4 points coordinates
     pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
     Y1 = np.array(df[pts])    
-    
-    # try removing outliers first
-    # y_avg = (Y1[:,3]+Y1[:,5])/2
-    # l = np.abs(Y1[:,0]-Y1[:,2])
-    # w = np.abs(Y1[:,1]-Y1[:,7])
-    # invalid = [False]*len(Y1)
-    # for meas in [y_avg]:
-    #     valid = meas[~np.isnan(meas)]
-    #     if len(valid) > 5:
-    #         q1, q3 = np.percentile(valid,[10,90])
-    #         invalid = invalid | (meas<q1) | (meas>q3)
-    # Y1[invalid,:] = np.nan
-    
-#     vis.plot_track(Y1)
+
     N = len(Y1)                
     notNan = ~np.isnan(np.sum(Y1,axis=-1))
     Y1 = Y1[notNan,:]
