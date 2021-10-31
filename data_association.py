@@ -41,10 +41,23 @@ def dist_score(B, B_data, DIST_MEAS='xyw', DIRECTION=True):
     
     # mahalanobis distance
     elif DIST_MEAS == 'maha':
-        alpha = 0.05 # weight on x
-        S = np.diag(np.tile([alpha,1-alpha],4)) # covariance matrix of x,y distances
-        d = np.sqrt(np.dot(np.dot(diff.T, S),diff))/4
-        return d
+        # S = np.diag(np.tile([(1/4)**2,(1/0.3)**2],4)) # covariance matrix of x,y distances
+        # d = np.sqrt(np.dot(np.dot(diff.T, S),diff))/4
+        alpha = (1/3.5)**2
+        beta = (1/0.27)**2
+        d2 = 0
+        for i in range(4):
+            d2 += np.sqrt(alpha*diff[i]**2+beta*diff[2*i+1]**2)
+        return d2/4
+    
+    # euclidean distance
+    elif DIST_MEAS == 'ed':
+        # S = np.diag(np.tile([1,1],4)) # covariance matrix of x,y distances
+        # d = np.sqrt(np.dot(np.dot(diff.T, S),diff))/4
+        d2 = 0
+        for i in range(4):
+            d2 += np.sqrt(diff[i]**2+diff[2*i+1]**2)
+        return d2/4
     else:
         return
 
@@ -433,8 +446,8 @@ def stitch_objects_playground(df, THRESHOLD_1 = 2.5, mc=True):
                     score_iou[m,:] = -1
                     invalid_meas.append(m)
  
-            # if (800<k<810):  
-            #     vis.plot_track(np.array(np.vstack(x), dtype=float), np.array(y,dtype=float), curr_id, frame["ID"].values, xmin,xmax, k)
+            if (1715<k<1760):  
+                vis.plot_track(np.array(np.vstack(x), dtype=float), np.array(y,dtype=float), curr_id, frame["ID"].values, xmin,xmax, k)
             # if k == 409:
             #     print("")
             # matching
