@@ -230,12 +230,12 @@ def plot_lane_distribution(df):
     plt.title('Lane distribution')
     return
 
-def plot_time_space(df, lanes=[1], time="frame"):
+def plot_time_space(df, lanes=[1], time="frame", space="x"):
         
     # plot time space diagram (4 lanes +1 direction)
     plt.figure()
     
-    colors = ["blue","orange","green","red"]
+    colors = ["blue","orange","green","red","purple"]
     for i,lane_idx in enumerate(lanes):
         lane = df[df['lane']==lane_idx]
         groups = lane.groupby('ID')
@@ -245,12 +245,16 @@ def plot_time_space(df, lanes=[1], time="frame"):
                 x = group['Frame #'].values
             else:
                 x = group['Timestamp'].values
-            y1 = group['bbr_x'].values
-            y2 = group['fbr_x'].values
-            if len(lanes)>1:
-                plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%4], label="lane {}".format(lane_idx) if j==0 else "")
+            if space == "x":
+                y1 = group['bbr_x'].values
+                y2 = group['fbr_x'].values
             else:
-                plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%4], label="{}".format(carid))
+                y1 = group['bbr_y'].values
+                y2 = group['bbl_y'].values
+            if len(lanes)>1:
+                plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%len(colors)], label="lane {}".format(lane_idx) if j==0 else "")
+            else:
+                plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%len(colors)], label="{}".format(carid))
             j += 1
         try:
             plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
@@ -260,8 +264,8 @@ def plot_time_space(df, lanes=[1], time="frame"):
             plt.xlabel('Frame')
         else:
             plt.xlabel('Time')
-        plt.ylabel('x (m)')
-        plt.title('Time-space diagram')
+        plt.ylabel('x (m)' if space=="x" else 'y(m)')
+        plt.title('Time-space diagram') 
     return
 
 
@@ -275,7 +279,7 @@ def dashboard(cars, legends=None):
         
     fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(1, 5, figsize=(18,3))
 
-    colors = ["blue","orange","green","red"]
+    colors = ["blue","orange","green","red","purple"]
     i=0
     carid = cars[0]["ID"].iloc[0]
     for caridx,car in enumerate(cars):

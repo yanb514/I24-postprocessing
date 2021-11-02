@@ -14,10 +14,11 @@ import utils_vis as vis
 import numpy.linalg as LA
 import pandas as pd
 
+# %%
 if __name__ == "__main__":
     # MC tracking
     data_path = r"E:\I24-postprocess\MC_tracking"
-    file_path = data_path+r"\MC.csv"
+    file_path = data_path+r"\reinterpolated_3D_tracking_outputs.csv"
     df= utils.read_data(file_path)
     df= utils.remove_wrong_direction_df(df)
     # read & rectify each camera df individually
@@ -30,7 +31,7 @@ if __name__ == "__main__":
     # assign frame idx TODO: may have issues
     df['Frame #'] = df.groupby("Timestamp").ngroup()
     plt.scatter(df["Frame #"].values, df["Timestamp"].values, s=0.1)
-    df.to_csv(data_path+r"\MC.csv", index = False)
+    df.to_csv(data_path+r"\MC_reinterpolated.csv", index = False)
     
     # preprocess individual camera
     # file_path = data_path+"\{}_{}_3D_track_outputs.csv".format(camera_name, sequence)
@@ -39,11 +40,14 @@ if __name__ == "__main__":
     # df.to_csv(data_path+r"\{}_{}.csv".format(camera_name, sequence), index = False)
     
     # %% data association
-    # df = utils.read_data(data_path+r"\DA\MC.csv")
-    df = df[(df["Frame #"]>1700) & (df["Frame #"]<1900)]
+    df = utils.read_data(data_path+r"\MC_reinterpolated.csv")
+    df= utils.remove_wrong_direction_df(df)
+    df = df[(df["Frame #"]<2000)]
     print('Before DA: ', len(df['ID'].unique()), 'cars', len(df))
-    df = da.stitch_objects_playground(df,3, mc=True)
+    df = da.stitch_objects_jpda(df,2.5, mc=True)
+    df= utils.remove_wrong_direction_df(df)
     print('After stitching: ', len(df['ID'].unique()), 'cars', len(df))
+    df = df.groupby("ID").apply(utils.connect_track).reset_index(drop=True)
     # df.to_csv(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence), index = False)
     df.to_csv(data_path+r"\DA\MC_jpda.csv", index = False)
     
@@ -51,18 +55,28 @@ if __name__ == "__main__":
     dfda = utils.read_data(data_path+r"\DA\MC_jpda.csv")
     
     #%% visualize
-    temp = df[(df["Frame #"]>1000) & (df["Frame #"]<2000)]
+    temp = test[(test["Frame #"]<1500)&(test["Frame #"]>1000)]
     # temp = utils.remove_wrong_direction_df(temp)
-    for lane_idx in [1]:
-        vis.plot_time_space(temp, lanes=[lane_idx], time="frame")
+    for lane_idx in [1,2,3,4,7,8,9,10]:
+        vis.plot_time_space(test, lanes=[lane_idx], time="frame", space="x")
+        # vis.plot_time_space(test, lanes=[lane_idx], time="frame", space="y")
 
     # %% rectify
     # df = utils.read_data(data_path+r"\DA\{}_{}.csv".format(camera_name, sequence))
-    df = utils.read_data(data_path+r"\DA\MC.csv")
-    df = df[df["Frame #"]<1000]
+    df = utils.read_data(data_path+r"\DA\MC_jpda.csv")
+    # df = df[df["Frame #"]<1000]
     # df = df[(df["ID"]>=2700) & (df["ID"]<2800)] # 2785 is too long
     df = opt.rectify(df)
     df.to_csv(data_path+r"\rectified\MC.csv", index = False)
+    
+    # %% test time-space matching
+    df = utils.read_data(data_path+r"\MC_reinterpolated.csv")
+    df = df[(df["Frame #"]<2100)&(df["Frame #"]>900)]
+    df= utils.remove_wrong_direction_df(df)
+    # test, groupList,DX,DY = da.time_space_matching(df, 5, 0.1)
+    test = da.stitch_objects_jpda(df,3, mc=True)
+    # test = da.stitch_objects_gnn(df,2.5, mc=True)
+    # test = da.stitch_objects_bm(df,2.5, mc=True)
     
     # %% explore maha distance
     track1 = df[df["ID"].isin([464,483,489,496,507])]
@@ -90,60 +104,7 @@ if __name__ == "__main__":
         if Y1[i][0] != np.nan:
             maha.append(dist_score(Y1[i],Y2[i],'maha'))   
             
-    # %%
-    def dist_score(B, B_data, DIST_MEAS='xyw', DIRECTION=False):
-        '''
-        compute euclidean distance between two boxes B and B_data
-        B: predicted bbox location ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
-        B_data: measurement
-        '''
-        B = np.reshape(B,(-1,8))
-        B_data = np.reshape(B_data,(-1,8))
-        
-        # check sign
-        if DIRECTION==True:
-            if (np.sign(B[0,[2]]-B[0,[0]])!=np.sign(B_data[0,[2]]-B_data[0,[0]])) : # if not the same x direction
-                return 99
-        
-        diff = B-B_data
-        diff = diff[0]
-        
-        if DIST_MEAS == 'xy':
-            # return np.linalg.norm(B-B_data,2) # RMSE
-            mae_x = np.mean(np.abs(diff[[0,2,4,6]])) 
-            mae_y = np.mean(np.abs(diff[[1,3,5,7]])) 
-            return (mae_x + mae_y)/2
-    
-        # weighted x,y displacement, penalize y more heavily
-        elif DIST_MEAS == 'xyw':
-            alpha = 0.2
-            mae_x = np.mean(np.abs(diff[[0,2,4,6]])) 
-            mae_y = np.mean(np.abs(diff[[1,3,5,7]])) 
-            # return alpha*np.linalg.norm(B[[0,2,4,6]]-B_data[[0,2,4,6]],2) + (1-alpha)*np.linalg.norm(B[[1,3,5,7]]-B_data[[1,3,5,7]],2)
-            return alpha*mae_x + (1-alpha)*mae_y
-        
-        # mahalanobis distance
-        elif DIST_MEAS == 'maha':
-            # S = np.diag(np.tile([(1/4)**2,(1/0.3)**2],4)) # covariance matrix of x,y distances
-            # d = np.sqrt(np.dot(np.dot(diff.T, S),diff))/4
-            alpha = (1/3.5)**2
-            beta = (1/0.27)**2
-            d2 = 0
-            for i in range(4):
-                d2 += np.sqrt(alpha*diff[i]**2+beta*diff[2*i+1]**2)
-            return d2/4
-        
-        # euclidean distance
-        elif DIST_MEAS == 'ed':
-            # S = np.diag(np.tile([1,1],4)) # covariance matrix of x,y distances
-            # d = np.sqrt(np.dot(np.dot(diff.T, S),diff))/4
-            d2 = 0
-            for i in range(4):
-                d2 += np.sqrt(diff[i]**2+diff[2*i+1]**2)
-            return d2/4
-        else:
-            return
-
+   
     #%%
     id1,id2=360,373
     car1=df[df["ID"]==id1]

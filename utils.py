@@ -37,7 +37,10 @@ def remove_wrong_direction(car):
 def remove_wrong_direction_df(df):
     direction_x = np.sign(df["fbr_x"].values-df["bbr_x"].values).copy() # should be same as ys
     direction_y = np.sign(df["fbr_y"].values-df["fbl_y"].values).copy() # should be opposite to ys
+
     ys = df["y"].values.copy()
+
+        
     ys[ys<18.5] = 1
     ys[ys>=18.5] = -1
     valid_x = direction_x == ys

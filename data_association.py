@@ -144,10 +144,9 @@ def predict_tracks_df(tracks):
             frames = np.arange(0,len(track))
             fit = np.polyfit(frames,track,1)
             est_speed = np.mean(fit[0,[0,2,4,6]])
-            if abs(est_speed)<mpf/2 or (np.sign(est_speed)!=direction): # too slow
+            x_pred = np.polyval(fit, len(track))
+            if abs(est_speed)<mpf/2 or (np.sign(est_speed)!=direction) or (abs(x_pred[0]-x_pred[2])<1): # too slow
                 x_pred = track[-1,:] + direction* np.array([mpf,0,mpf,0,mpf,0,mpf,0])
-            else:
-                x_pred = np.polyval(fit, len(track)) # have "backward" moving cars
 
         else:
             x_pred = track[-1,:] + direction* np.array([mpf,0,mpf,0,mpf,0,mpf,0])
@@ -237,8 +236,8 @@ def stitch_objects(df, THRESHOLD_1 = 2.5, THRESHOLD_2 = 2.5, mc=True):
                     score_dist[m,n] = dist_score(x[n],y[m],'xyw')
                     score_iou[m,n], _ ,_ = iou(x[n],y[m],DIRECTION=True)
  
-            if  (808<k<810):  
-                vis.plot_track(np.array(np.vstack(x), dtype=float), np.array(y,dtype=float), curr_id, frame["ID"].values, xmin,xmax, k)
+            # if  (808<k<810):  
+            #     vis.plot_track(np.array(np.vstack(x), dtype=float), np.array(y,dtype=float), curr_id, frame["ID"].values, xmin,xmax, k)
                     
             # distance score
             bool_arr1 = score_dist == score_dist.min(axis=1)[:,None] # every row has true:every measurement gets assigned
@@ -360,7 +359,7 @@ def IOU_score(car1, car2):
         return -1
     return IOU / N
  
-def stitch_objects_playground(df, THRESHOLD_1 = 2.5, mc=True):
+def stitch_objects_jpda(df, THRESHOLD_1 = 2.5, mc=True):
     '''
     10/20/2021
     use JPDA, weighted average of all meas that fall into a gate (defined by IOU and mahalanobis distance)
@@ -446,7 +445,7 @@ def stitch_objects_playground(df, THRESHOLD_1 = 2.5, mc=True):
                     score_iou[m,:] = -1
                     invalid_meas.append(m)
  
-            if (1715<k<1760):  
+            if (1260<k<1300):  
                 vis.plot_track(np.array(np.vstack(x), dtype=float), np.array(y,dtype=float), curr_id, frame["ID"].values, xmin,xmax, k)
             # if k == 409:
             #     print("")
@@ -483,3 +482,311 @@ def stitch_objects_playground(df, THRESHOLD_1 = 2.5, mc=True):
     # print('Connect tracks', len(newdf)) # Frames of a track (ID) might be disconnected after DA
     # newdf = newdf.groupby("ID").apply(utils.connect_track).reset_index(drop=True)    
     return newdf
+
+def stitch_objects_bm(df, THRESHOLD_1 = 2.5, mc=True):
+    '''
+    bipartite matching based on Maha distance cost
+    '''
+    
+    # define the x,y range to keep track of cars in FOV (meter)
+    if mc==True:
+        xmin, xmax = min(df["x"].values)-10,max(df["x"].values)+10
+    else:
+        camera_id_list = df['camera'].unique()
+        xmin, xmax, ymin, ymax = utils.get_camera_range(camera_id_list)
+        xrange = xmax-xmin
+        alpha = 0.4
+        xmin, xmax = xmin - alpha*xrange, xmax + alpha*xrange # extended camera range for prediction
+    
+    ns = int(np.amin(np.array(df[['Frame #']]))) # start frame
+    nf = int(np.amax(np.array(df[['Frame #']]))) # end frame
+    tracks = dict() # a dictionary to store all current objects in view. key:ID, value:dataframe
+    pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    # pts_img = ["fbrx","fbry","fblx","fbly",	"bbrx",	"bbry",	"bblx",	"bbly",	"ftrx",	"ftry",	"ftlx",	"ftly",	"btrx",	"btry",	"btlx",	"btly"]
+    newdf = pd.DataFrame()
+    
+    for k in range(ns,nf):
+        print("\rFrame {}/{}".format(k,nf),end = "\r",flush = True)
+        
+        frame = df.loc[(df['Frame #'] == k)] # TODO: use groupby frame to save time
+        y = np.array(frame[pts])
+        notnan = ~np.isnan(y).any(axis=1)
+        y = y[notnan] # remove rows with missing values (dim = mx8)
+        frame = frame.iloc[notnan,:]
+        frame = frame.reset_index(drop=True)
+        
+        m_box = len(frame)
+        n_car = len(tracks)
+        invalid_tracks = set()
+        
+        if (n_car > 0): # delete track that are out of view
+            for car_id in list(tracks.keys()):
+                # delete track if total matched frames < 
+                last_frame = tracks[car_id].iloc[-1]
+                last_frame_x = np.array(last_frame[pts])[[0,2,4,6]]
+                x1,x2 = min(last_frame_x),max(last_frame_x)
+                frames = tracks[car_id]["Frame #"].values
+                matched_bool = ~np.isnan(frames)
+                frames_matched = tracks[car_id].loc[matched_bool]
+
+                if (x1<xmin) or (x2>xmax) or (car_id in invalid_tracks):
+                    if len(frames_matched) > 0: # TODO: this threshold could be a ratio
+                        newid = frames_matched["ID"].iloc[0] 
+                        frames_matched["ID"] = newid #unify ID
+                        newdf = pd.concat([newdf,frames_matched])
+                    del tracks[car_id]
+                    n_car -= 1
+        
+        if (m_box == 0) and (n_car == 0): # simply advance to the next frame
+            continue
+            
+        elif (m_box == 0) and (n_car > 0): # if no measurements in current frame, simply predict
+            x, tracks = predict_tracks_df(tracks)
+            
+        elif (m_box > 0) and (n_car == 0): # create new tracks (initialize)
+            for i, row in frame.iterrows():
+                row = frame.loc[i:i,:]
+                tracks[row['ID'].iloc[0]] = row
+        
+        else: 
+            x, tracks = predict_tracks_df(tracks)
+            n_car = len(tracks)
+            curr_id = list(tracks.keys()) # should be n id's 
+
+            # score = np.ones([m_box,n_car])*(99)
+            score_dist = np.zeros([m_box,n_car])
+            score_iou =np.zeros([m_box,n_car])
+            
+            invalid_meas = set()
+            invalid_tracks = set()
+            for m in range(m_box):
+                for n in range(n_car):
+                    score_dist[m,n] = dist_score(x[n],y[m],'maha')
+                    score_iou[m,n], areaa, areab = iou(x[n],y[m],DIRECTION=False,AREA=True)
+                    if areaa < 0.5:
+                        invalid_tracks.add(n)
+                    if areab < 1:
+                        invalid_meas.add(m)
+ 
+            # if (1715<k<1760):  
+            #     vis.plot_track(np.array(np.vstack(x), dtype=float), np.array(y,dtype=float), curr_id, frame["ID"].values, xmin,xmax, k)
+
+            # bipartite matching
+            a,b = scipy.optimize.linear_sum_assignment(score_dist)
+            
+            gate = np.logical_or(score_dist<THRESHOLD_1, score_iou>0)
+            matched_m = set()
+            for i in range(len(a)):
+                if gate[a[i]][b[i]]:
+                    n,m = b[i], a[i]
+                    tracks[curr_id[n]] = tracks[curr_id[n]].reset_index(drop=True)
+                    avg_meas = frame.loc[m:m]
+                    
+                    tracks[curr_id[n]].drop(tracks[curr_id[n]].tail(1).index,inplace=True) # drop the last row (prediction)
+                    tracks[curr_id[n]] = pd.concat([tracks[curr_id[n]], avg_meas],ignore_index=True)  
+                    
+                    matched_m.add(m)
+            # m_unassociated = np.where(np.sum(gate, axis=1)==0)[0]
+            m_unassociated = set(np.arange(m_box))-matched_m
+            for m in m_unassociated:
+                # !TODO: make sure that y[m] at not in the gate of each other
+                if (m not in invalid_meas) and (all(gate[m,:])==False) :
+                    new_id = frame['ID'].iloc[m]
+                    new_meas = frame.loc[m:m]
+                    tracks[new_id] = new_meas
+
+    # print("Remove wrong direction", len(newdf))
+    # newdf = utils.remove_wrong_direction_df(newdf)
+    # print('Connect tracks', len(newdf)) # Frames of a track (ID) might be disconnected after DA
+    # newdf = newdf.groupby("ID").apply(utils.connect_track).reset_index(drop=True)    
+    return newdf
+
+def stitch_objects_gnn(df, THRESHOLD_1 = 2.5, mc=True):
+    '''
+    find the best meas for each track
+    prioritize on tracks that have higher # meas matched
+    '''
+    
+    # define the x,y range to keep track of cars in FOV (meter)
+    if mc==True:
+        xmin, xmax = min(df["x"].values)-10,max(df["x"].values)+10
+    else:
+        camera_id_list = df['camera'].unique()
+        xmin, xmax, ymin, ymax = utils.get_camera_range(camera_id_list)
+        xrange = xmax-xmin
+        alpha = 0.4
+        xmin, xmax = xmin - alpha*xrange, xmax + alpha*xrange # extended camera range for prediction
+    
+    ns = int(np.amin(np.array(df[['Frame #']]))) # start frame
+    nf = int(np.amax(np.array(df[['Frame #']]))) # end frame
+    tracks = dict() # a dictionary to store all current objects in view. key:ID, value:dataframe
+    pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    # pts_img = ["fbrx","fbry","fblx","fbly",	"bbrx",	"bbry",	"bblx",	"bbly",	"ftrx",	"ftry",	"ftlx",	"ftly",	"btrx",	"btry",	"btlx",	"btly"]
+    newdf = pd.DataFrame()
+    
+    for k in range(ns,nf):
+        print("\rFrame {}/{}".format(k,nf),end = "\r",flush = True)
+        
+        frame = df.loc[(df['Frame #'] == k)] # TODO: use groupby frame to save time
+        y = np.array(frame[pts])
+        notnan = ~np.isnan(y).any(axis=1)
+        y = y[notnan] # remove rows with missing values (dim = mx8)
+        frame = frame.iloc[notnan,:]
+        frame = frame.reset_index(drop=True)
+        
+        m_box = len(frame)
+        n_car = len(tracks)
+        # invalid_tracks = set()
+        
+        if (n_car > 0): # delete track that are out of view
+            for car_id in list(tracks.keys()):
+                # delete track if total matched frames < 
+                last_frame = tracks[car_id].iloc[-1]
+                last_frame_x = np.array(last_frame[pts])[[0,2,4,6]]
+                x1,x2 = min(last_frame_x),max(last_frame_x)
+                frames = tracks[car_id]["Frame #"].values
+                matched_bool = ~np.isnan(frames)
+                frames_matched = tracks[car_id].loc[matched_bool]
+
+                if (x1<xmin) or (x2>xmax):
+                    if len(frames_matched) > 0: # TODO: this threshold could be a ratio
+                        newid = frames_matched["ID"].iloc[0] 
+                        frames_matched["ID"] = newid #unify ID
+                        newdf = pd.concat([newdf,frames_matched])
+                    del tracks[car_id]
+                    n_car -= 1
+        
+        if (m_box == 0) and (n_car == 0): # simply advance to the next frame
+            continue
+            
+        elif (m_box == 0) and (n_car > 0): # if no measurements in current frame, simply predict
+            x, tracks = predict_tracks_df(tracks)
+            
+        elif (m_box > 0) and (n_car == 0): # create new tracks (initialize)
+            for i, row in frame.iterrows():
+                row = frame.loc[i:i,:]
+                tracks[row['ID'].iloc[0]] = row
+        
+        else: 
+            x, tracks = predict_tracks_df(tracks)
+            n_car = len(tracks)
+            curr_id = list(tracks.keys()) # should be n id's 
+
+            # score = np.ones([m_box,n_car])*(99)
+            score_dist = np.zeros([m_box,n_car])
+            score_iou =np.zeros([m_box,n_car])
+            
+            invalid_meas = set()
+            # invalid_tracks = set()
+            for m in range(m_box):
+                for n in range(n_car):
+                    score_dist[m,n] = dist_score(x[n],y[m],'maha')
+                    score_iou[m,n], areaa, areab = iou(x[n],y[m],DIRECTION=False,AREA=True)
+                    # if areaa < 0.5:
+                    #     invalid_tracks.add(n)
+                if areab < 1:
+                    invalid_meas.add(m)
+ 
+            # if (1120<k<1130):  
+            #     vis.plot_track(np.array(np.vstack(x), dtype=float), np.array(y,dtype=float), curr_id, frame["ID"].values, xmin,xmax, k)
+            # if 333 in curr_id:
+            #     print("")
+            gate = np.logical_or(score_dist<THRESHOLD_1, score_iou>0)
+            matched_length = []
+            for carid in curr_id:
+                track = tracks[carid]
+                matched_length.append(track["Frame #"].count())
+            pq = np.argsort(matched_length)[::-1] # priority queue
+            matched_m = set() 
+            for n in pq:
+                if not any(gate[:,n]): # no matched meas for this track
+                    continue
+                # find the best match meas for this track
+                tracks[curr_id[n]] = tracks[curr_id[n]].reset_index(drop=True)
+                idx_in_gate = np.where(gate[:,n])[0]
+                best_idx = np.argmin(score_dist[idx_in_gate,n])
+                m = idx_in_gate[best_idx]
+                avg_meas = frame.loc[m:m] 
+                tracks[curr_id[n]].drop(tracks[curr_id[n]].tail(1).index,inplace=True) # drop the last row (prediction)
+                tracks[curr_id[n]] = pd.concat([tracks[curr_id[n]], avg_meas],ignore_index=True)  
+                gate[m,:] = False # elimite m from future selection
+                matched_m.add(m)
+
+                    
+            m_unassociated = set(np.arange(m_box))-matched_m
+            for m in m_unassociated:
+                # !TODO: make sure that y[m] at not in the gate of each other
+                if (m not in invalid_meas):
+                    new_id = frame['ID'].iloc[m]
+                    new_meas = frame.loc[m:m]
+                    tracks[new_id] = new_meas
+
+    # print("Remove wrong direction", len(newdf))
+    # newdf = utils.remove_wrong_direction_df(newdf)
+    # print('Connect tracks', len(newdf)) # Frames of a track (ID) might be disconnected after DA
+    # newdf = newdf.groupby("ID").apply(utils.connect_track).reset_index(drop=True)    
+    return newdf
+
+def pts_to_line(x,y,a,b,c):
+    '''
+    distance from (x,y) to a line defined by ax+by+c=0
+    x,y are vectors of the same length
+    a,b,c, are scalars
+    return the average distances
+    '''
+    d = np.abs(a*x + b*y + c)/np.sqrt(a**2+b**2)
+    return np.nanmean(d)
+    
+    
+def time_space_matching(df, THRESHOLD_X = 9, THRESHOLD_Y = 0.5):
+    '''
+    try to match tracks that are "close" to each other in time-space dimension
+    offline matching, take advantage of a linear model
+    '''
+    groups = df.groupby("ID")
+    groupList = list(groups.groups)
+    pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+   
+    n_car = len(groupList)
+    DX = np.ones((n_car, n_car)) * 99 # x-distance triangle matrix
+    DY = np.ones((n_car, n_car)) * 99 # lower triangle matrix
+    
+    for i,c1 in enumerate(groupList):
+        # get the fitted line for c1
+        track1 = groups.get_group(c1)
+        t1 = track1["Frame #"].values
+        track1 = np.array(track1[pts])
+        x1 = (track1[:,0] + track1[:,2])/2
+        y1 = np.nanmean((track1[:,1] + track1[:,7])/2)
+        cx1 = np.nanmean(x1)
+ 
+        fit = np.polyfit(t1,x1,1)
+        a,b,c = -fit[0], 1, -fit[1]
+        
+        for j in range(n_car):
+            if i == j:
+                continue
+            track2 = groups.get_group(groupList[j])
+            t2 = track2["Frame #"].values
+            track2 = np.array(track2[pts])
+            x2 = (track2[:,0] + track2[:,2])/2
+            y2 = np.nanmean((track2[:,1] + track2[:,7])/2)
+            cx2 = np.nanmean(x2)
+            DX[i,j] = pts_to_line(t2,x2,a,b,c)
+            DY[i,j] = np.abs(y1-y2)/np.abs(cx1-cx2) # tan\theta
+            
+    matched = np.logical_and(DX<THRESHOLD_X, DY<THRESHOLD_Y)
+
+    for i in range(n_car-1,-1,-1):
+        idx = np.where(np.logical_and(matched[:,i], matched[i,:]))[0]
+        if len(idx)>0:
+            newid = groupList[idx[0]] # assigned to the first ID appeared in scene
+            parent = {groupList[i]: newid for i in list(idx)+[i]}
+            df['ID'] = df['ID'].apply(lambda x: parent[x] if x in parent else x)
+            
+    # post process
+    
+    return df, groupList,DX,DY
+    
+    
+    
