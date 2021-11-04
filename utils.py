@@ -240,7 +240,7 @@ def preprocess(file_path, tform_path, skip_row = 0):
     print('Total # car:', len(df['ID'].unique()),len(df))
     return df
 
-def preprocess_MC(file_path, tform_path, skip_row = 0):
+def preprocess_MC(file_path, skip_row = 0):
     '''
     preprocess for MC tracking data
     10/28/2021
@@ -249,6 +249,8 @@ def preprocess_MC(file_path, tform_path, skip_row = 0):
     df = read_data(file_path,skip_row)
     if (df.columns[0] != 'Frame #'):
         df = read_data(file_path,9)
+    if not isinstance(df["Frame #"].iloc[0], int):
+        df['Frame #'] = df.groupby("Timestamp").ngroup()
     if 'Object ID' in df:
         df = df.rename(columns={"Object ID": "ID"})
     if "veh rear x" in df:

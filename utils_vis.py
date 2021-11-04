@@ -230,10 +230,12 @@ def plot_lane_distribution(df):
     plt.title('Lane distribution')
     return
 
-def plot_time_space(df, lanes=[1], time="frame", space="x"):
+def plot_time_space(df, lanes=[1], time="frame", space="x", ax=None, show =True):
         
     # plot time space diagram (4 lanes +1 direction)
-    plt.figure()
+    if ax is None:
+        fig, ax = plt.subplots()
+    
     
     colors = ["blue","orange","green","red","purple"]
     for i,lane_idx in enumerate(lanes):
@@ -252,21 +254,21 @@ def plot_time_space(df, lanes=[1], time="frame", space="x"):
                 y1 = group['bbr_y'].values
                 y2 = group['bbl_y'].values
             if len(lanes)>1:
-                plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%len(colors)], label="lane {}".format(lane_idx) if j==0 else "")
+                ax.fill_between(x,y1,y2,alpha=0.5,color = colors[j%len(colors)], label="lane {}".format(lane_idx) if j==0 else "")
             else:
-                plt.fill_between(x,y1,y2,alpha=0.5,color = colors[j%len(colors)], label="{}".format(carid))
+                ax.fill_between(x,y1,y2,alpha=0.5,color = colors[j%len(colors)], label="{}".format(carid))
             j += 1
         try:
-            plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
         except:
             pass
         if time=="frame":
-            plt.xlabel('Frame')
+            ax.set_xlabel('Frame')
         else:
-            plt.xlabel('Time')
-        plt.ylabel('x (m)' if space=="x" else 'y(m)')
-        plt.title('Time-space diagram') 
-    return
+            ax.set_xlabel('Time')
+        ax.set_ylabel('x (m)' if space=="x" else 'y(m)')
+        ax.set_title('Lane {}'.format(lane_idx)) 
+    return None if show else ax
 
 
 def dashboard(cars, legends=None):

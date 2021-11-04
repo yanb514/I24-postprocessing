@@ -58,7 +58,7 @@ if __name__ == "__main__":
     temp = test[(test["Frame #"]<1500)&(test["Frame #"]>1000)]
     # temp = utils.remove_wrong_direction_df(temp)
     for lane_idx in [1,2,3,4,7,8,9,10]:
-        vis.plot_time_space(test, lanes=[lane_idx], time="frame", space="x")
+        vis.plot_time_space(temp, lanes=[lane_idx], time="frame", space="x")
         # vis.plot_time_space(test, lanes=[lane_idx], time="frame", space="y")
 
     # %% rectify
