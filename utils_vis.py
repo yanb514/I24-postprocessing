@@ -288,6 +288,7 @@ def dashboard(cars, legends=None):
         
         if legends[caridx] != 'rectified':
             car = utils.calc_dynamics_car(car)
+            print('calculate dynamics')
          
         x = car['Frame #'].values
         c = colors[caridx%len(colors)]
@@ -315,8 +316,8 @@ def dashboard(cars, legends=None):
         
         
         # time vs. theta
-        if legends[caridx]!='rectified':
-            continue
+        # if legends[caridx]!='rectified':
+        #     continue
         theta =  car['theta'].values
         ax5.scatter(x,theta, color=c, s=2)
         ax5.plot(x,theta,color=c)

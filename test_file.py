@@ -53,6 +53,19 @@ if __name__ == "__main__":
     
     #%%
     dfda = utils.read_data(data_path+r"\DA\MC_jpda.csv")
+    # %%
+    def detect_outlier_position_by_fft(signal, threshold_freq=0.1,
+                                   frequency_amplitude=.001):
+        signal = signal.copy()
+        mask = np.isfinite(signal)
+        signal = np.interp(signal.index, signal.index[mask], signal[mask])
+        fft_of_signal = np.fft.fft(signal)
+        outlier = np.max(signal) if abs(np.max(signal)) > abs(np.min(signal)) else np.min(signal)
+        if np.any(np.abs(fft_of_signal[threshold_freq:]) > frequency_amplitude):
+            index_of_outlier = np.where(signal == outlier)
+            return index_of_outlier[0]
+        else:
+            return None
     
     #%% visualize
     temp = test[(test["Frame #"]<1500)&(test["Frame #"]>1000)]
@@ -141,14 +154,19 @@ if __name__ == "__main__":
     df = utils.read_data(data_path+r"\rectified\{}_{}.csv".format(camera_name, sequence))
     
     # %%individual cars
+    car1 = da.df[da.df["ID"]==462]
+    # car2 = da.df[da.df["ID"]==463]
+    # vis.plot_track_compare(car1,car2)
+    vis.plot_track_df(car1)
+    #%%
     import utils_optimization as opt
-    carid = 88
-    carda = dfda[dfda["ID"]==carid]
+    carid = 2
+    carda = da.df[da.df["ID"]==carid]
     car = carda.copy()
-    car = opt.rectify_single_camera(car,  (1,0,0,0.1,0.1,0))
+    car = opt.rectify_single_camera(car,  (1,0,0,0.2,0,0))
     # car = df[df["ID"]==carid]
     vis.plot_track_compare(carda, car)
-    utils.dashboard([carda, car])
+    vis.dashboard([carda, car],["raw","rectified"])
     # plt.title(carid)
     Y1 = np.array(carda[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
     Yre = np.array(car[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])

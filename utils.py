@@ -708,7 +708,6 @@ def average_meas(x):
     mean.loc[:,pts] = Y
     return mean
     
-    
 def del_repeat_meas_per_frame(framesnap):
     framesnap = framesnap.groupby('ID').apply(del_repeat_meas)
     return framesnap
@@ -986,17 +985,13 @@ def connect_track(car):
     if yes, create missing data place holders for those missing frames
     otherwise do nothing
     '''
+
     if car["Frame #"].iloc[-1]-car["Frame #"].iloc[0]+1 > len(car):
-        print("connect:", car["ID"].iloc[0])
-        # car.reset_index(inplace=True, drop=True)
+        # print("connect:", car["ID"].iloc[0])
+
         frames = np.arange(car["Frame #"].iloc[0],car["Frame #"].iloc[-1]+1)
-        # car.set_index("Frame #")
         new_index = pd.Index(frames, name="Frame #")
-        # car=car.reindex(new_index) # car.set_index("Frame #").reindex(new_index)
-        # car = car.set_index("Frame #").reindex(new_index).reset_index()
-        
         car = car.set_index("Frame #").reindex(new_index).reset_index()
-        #
         # interpolate / fill nan
         car["Timestamp"] = car.Timestamp.interpolate()
         car["ID"] = car["ID"].interpolate(method='pad')
@@ -1004,6 +999,7 @@ def connect_track(car):
         car["camera"] = car["camera"].interpolate(method='pad')
         car["direction"] = car["direction"].interpolate(method='pad')
 
+    
     return car
     
 
@@ -1031,13 +1027,18 @@ def calc_dynamics_car(car):
         return
     dt = np.array([1/30]*(len(car)-1))
     dx = np.diff(car.x.values)
-    speed = dx/dt*direction
-    speed = np.append(speed, speed[-1])
-    dv = np.diff(speed)
-    a = dv/dt
+    vx = dx/dt*direction
+    vx = np.append(vx, vx[-1])
+    dy = np.diff(car.y.values)
+    vy = dy/dt
+    vy = np.append(vy, vy[-1])
+    v = np.sqrt(vx**2+vy**2)
+    theta = np.arcsin(vy/v)+np.arccos(direction)
+    a = np.diff(v)/dt
     a = np.append(a, a[-1])
-    car.loc[:,"speed"] = speed
+    car.loc[:,"speed"] = v
     car.loc[:,"acceleration"] = a
+    car.loc[:,"theta"] = theta
     return car
 
 def constant_speed(car):
