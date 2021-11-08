@@ -59,8 +59,8 @@ class Data_Association():
         else:
             self.df = utils.read_data(data_path)
         self.df = self.df[(self.df["Frame #"] >= params["start"]) & (self.df["Frame #"] <= params["end"])]
-        if len(params["lanes"]) > 0:
-            self.df = self.df[self.df["lane"].isin(params["lanes"])]
+        # if len(params["lanes"]) > 0:
+        #     self.df = self.df[self.df["lane"].isin(params["lanes"])]
         self.original = self.df.copy()
     
     
@@ -615,42 +615,49 @@ class Data_Association():
         CY = np.zeros((n_car, n_car)) # 
         track_len = []
         for i,c1 in enumerate(groupList):
+            print("\rTracklet {}/{}".format(i,n_car),end = "\r",flush = True)
             # get the fitted line for c1
             track1 = groups.get_group(c1)
             track_len.append(len(track1))
-            t1 = track1["Frame #"].values
-            ct1 = np.nanmean(t1)
-            track1 = np.array(track1[pts])
-            x1 = (track1[:,0] + track1[:,2])/2
-            y1 = (track1[:,1] + track1[:,7])/2
-            cx1, cy1 = np.nanmean(x1), np.nanmean(y1)
-     
-            # fit time vs. x
-            fit = np.polyfit(t1,x1,1)
-            vx = fit[0]
-            bp = cx1-(vx+THRESHOLD_1)*ct1 # recalculate y-intercept
-            bpp = cx1-(vx-THRESHOLD_1)*ct1
-            
-            # fit time vs. y
-            fit = np.polyfit(t1,y1,1)
-            vy = fit[0]
-            cp = cy1-(vy+THRESHOLD_2)*ct1 # recalculate y-intercept
-            cpp = cy1-(vy-THRESHOLD_2)*ct1
+            if len(track1)<2:
+                fit = None
+            else:
+                t1 = track1["Frame #"].values
+                ct1 = np.nanmean(t1)
+                track1 = np.array(track1[pts])
+                x1 = (track1[:,0] + track1[:,2])/2
+                y1 = (track1[:,1] + track1[:,7])/2
+                cx1, cy1 = np.nanmean(x1), np.nanmean(y1)
+         
+                # fit time vs. x
+                fit = np.polyfit(t1,x1,1)
+                vx = fit[0]
+                bp = cx1-(vx+THRESHOLD_1)*ct1 # recalculate y-intercept
+                bpp = cx1-(vx-THRESHOLD_1)*ct1
+                
+                # fit time vs. y
+                fit = np.polyfit(t1,y1,1)
+                vy = fit[0]
+                cp = cy1-(vy+THRESHOLD_2)*ct1 # recalculate y-intercept
+                cpp = cy1-(vy-THRESHOLD_2)*ct1
             
             for j in range(n_car):
-                if i == j:
+                if (i == j) or (fit is None):
                     continue
                 track2 = groups.get_group(groupList[j])
-                t2 = track2["Frame #"].values
-                track2 = np.array(track2[pts])
-                x2 = (track2[:,0] + track2[:,2])/2
-                y2 = (track2[:,1] + track2[:,7])/2
-
-                if (all(x2 < t2*(vx+THRESHOLD_1)+bp) and all(x2 > t2*(vx-THRESHOLD_1)+bpp)) or (all(x2 > t2*(vx+THRESHOLD_1)+bp) and all(x2 < t2*(vx-THRESHOLD_1)+bpp)):
-                    CX[i,j] = 1
-                if (all(y2 < t2*(vy+THRESHOLD_2)+cp) and all(y2 > t2*(vy-THRESHOLD_2)+cpp)) or (all(y2 > t2*(vy+THRESHOLD_2)+cp) and all(y2 < t2*(vy-THRESHOLD_2)+cpp)):
-                    CY[i,j] = 1
-                # CY[i,j] = max(np.abs(y1[[0,-1, 0, -1]]-y2[[0,-1, -1, 0]])/np.abs(x1[[0,-1, 0 ,-1]]-x2[[0,-1,-1,0]]) ) # tan\theta
+                if len(track2)<2:
+                    continue
+                else:
+                    t2 = track2["Frame #"].values
+                    track2 = np.array(track2[pts])
+                    x2 = (track2[:,0] + track2[:,2])/2
+                    y2 = (track2[:,1] + track2[:,7])/2
+    
+                    if (all(x2 < t2*(vx+THRESHOLD_1)+bp) and all(x2 > t2*(vx-THRESHOLD_1)+bpp)) or (all(x2 > t2*(vx+THRESHOLD_1)+bp) and all(x2 < t2*(vx-THRESHOLD_1)+bpp)):
+                        CX[i,j] = 1
+                    if (all(y2 < t2*(vy+THRESHOLD_2)+cp) and all(y2 > t2*(vy-THRESHOLD_2)+cpp)) or (all(y2 > t2*(vy+THRESHOLD_2)+cp) and all(y2 < t2*(vy-THRESHOLD_2)+cpp)):
+                        CY[i,j] = 1
+                    # CY[i,j] = max(np.abs(y1[[0,-1, 0, -1]]-y2[[0,-1, -1, 0]])/np.abs(x1[[0,-1, 0 ,-1]]-x2[[0,-1,-1,0]]) ) # tan\theta
             
         CX = CX == 1
         CY = CY == 1
@@ -724,7 +731,8 @@ class Data_Association():
         valid = {}
         invalid = set()
         for carid, group in groups:
-            if (max(group.x.values)-min(group.x.values)>0.5*(xmax-xmin)): # long tracks
+            if (max(group.x.values)-min(group.x.values)>0.4*(xmax-xmin)): # long tracks
+                # valid.add(carid)
                 frames = group["Frame #"].values
                 first = group.head(1)
                 last = group.tail(1)
@@ -737,28 +745,36 @@ class Data_Association():
             # elif (max(group.x.values)-min(group.x.values)<0.1*(xmax-xmin)): # short tracks
             #     invalid.add(carid)
                 
-        # check crash
+        # check crash within valid
         # for carid, group in groups:
-        #     if (carid not in valid.keys()) and (carid not in invalid):
-        #         frames = group["Frame #"].values
-        #         first = group.head(1)
-        #         last = group.tail(1)
-        #         x0, x1 = max(first.bbr_x.values[0],first.fbr_x.values[0]),min(first.bbr_x.values[0],first.fbr_x.values[0])
-        #         x2, x3 = min(last.bbr_x.values[0],last.fbr_x.values[0]),max(last.bbr_x.values[0],last.fbr_x.values[0])
-        #         y0, y1 = max(first.bbr_y.values[0],first.bbl_y.values[0]),min(first.bbr_y.values[0],first.bbl_y.values[0])
-        #         y2, y3 = min(last.bbr_y.values[0],last.bbl_y.values[0]),max(last.bbr_y.values[0],last.bbl_y.values[0])
-        #         t0,t1 = min(frames), max(frames)
-                
-        #         bx = np.array([t0,x0,t0,x1,t1,x2,t1,x3])
-        #         by = np.array([t0,y0,t0,y1,t1,y2,t1,y3])
-        #         for valid_id in valid:
-        #             ax,ay = valid[valid_id]
-        #             ioux = self.iou_ts(ax,bx)
-        #             iouy = self.iou_ts(ay,by)
-        #             if ioux > 0 and iouy > 0: # trajectory overlaps with a valid track
-        #                 invalid.add(carid)
-        
-        print("Valid IDs: {}/{}".format(len(valid),len(groupList)))
+        #     if (carid in valid.keys()) and (carid not in invalid):
+        valid_list = list(valid.keys())
+        for i,car1 in enumerate(valid_list):
+            bx,by = valid[car1]
+            # group = groups.get_group(carid)
+            # frames = group["Frame #"].values
+            # first = group.head(1)
+            # last = group.tail(1)
+            # x0, x1 = max(first.bbr_x.values[0],first.fbr_x.values[0]),min(first.bbr_x.values[0],first.fbr_x.values[0])
+            # x2, x3 = min(last.bbr_x.values[0],last.fbr_x.values[0]),max(last.bbr_x.values[0],last.fbr_x.values[0])
+            # y0, y1 = max(first.bbr_y.values[0],first.bbl_y.values[0]),min(first.bbr_y.values[0],first.bbl_y.values[0])
+            # y2, y3 = min(last.bbr_y.values[0],last.bbl_y.values[0]),max(last.bbr_y.values[0],last.bbl_y.values[0])
+            # t0,t1 = min(frames), max(frames)
+            
+            # bx = np.array([t0,x0,t0,x1,t1,x2,t1,x3])
+            # by = np.array([t0,y0,t0,y1,t1,y2,t1,y3])
+            for car2 in valid_list[i+1:]:
+                ax,ay = valid[car2]
+                ioux = self.iou_ts(ax,bx)
+                iouy = self.iou_ts(ay,by)
+                if ioux > 0 and iouy > 0: # trajectory overlaps with a valid track
+                    if bx[4]-bx[0] > ax[4]-ax[0]: # keep the longer track    
+                        invalid.add(car2)
+                    else:
+                        invalid.add(car1)
+        valid = set(valid.keys())
+        valid = valid-invalid
+        print("Valid tracklets: {}/{}".format(len(valid),len(groupList)))
         
         self.df = self.df.groupby("ID").filter(lambda x: (x['ID'].iloc[0] in valid)).reset_index(drop=True)
         
@@ -924,8 +940,13 @@ class Data_Association():
         return framesnap
       
            
-    def postprocess(self, REMOVE_INVALID=True, SELECT_ONE_MEAS=True, CONNECT_TRACKS=True, SMOOTH_TRACKS=True):
+    def postprocess(self, REMOVE_INVALID=True, SELECT_ONE_MEAS=True, CONNECT_TRACKS=True, SMOOTH_TRACKS=True, SAVE=""):
         # count lane spaned for each ID
+        
+        if REMOVE_INVALID:
+            print("Remove invalid tracks...")
+            self.remove_invalid() # remove obvious invalid tracks from df
+        # check lane-change vehicles
         groups = self.df.groupby("ID")
         multiple_lane = set()
         for carid, group in groups:
@@ -935,10 +956,7 @@ class Data_Association():
                 if np.abs(np.max(group[["bbr_y","bbl_y"]].values)-np.min(group[["bbr_y","bbl_y"]].values)) > 12/3.281:
                     multiple_lane.add(carid)
                         # break
-        print("Tracks that span multiple lanes:", multiple_lane)
-        if REMOVE_INVALID:
-            print("Remove invalid tracks...")
-            self.remove_invalid() # remove obvious invalid tracks from df
+        print("Possible lane-change tracks:", multiple_lane)
         if SELECT_ONE_MEAS:
             self.df = utils.applyParallel(self.df.groupby("Frame #"), self.del_repeat_meas_per_frame).reset_index(drop=True) # keep only one meas per frame per track
         if CONNECT_TRACKS:
@@ -946,6 +964,8 @@ class Data_Association():
         if SMOOTH_TRACKS:
             # TODO: implement this
             self.smooth_tracks() # gaussian filtering to remove outliers
+        if len(SAVE)>0:
+            self.df.to_csv(SAVE, index = False)
         return
     
 
@@ -960,16 +980,15 @@ class Data_Association():
     
 if __name__ == "__main__":
 
-    data_path = r"E:\I24-postprocess\MC_tracking" 
-    file_path = data_path+r"\MC_reinterpolated.csv"
+    data_path = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking" 
+    file_path = data_path+r"\p1c2_0_3D_track_outputs.csv"
     
-    params = {"method": "gnn",
-              "start": 1500,
-              "end": 2200,
-              "lanes": [],
+    params = {"method": "tsmn",
+              "start": 0,
+              "end": 1000,
               "plot_start": 0, # for plotting tracks in online methods
               "plot_end": 10,
-              "preprocess": False
+              "preprocess": True
               }
     
     da = Data_Association(file_path, params)
@@ -978,7 +997,13 @@ if __name__ == "__main__":
     # da.stitch_objects_bm(1.5,0)
     da.stitch_objects_tsmn(0.3,0.04) # 0.2, 0.04
     # da.stitch_objects_confidence(THRESHOLD_AFF=6, THRESHOLD_CONF=0.5) # not finish debugging
-    da.postprocess(REMOVE_INVALID=True, SELECT_ONE_MEAS=False, CONNECT_TRACKS=False, SMOOTH_TRACKS=False)
-    # da.visualize_BA()
+    da.postprocess(REMOVE_INVALID=True, 
+                   SELECT_ONE_MEAS=False, 
+                   CONNECT_TRACKS=False, 
+                   SMOOTH_TRACKS=False,
+                   # SAVE = data_path+r"\DA\p1c2_tsmn.csv"
+                   SAVE = ""
+                   )
+    da.visualize_BA()
     
     

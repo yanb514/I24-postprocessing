@@ -8,7 +8,7 @@ from scipy.optimize import linear_sum_assignment
 from shapely.geometry import Polygon
 from homography import Homography, load_i24_csv
 import utils
-from data_association import count_overlaps
+from utils_data_association import count_overlaps
 import numpy.linalg as LA
 import matplotlib.pyplot as plt
 import utils_vis as vis
@@ -941,7 +941,7 @@ if __name__ == "__main__":
     hg.scale_Z(boxes,heights,name = camera_name)
     
     params = {
-        "cutoff_frame": 1000,
+        "cutoff_frame": 500,
         "match_iou":0.51,
         "sequence":sequence,
         "gtmode": "gt" , # "gt", "raw", "da", "rec"
@@ -955,7 +955,7 @@ if __name__ == "__main__":
     if params["recmode"] == "rec":
         ev.score_trajectory()
     ev.print_metrics()
-    ev.visualize()
+    # ev.visualize()
     
     # save as pickle
     # filehandler = open("{}_{}_{}.pkl".format(camera_name,sequence_idx,params["recmode"]), 'wb') 
