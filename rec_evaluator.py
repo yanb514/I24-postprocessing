@@ -223,6 +223,80 @@ class MOT_Evaluator():
             self.metrics = metrics
         return
     
+    def iou_ts(self,a,b):
+        """
+        Description
+        -----------
+        Calculates intersection over union for track a and b in time-space diagram
+    
+        Parameters
+        ----------
+        a : 1x8
+        b : 1x8
+        Returns
+        -------
+        iou - float between [0,1] 
+        """
+        a,b = np.reshape(a,(1,-1)), np.reshape(b,(1,-1))
+    
+        p = Polygon([(a[0,2*i],a[0,2*i+1]) for i in range(4)])
+        q = Polygon([(b[0,2*i],b[0,2*i+1]) for i in range(4)])
+
+        intersection_area = p.intersection(q).area
+        union_area = min(p.area, q.area)
+        iou = float(intersection_area/union_area)
+                
+        return iou
+    
+    def get_invalid(self, df):
+        '''
+        valid: length covers more than 50% of the FOV
+        invalid: length covers less than 10% of FOV, or
+                crashes with any valid tracks
+        undetermined: tracks that are short but not overlaps with any valid tracks
+        '''
+        # convert units
+        if np.mean(df.y.values) > 40:   
+            cols_to_convert = ["fbr_x",	"fbr_y","fbl_x"	,"fbl_y","bbr_x","bbr_y","bbl_x","bbl_y", "speed","x","y","width","length","height"]
+            df[cols_to_convert] = df[cols_to_convert] / 3.281
+        xmin, xmax = min(df["x"].values),max(df["x"].values)
+        groups = df.groupby("ID")
+        groupList = list(groups.groups)
+        pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+        
+        valid = {}
+        invalid = set()
+        for carid, group in groups:
+            if (max(group.x.values)-min(group.x.values)>0.4*(xmax-xmin)): # long tracks
+                frames = group["Frame #"].values
+                first = group.head(1)
+                last = group.tail(1)
+                x0, x1 = max(first.bbr_x.values[0],first.fbr_x.values[0]),min(first.bbr_x.values[0],first.fbr_x.values[0])
+                x2, x3 = min(last.bbr_x.values[0],last.fbr_x.values[0]),max(last.bbr_x.values[0],last.fbr_x.values[0])
+                y0, y1 = max(first.bbr_y.values[0],first.bbl_y.values[0]),min(first.bbr_y.values[0],first.bbl_y.values[0])
+                y2, y3 = min(last.bbr_y.values[0],last.bbl_y.values[0]),max(last.bbr_y.values[0],last.bbl_y.values[0])
+                t0,t1 = min(frames), max(frames)
+                valid[carid] = [np.array([t0,x0,t0,x1,t1,x2,t1,x3]),np.array([t0,y0,t0,y1,t1,y2,t1,y3])]
+                
+        # check crash within valid
+        valid_list = list(valid.keys())
+        for i,car1 in enumerate(valid_list):
+            bx,by = valid[car1]
+            for car2 in valid_list[i+1:]:
+                ax,ay = valid[car2]
+                ioux = self.iou_ts(ax,bx)
+                iouy = self.iou_ts(ay,by)
+                if ioux > 0 and iouy > 0: # trajectory overlaps with a valid track
+                    if bx[4]-bx[0] > ax[4]-ax[0]: # keep the longer track    
+                        invalid.add(car2)
+                    else:
+                        invalid.add(car1)
+        valid = set(valid.keys())
+        valid = valid-invalid
+        print("Valid tracklets: {}/{}".format(len(valid),len(groupList)))
+
+        return valid
+    
     def evaluate_tracks(self):
         '''
         Compute:
@@ -236,62 +310,60 @@ class MOT_Evaluator():
         None.
 
         '''
-            
-        # convert units
-        if self.units["df"] == "ft":
-            cols_to_convert = ["fbr_x",	"fbr_y","fbl_x"	,"fbl_y","bbr_x","bbr_y","bbl_x","bbl_y", "speed","x","y","width","length","height"]
-            self.gt[cols_to_convert] = self.gt[cols_to_convert] / 3.281
-            self.rec[cols_to_convert] = self.rec[cols_to_convert] / 3.281
-            self.units["df"] = "m"
         
-        invalid_gt, valid_gt, invalid_rec, valid_rec = [],[],[],[]
-        xmin, xmax, _, _ = utils.get_camera_range(self.gt['camera'].dropna().unique())
-        xrange = xmax-xmin
-        alpha = 0.5
-        xmin, xmax = xmin + alpha*xrange, xmax-alpha*xrange # buffered 1-2*alpha%
         
-        # invalid if tracks don't cover xmin to xmax, or tracks has < 5 valid measurements
-        print("Evaluating tracks...")
-        gt_groups = self.gt.groupby("ID")
+        valid = self.get_invalid(self.rec)
+        groups = self.rec.groupby("ID")
+        self.metrics["Valid tracklets/total"] = "{} / {}".format(len(valid),groups.ngroups)
+        
+        # invalid_gt, valid_gt, invalid_rec, valid_rec = [],[],[],[]
+        # xmin, xmax, _, _ = utils.get_camera_range(self.gt['camera'].dropna().unique())
+        # xrange = xmax-xmin
+        # alpha = 0.5
+        # xmin, xmax = xmin + alpha*xrange, xmax-alpha*xrange # buffered 1-2*alpha%
+        
+        # # invalid if tracks don't cover xmin to xmax, or tracks has < 5 valid measurements
+        # print("Evaluating tracks...")
+        # gt_groups = self.gt.groupby("ID")
             
-        for gt_id, gt in gt_groups:
-            x_df = gt[["bbr_x","bbl_x","fbr_x","fbl_x"]]
-            xleft = x_df.min().min()
-            xright = x_df.max().max()
-            # missing_rate = x_df[["bbr_x"]].isna().sum().values[0]/len(x_df)
-            valid_meas = gt.count().bbr_x
-            if xleft > xmin or xright < xmax or valid_meas < 5:
-                invalid_gt.append(gt_id)
-            else:
-                valid_gt.append(gt_id)
+        # for gt_id, gt in gt_groups:
+        #     x_df = gt[["bbr_x","bbl_x","fbr_x","fbl_x"]]
+        #     xleft = x_df.min().min()
+        #     xright = x_df.max().max()
+        #     # missing_rate = x_df[["bbr_x"]].isna().sum().values[0]/len(x_df)
+        #     valid_meas = gt.count().bbr_x
+        #     if xleft > xmin or xright < xmax or valid_meas < 5:
+        #         invalid_gt.append(gt_id)
+        #     else:
+        #         valid_gt.append(gt_id)
                 
-        # do the same for rec
-        rec_groups = self.rec.groupby("ID")
-        for rec_id, rec in rec_groups:
-            x_df = rec[["bbr_x","bbl_x","fbr_x","fbl_x"]]
-            xleft = x_df.min().min()
-            xright = x_df.max().max()
-            valid_meas = rec.count().bbr_x
-            if xleft > xmin or xright < xmax or valid_meas < 5:
-                invalid_rec.append(rec_id)
-            else:
-                valid_rec.append(rec_id)
+        # # do the same for rec
+        # rec_groups = self.rec.groupby("ID")
+        # for rec_id, rec in rec_groups:
+        #     x_df = rec[["bbr_x","bbl_x","fbr_x","fbl_x"]]
+        #     xleft = x_df.min().min()
+        #     xright = x_df.max().max()
+        #     valid_meas = rec.count().bbr_x
+        #     if xleft > xmin or xright < xmax or valid_meas < 5:
+        #         invalid_rec.append(rec_id)
+        #     else:
+        #         valid_rec.append(rec_id)
         
         # summarize
-        metrics = {}
-        metrics["# Invalid IDs/total (before)"] = "{} / {}".format(len(invalid_gt),gt_groups.ngroups)
-        metrics["# Invalid IDs/total (after)"] = "{} / {}".format(len(invalid_rec),rec_groups.ngroups)
-        metrics["Invalid rec IDs"] = invalid_rec
-        # metrics["Occurances of collision in rec"] = len(overlaps_rec)
-        if hasattr(self, "metrics"):
-            self.metrics = dict(list(self.metrics.items()) + list(metrics.items()))
-        else:
-            self.metrics = metrics
+        # metrics = {}
+        # metrics["# Invalid IDs/total (before)"] = "{} / {}".format(len(invalid_gt),gt_groups.ngroups)
+        # metrics["# Invalid IDs/total (after)"] = "{} / {}".format(len(invalid_rec),rec_groups.ngroups)
+        # metrics["Invalid rec IDs"] = invalid_rec
+        # # metrics["Occurances of collision in rec"] = len(overlaps_rec)
+        # if hasattr(self, "metrics"):
+        #     self.metrics = dict(list(self.metrics.items()) + list(metrics.items()))
+        # else:
+        #     self.metrics = metrics
             
         # plot some invalid tracks
-        for rec_id in invalid_rec[:5]:
-            car = rec_groups.get_group(rec_id)
-            vis.plot_track_df(car, title=str(rec_id))
+        # for rec_id in invalid_rec[:5]:
+        #     car = rec_groups.get_group(rec_id)
+        #     vis.plot_track_df(car, title=str(rec_id))
         return
     
     def evaluate(self):
@@ -624,8 +696,8 @@ class MOT_Evaluator():
         # metrics["Changed ID pair"] = self.m["Changed ID pair"]
          
          # Compute MOTA
-        metrics["MOTA"] = 1 - (self.m["FN"] +  metrics["ID switches"][0] + self.m["FP"])/(self.m["TP"])
-        metrics["MOTA edge-case"]  = 1 - (self.m["FN"] +  metrics["ID switches"][0] + self.m["FP"]- self.m["FP edge-case"])/(self.m["TP"])
+        metrics["MOTA"] = 1 - (self.m["FN"] +  metrics["ID switches"][0] + self.m["FP"] + metrics["Fragmentations"])/(self.m["TP"])
+        metrics["MOTA edge-case"]  = 1 - (self.m["FN"] +  metrics["ID switches"][0] + self.m["FP"]- self.m["FP edge-case"]+ metrics["Fragmentations"])/(self.m["TP"])
         # metrics["MOTA @ 0.2"] = 1 - (self.m["FN @ 0.2"] +  metrics["ID switches"][0] + self.m["FP @ 0.2"])/(self.m["TP"])
         
         ious = np.array(self.m["match_IOU"])
@@ -898,7 +970,7 @@ class MOT_Evaluator():
             
 if __name__ == "__main__":
     
-    camera_name = "p1c2"
+    camera_name = "p1c5"
     sequence_idx = 0
     sequence = None
     
@@ -907,8 +979,8 @@ if __name__ == "__main__":
     # gtda = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\p1c2_0_gtda.csv"
     # gt = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\p1c24_gt.csv"
     raw = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\{}_{}_3D_track_outputs.csv".format(camera_name,sequence_idx)
-    DA = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\{}_{}.csv".format(camera_name,sequence_idx) 
-    # DA = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\p1c24.csv"
+    # DA = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\{}_{}.csv".format(camera_name,sequence_idx) 
+    DA = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\DA\{}_tsmn.csv".format(camera_name)
     rectified = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\rectified\{}_{}.csv".format(camera_name,sequence_idx) 
     gt_path = gt
     rec_path = DA
@@ -917,7 +989,7 @@ if __name__ == "__main__":
     vp_file = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\vp\{}_axes.csv".format(camera_name)
     point_file = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform\{}_im_lmcs_transform_points.csv".format(camera_name)
     tf_path = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform"
-    # sequence = r"E:\I24-postprocess\0616-dataset-alpha\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
+    sequence = r"E:\I24-postprocess\0616-dataset-alpha\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
     # sequence = r"E:\I24-postprocess\0806-CIRCLES\raw video\record_51_{}_00000.mp4".format(camera_name)
     
     # we have to define the scale factor for the transformation, which we do based on the first frame of data
@@ -941,8 +1013,8 @@ if __name__ == "__main__":
     hg.scale_Z(boxes,heights,name = camera_name)
     
     params = {
-        "cutoff_frame": 500,
-        "match_iou":0.51,
+        "cutoff_frame": 1000,
+        "match_iou":0.3,
         "sequence":sequence,
         "gtmode": "gt" , # "gt", "raw", "da", "rec"
         "recmode": "da",
@@ -950,10 +1022,10 @@ if __name__ == "__main__":
         }
     
     ev = MOT_Evaluator(gt_path,rec_path,tf_path, camera_name, hg, params = params)
-    # ev.evaluate_tracks()
     ev.evaluate()
     if params["recmode"] == "rec":
         ev.score_trajectory()
+    ev.evaluate_tracks()
     ev.print_metrics()
     # ev.visualize()
     

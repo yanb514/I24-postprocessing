@@ -249,7 +249,8 @@ def preprocess_MC(file_path, skip_row = 0):
     df = read_data(file_path,skip_row)
     if (df.columns[0] != 'Frame #'):
         df = read_data(file_path,9)
-    if not isinstance(df["Frame #"].iloc[0], int):
+    if isinstance(df["Frame #"].iloc[0], str):
+        print("Getting frame #...")
         df['Frame #'] = df.groupby("Timestamp").ngroup()
     if 'Object ID' in df:
         df = df.rename(columns={"Object ID": "ID"})
