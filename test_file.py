@@ -154,7 +154,7 @@ if __name__ == "__main__":
     df = utils.read_data(data_path+r"\rectified\{}_{}.csv".format(camera_name, sequence))
     
     # %%individual cars
-    car1 = da.df[da.df["ID"]==594]
+    car1 = da.df[da.df["ID"]==244]
     # car2 = da.df[da.df["ID"]==463]
     # vis.plot_track_compare(car1,car2)
     vis.plot_track_df(car1)

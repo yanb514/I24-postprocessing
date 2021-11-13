@@ -3,186 +3,173 @@
 Created on Mon Oct 25 13:43:23 2021
 
 @author: wangy79
-Histograms (GT, raw, rec)
-	- X,y
-	- Length
-	- Width
-	- Speed
-
-Scatter plots
- Positional error (GT vs. raw & rec) wrt.
-
-	- Speed
-	- Lanes
-	- Vehicle dimension
-	- L1 l2 norm
-	
-Dimension error wrt.
-	- Position (x)
-    - Vehicle class
+Produce metrics in the absence of ground truth
+- Global metrics
+	ID counts (Y)
+	Space gap distribution
+	Valid/invalid (Y)
+- Tracklet quality
+	Collision
+	Lane-change tracks
+	Outliers 
+		Wlh mean/stdev
+	Lengths of tracks
+	Missing detection
+    # frames that one track has multiple meas
 """
-import torch
-import numpy as np
-import cv2
-from scipy.optimize import linear_sum_assignment
-from shapely.geometry import Polygon
-from homography import Homography, load_i24_csv
+
 import utils
-from data_association import count_overlaps
-import numpy.linalg as LA
-import matplotlib.pyplot as plt
+import utils_evaluation as ev
 import utils_vis as vis
-import scipy.stats as sps
-import pickle
-import seaborn as sns
-from rec_evaluator import MOT_Evaluator
+import numpy as np
+import matplotlib.pyplot as plt
 
 class GlobalMetrics():
     
-    def __init__(self, ev1, ev2, ev3):
+    def __init__(self, filepath, params, rawpath=None):
         '''
-
-        Parameters
-        ----------
-        evi : TYPE
-            rec_evaluator object.
-            [raw, DA, rectified]
-
-        Returns
-        -------
-        None.
+        
         '''
-        self.gt = ev1.gt
-        self.raw = ev1.rec
-        self.da = ev2.rec
-        self.rec = ev3.rec
-        
-        self.ev_raw = ev1
-        self.ev_da = ev2
-        self.ev_rec = ev3
-        
-        self.gt = self.gt.groupby("ID").apply(utils.constant_speed).reset_index(drop=True)
-        self.gt["length"] = np.abs(self.gt["bbr_x"] - self.gt["fbr_x"])
-        self.gt["width"] = np.abs(self.gt["bbr_y"] - self.gt["bbl_y"])
+        self.df = utils.read_data(filepath)
+        print("Select from Frame {} to {}".format(params["start"], params["end"] ))
+        self.df = self.df[(self.df["Frame #"] >= params["start"]) & (self.df["Frame #"] <= params["end"])]
+        self.params = params
+        self.metrics = {}
+        self.data = {} # storing evaluation metrics long data
+       
+        if rawpath:
+            self.raw = utils.read_data(rawpath)
+            self.raw = self.raw[(self.raw["Frame #"] >= params["start"]) & (self.raw["Frame #"] <= params["end"])]
+            
+    def evaluate_by_frame(self):
+        # extract spacing distribution
+        return
+      
+    def evaluate(self):
+        print("*** Evaluation mode: ", self.params["mode"])
+        if self.params["mode"] == "DA":
+            groups = self.df.groupby("ID")
+            groupList = list(groups.groups)
+            self.metrics["Total tracklets"] = self.df.groupby("ID").ngroups
+            
+            # invalid/valid tracks and collision in time space
+            print("Check for valid tracks and collision...")
+            valid, collision = ev.get_invalid(self.df, ratio=0.4)
+            invalid = set(groupList)-valid-collision
+            self.metrics["Valid tracklets"] = valid
+            self.metrics["Collision with valid tracks"] = collision
+            
+            # lane-change tracks
+            print("Check for lane change...")
+            lane_change = ev.get_lane_change(self.df) - invalid
+            self.metrics["Possible lane change"] = lane_change
+            
+            # tracks that have multiple meas per frame
+            print("Check for multiple detections...")
+            multiple_frames = ev.get_multiple_frame_track(self.df) # dict
+            if hasattr(self,"raw"):
+                multiple_frames_raw = ev.get_multiple_frame_track(self.raw) 
+                self.metrics["Tracks with multiple detections"] = {key:value for key,value in multiple_frames.items() if (key not in multiple_frames_raw or value != multiple_frames_raw[key])}
+            else:
+                self.metrics["Tracks with multiple detections"] = multiple_frames
+            
+            # outliers
+            print("Checking for outliers...")
+            self.raw = self.raw.groupby("ID").apply(ev.mark_outliers_car).reset_index(drop=True)
+            outlier_ratio_raw = {carid: np.count_nonzero(car["Generation method"].values=="outlier")/car.bbr_x.count() for carid, car in self.raw.groupby("ID")}
+            self.df = self.df.groupby("ID").apply(ev.mark_outliers_car).reset_index(drop=True)
+            outlier_ratio = {carid: np.count_nonzero(car["Generation method"].values=="outlier")/car.bbr_x.count() for carid, car in self.df.groupby("ID")}
+            outlier_high = {key: value for key, value in outlier_ratio.items() if (value > self.params["outlier_thresh"]) and (key in valid)}
+            name = "Tracks > " + str(self.params["outlier_thresh"]*100) + "% outliers"
+            self.metrics[name] = outlier_high
+            self.data["outlier_ratio"] = [outlier_ratio_raw, outlier_ratio]
+            
+            # xrange covered
+            xranges0 = ev.get_x_covered(self.raw, ratio=True)
+            xranges1 = ev.get_x_covered(self.df, ratio=True)
+            self.data['xrange'] = [xranges0, xranges1]
+            
+            # change of xrange covered
+            # xrange_delta = {key: value-xranges0[key] for key,value in xranges1.items() if key in xranges0}
+            
+            # # w,h,y distribution carid: (mean, std)
+            # w_dist0 = ev.get_distribution(self.raw, "width")
+            # w_dist1 = ev.get_distribution(self.df, "width")
+            
+            # l_dist0 = ev.get_distribution(self.raw, "length")
+            # l_dist1 = ev.get_distribution(self.df, "length")
+            
+            # y_dist0 = ev.get_distribution(self.raw, "y")
+            # y_dist1 = ev.get_distribution(self.df, "y")
+            
+        return
+
+    def visualize_metrics(self):
+        for name in self.data:
+            data = self.data[name]
+            if "xrange" in name:
+                data_list = [np.fromiter(data_item.values(), dtype=float) for data_item in data]
+                vis.plot_histogram(data_list, bins=40,
+                                   labels=["raw", self.params["mode"]], 
+                                   xlabel="FOV covered (%)", 
+                                   ylabel="Probability", 
+                                   title="X range (%) distribution")
+            elif "outlier" in name:
+                data_list = [np.fromiter(data_item.values(), dtype=float) for data_item in data]
+                vis.plot_histogram(data_list, bins=40,
+                                   labels=["raw", self.params["mode"]], 
+                                   xlabel="Outlier ratio", 
+                                   ylabel="Probability", 
+                                   title="Outlier ratio distribution")
+      
+    def print_metrics(self):
+        print("\n")
+        for name in self.metrics:
+            if "Valid tracklets" in name: 
+                print("{:<30}: {}".format(name,len(self.metrics[name])))
+
+            else:
+                if (not isinstance(self.metrics[name], int)) and (len(self.metrics[name])==0):
+                    continue
+                print("{:<30}: {}".format(name,self.metrics[name]))
+        return
+ 
+    def evaluate_single_track(self, carid, plot=True, dashboard=True):
+        '''
+        identify a problematic track
+        '''
+        car = self.df[self.df["ID"]==carid]
+        if plot:
+            vis.plot_track_df(car)
+        if dashboard:
+            vis.dashboard([car])
+        return
     
-    def histogram(self, data_list, xlabel, ylabel, title, mn, mx):
-        '''
-        produce histograms on a single plot using KDE smoothing
-        '''
-        if len(data_list)==4:
-            gt, raw, da, rec = data_list
-        else:
-            raw, da, rec = data_list
-        plt.figure()
-        try:
-            gt = gt[~np.isnan(gt)]
-        except:
-            pass
-            
-        raw = raw[~np.isnan(raw)]
-        da = da[~np.isnan(da)]
-        rec = rec[~np.isnan(rec)]
-        
-        if mn == None:
-            all_value = np.concatenate([raw,da,rec])
-            mn, mx = min(all_value), max(all_value)
-            r =mx-mn
-            mn -= 0.3*r
-            mx+= 0.3*r
-           
-        try:
-            x = np.linspace(mn, mx, len(gt))
-            kde = sps.gaussian_kde(gt)
-            plt.plot(x, kde.pdf(x), color = 'black', label='GT')
-        except:
-            pass
-            
-        x = np.linspace(mn, mx, len(raw))
-        kde = sps.gaussian_kde(raw)
-        plt.plot(x, kde.pdf(x), color = 'r', label='raw')
-        
-        x = np.linspace(mn, mx, len(da))
-        kde = sps.gaussian_kde(da)
-        plt.plot(x, kde.pdf(x), color = 'y', label='DA')
-        
-        x = np.linspace(mn, mx, len(rec))
-        kde = sps.gaussian_kde(rec)
-        plt.plot(x, kde.pdf(x), color = 'b', label='rectified')
-        
-        plt.legend()
-        plt.title(title)
-        plt.ylabel(ylabel)
-        plt.xlabel(xlabel)
-        sns.despine()
-        
-        
-    def vis_state_distribution(self):
-        
-        # histogram of spacing
-        gt = np.array(self.ev_raw.m["space_gap_gt"])
-        raw = np.array(self.ev_raw.m["space_gap_rec"])
-        da = np.array(self.ev_da.m["space_gap_rec"])
-        rec = np.array(self.ev_rec.m["space_gap_rec"])
-        self.histogram([gt, raw, da, rec], "Spacing (m)", "PDF", "Spacing histogram", 0, 230)
-
-        # histogram of speed
-        gt = np.array(self.gt.speed.values)
-        raw = np.array(self.raw.speed.values)
-        da = np.array(self.da.speed.values)
-        rec = np.array(self.rec.speed.values)
-        self.histogram([gt, raw, da, rec], "Speed (m/s)", "PDF", "Speed histogram", 0, 50)
-        
-        # histogram of X
-        gt = np.array(self.gt.x.values)
-        raw = np.array(self.raw.x.values)
-        da = np.array(self.da.x.values)
-        rec = np.array(self.rec.x.values)
-        self.histogram([gt, raw, da, rec], "Position (m)", "PDF", "Position-x histogram", None, None)
-
-        # histogram of length
-        gt = np.array(self.gt.length.values)
-        raw = np.array(self.raw.length.values)
-        da = np.array(self.da.length.values)
-        rec = np.array(self.rec.length.values)
-        self.histogram([gt, raw, da, rec], "Length (m)", "PDF", "Length histogram", None, None)
-        
-        # histogram of width
-        gt = np.array(self.gt.width.values)
-        raw = np.array(self.raw.width.values)
-        da = np.array(self.da.width.values)
-        rec = np.array(self.rec.width.values)
-        self.histogram([gt, raw, da, rec], "Width (m)", "PDF", "Width histogram", None, None)
-
-    def vis_state_error(self):
-        # states: L,W,H,x,y,velocity
-        raw = np.array(torch.stack(self.ev_raw.m["state_err"]))
-        da = np.array(torch.stack(self.ev_da.m["state_err"]))
-        rec = np.array(torch.stack(self.ev_rec.m["state_err"]))
-        
-        self.histogram([raw[:,0], da[:,0], rec[:,0]], "Length MAE (m)", "PDF", "Length MAE distribution", None, None)
-        self.histogram([raw[:,3], da[:,3], rec[:,3]], "Position MAE (m)", "PDF", "Position MAE distribution", None, None)
-        self.histogram([raw[:,6], da[:,6], rec[:,6]], "Speed MAE (m/s)", "PDF", "Speed MAE distribution", -20, 50)
-        
-        
-        
+    
 if __name__ == "__main__":
     
-    camera_name = "p1c3"
-    sequence_idx = 0
 
-    file = "{}_{}".format(camera_name,sequence_idx)
+    data_path = r"E:\I24-postprocess\MC_tracking" 
+    file_path = data_path+r"\DA\MC_tsmn.csv"
+    mode = "DA"
     
-    # load mutiple pickle data
-    modes = ["raw","da","rec"]
-    ev_list = []
-    for mode in modes:
-        file_mode = file+"_{}.pkl".format(mode)
-        with open(file_mode, "rb") as f:
-            ev_list.append(pickle.load(f))
-        
-    ev1, ev2, ev3 = ev_list # unpack
-    gm = GlobalMetrics(ev1,ev2,ev3)
-    gm.vis_state_distribution()
-    gm.vis_state_error()
+    raw_file_path = data_path+r"\MC_reinterpolated.csv"
+    # mode = "raw"
     
+    params = {
+              "start": 1000,
+              "end": 2000,
+              "outlier_thresh": 0.25,
+              "mode": mode
+              }
+
+    
+    gm = GlobalMetrics(file_path, params, rawpath=raw_file_path)
+    gm.evaluate()
+    gm.print_metrics()
+    gm.visualize_metrics()
+    
+    # gm.evaluate_single_track(133, plot=True, dashboard=True)
+    
+   
     

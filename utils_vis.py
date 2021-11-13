@@ -352,3 +352,27 @@ def dashboard(cars, legends=None):
     plt.show()
     return
    
+    
+   
+def plot_histogram(data_list, bins, labels, xlabel, ylabel, title):
+    '''
+    plot a list of data together on the same plot
+    data_list: a list of lists or np array
+    bins: histogram bins
+    labels: data label, same length as data_list
+    xlabel:
+    ylabel
+    title
+    '''
+    bs=np.histogram(np.hstack((data_list)), bins=bins)[1]
+    bw = bs[1]-bs[0]
+    color = ["r","g","b"]
+    fig, ax1 = plt.subplots(1, 1)
+    for i,data in enumerate(data_list):
+        ax1.hist(data, bins = bs, density = True, weights = [bw]*len(data), facecolor=color[i%len(color)], alpha=0.75, label=labels[i])
+    ax1.set_xlabel(xlabel)
+    ax1.set_ylabel(ylabel)
+    ax1.set_title(title)
+    ax1.grid()
+    ax1.legend()
+    return

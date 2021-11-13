@@ -1055,4 +1055,14 @@ def constant_speed(car):
 def calc_dynamics(df):
     df = df.groupby("ID").apply(calc_dynamics_car).reset_index(drop=True)
     return df
-    
+
+# path compression
+def find(parent, i):
+	if (parent[i] != i):
+		parent[i] = find(parent, parent[i])
+	return parent[i]
+
+def compress(parent, groupList):	
+	for i in groupList:
+		find(parent, i)
+	return parent    

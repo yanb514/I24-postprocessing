@@ -35,7 +35,8 @@ import pandas as pd
 import utils_vis as vis
 import scipy
 import matplotlib.pyplot as plt
-import math
+import utils_evaluation as ev
+import torch
 
 
 class Data_Association():
@@ -419,6 +420,7 @@ class Data_Association():
                         new_id = frame['ID'].iloc[m]
                         new_meas = frame.loc[m:m]
                         tracks[new_id] = new_meas
+        print("\n")
         print("Before DA: {} unique IDs".format(self.df.groupby("ID").ngroups)) 
         print("After DA: {} unique IDs".format(newdf.groupby("ID").ngroups))
         self.df = newdf
@@ -715,7 +717,7 @@ class Data_Association():
         return 1/(2*N)*np.sum(np.log(var)+(input-target)**2/var)
         
         
-    def stitch_objects_tsmn_ll(self, THRESHOLD_X=0.3, THRESHOLD_Y=0.03):
+    def stitch_objects_tsmn_ll_2(self, THRESHOLD_X=0.3, THRESHOLD_Y=0.03):
         '''
         similar to stitch_objects_tsmn
         instead of binary fit, calculate a loss (log likelihood)
@@ -728,8 +730,8 @@ class Data_Association():
         pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
        
         n_car = len(groupList)
-        CX = np.zeros((n_car, n_car)) # cone of X
-        CY = np.zeros((n_car, n_car)) # 
+        CX = np.ones((n_car, n_car)) * 999 # cone of X
+        CY = np.ones((n_car, n_car)) * 999 # 
         track_len = []
         for i,c1 in enumerate(groupList):
             print("\rTracklet {}/{}".format(i,n_car),end = "\r",flush = True)
@@ -741,8 +743,10 @@ class Data_Association():
             track1 = np.array(track1[pts])
             x1 = (track1[:,0] + track1[:,2])/2
             y1 = (track1[:,1] + track1[:,7])/2
-            if len(track1)<2:
-                v = np.sign(track1[2]-track1[0])
+            if len(track1)<1:
+                continue
+            elif len(track1)<2:
+                v = np.sign(track1[0,2]-track1[0,0])
                 b = x1-v*ct1 # recalculate y-intercept
                 fit = np.array([v,b])
                 fity = np.array([0,y1])
@@ -762,80 +766,186 @@ class Data_Association():
 
                 target = np.polyval(fit, t2)
                 targety = np.polyval(fity, t2)
-                var = np.abs(t2-ct1) * 0.05 # TODO: compare to the closest time instead of ct1
-                vary = np.abs(t2-ct1) * 0.005
-                CX[i,j] = self.log_likelihood(x2, target, var)
-                CY[i,j] = self.log_likelihood(y2, targety, vary)
-                    
-        CX = CX < THRESHOLD_X
-        CY = CY < THRESHOLD_Y
+                sorted_t = [t1[0],t1[-1],t2[0],t2[-1]]
+                sorted_t.sort()
+                pt1 = (sorted_t[1]+sorted_t[2])/2 # closest t on track1
+                var = np.abs(t2-pt1) * 0.03 # TODO: compare to the closest time instead of ct1
+                vary = np.abs(t2-pt1) * 0.03
+                # CX[i,j] = self.log_likelihood(x2, target, var)
+                # CY[i,j] = self.log_likelihood(y2, targety, vary)
+                input = torch.transpose(torch.tensor([x2,y2]),0,1)
+                target = torch.transpose(torch.tensor([target, targety]),0,1)
+                var = torch.transpose(torch.tensor([var,vary]),0,1)
+                
+        # for debugging only
+        self.CX = CX
+        self.CY = CY
+        self.groupList = groupList
+        BX = CX < THRESHOLD_X
+        BY = CY < THRESHOLD_Y
         
         for i in range(len(CX)): # make CX CY symmetrical
-            CX[i,:] = np.logical_and(CX[i,:], CX[:,i])
-            CY[i,:] = np.logical_and(CY[i,:], CY[:,i])
+            BX[i,:] = np.logical_and(BX[i,:], BX[:,i])
+            BY[i,:] = np.logical_and(BY[i,:], BY[:,i])
             
-        match = np.logical_and(CX,CY) # symmetrical
+        match = np.logical_and(BX,BY) # symmetrical
         
         # 2: sort by length of tracks descending
+        # sort_len = sorted(range(len(track_len)), key=lambda k: track_len[k])[::-1]
+        # matched = set()
+        # for i in sort_len:
+        #     idx = np.where(match[:,i])[0]
+        #     if len(idx)>0:
+        #         parent = {groupList[ii]: groupList[i] for ii in idx if (ii not in matched) and (i not in matched)}
+        #         self.df['ID'] = self.df['ID'].apply(lambda x: parent[x] if x in parent else x)
+        #     matched = matched.union(set(idx))
+        
+        # 3. deal with the most constrained track first
         sort_len = sorted(range(len(track_len)), key=lambda k: track_len[k])[::-1]
         matched = set()
         for i in sort_len:
+            if i in matched:
+                continue
+
+            matched_i = set()
+            matched_i.add(i)
             idx = np.where(match[:,i])[0]
-            if len(idx)>0:
-                parent = {groupList[ii]: groupList[i] for ii in idx if (ii not in matched) and (i not in matched)}
-                self.df['ID'] = self.df['ID'].apply(lambda x: parent[x] if x in parent else x)
-            matched = matched.union(set(idx))
+            if len(idx) == 0: # no assignment
+                continue
+            elif len(idx) == 1: # only one choice, assign it!
+                parent = {groupList[idx[0]]: groupList[i]}
+                matched_i.add(idx[0])
+            else: # more than one candidates, review internal conflicts
+                track_c = CY[idx,i]
+                sort_c = sorted(range(len(track_c)), key=lambda k: track_c[k])[::-1] # order of processing
+                # conflict = set()
+                parent = {}
+                for c in sort_c:
+                    # check if c is conflict with anyone in the matched_interval
+                    # for m in matched_i:
+                    if all(BX[idx[c],list(matched_i)]) and all(BY[idx[c],list(matched_i)]): # if c does not conflict with any in matched_i
+                        # continue
+                            # conflict.add(idx[c])
+                            # break
+                        if (idx[c] not in matched):
+                            parent[groupList[idx[c]]] = groupList[i]
+                            matched_i.add(idx[c])
+            # print(parent)
+            self.df['ID'] = self.df['ID'].apply(lambda x: parent[x] if x in parent else x)
+            matched = matched.union(matched_i)  
+        
+        print("\n")
         print("Before DA: {} unique IDs".format(len(groupList))) 
         print("After DA: {} unique IDs".format(self.df.groupby("ID").ngroups))
       
         return 
     
-    
-    def get_invalid(self, df):
+    def stitch_objects_tsmn_ll(self, THRESHOLD_X=0.3, THRESHOLD_Y=0, VARX=0.03, VARY=0.03):
         '''
-        valid: length covers more than 50% of the FOV
-        invalid: length covers less than 10% of FOV, or
-                crashes with any valid tracks
-        undetermined: tracks that are short but not overlaps with any valid tracks
-        '''
+        similar to stitch_objects_tsmn
+        instead of binary fit, calculate a loss (log likelihood)
         
-        xmin, xmax = min(df["x"].values),max(df["x"].values)
-        groups = df.groupby("ID")
+        THRESHOLD_1: allowable acceleration/deceleration (m/s2)
+        THRESHOLD_2: allowable steering angle (rad)
+        '''
+        groups = self.df.groupby("ID")
         groupList = list(groups.groups)
         pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+       
+        n_car = len(groupList)
+        CX = np.ones((n_car, n_car)) * 999 # cone of X
+        CY = np.ones((n_car, n_car)) * 999 # 
+        track_len = []
+        loss = torch.nn.GaussianNLLLoss()
         
-        valid = {}
-        invalid = set()
-        for carid, group in groups:
-            if (max(group.x.values)-min(group.x.values)>0.4*(xmax-xmin)): # long tracks
-                frames = group["Frame #"].values
-                first = group.head(1)
-                last = group.tail(1)
-                x0, x1 = max(first.bbr_x.values[0],first.fbr_x.values[0]),min(first.bbr_x.values[0],first.fbr_x.values[0])
-                x2, x3 = min(last.bbr_x.values[0],last.fbr_x.values[0]),max(last.bbr_x.values[0],last.fbr_x.values[0])
-                y0, y1 = max(first.bbr_y.values[0],first.bbl_y.values[0]),min(first.bbr_y.values[0],first.bbl_y.values[0])
-                y2, y3 = min(last.bbr_y.values[0],last.bbl_y.values[0]),max(last.bbr_y.values[0],last.bbl_y.values[0])
-                t0,t1 = min(frames), max(frames)
-                valid[carid] = [np.array([t0,x0,t0,x1,t1,x2,t1,x3]),np.array([t0,y0,t0,y1,t1,y2,t1,y3])]
+        for i,c1 in enumerate(groupList):
+            print("\rTracklet {}/{}".format(i,n_car),end = "\r",flush = True)
+            # get the fitted line for c1
+            track1 = groups.get_group(c1)
+            track_len.append(len(track1))
+            t1 = track1["Frame #"].values
+            ct1 = np.nanmean(t1)
+            track1 = np.array(track1[pts])
+            x1 = (track1[:,0] + track1[:,2])/2
+            y1 = (track1[:,1] + track1[:,7])/2
+            if len(track1)<1:
+                continue
+            elif len(track1)<2:
+                v = np.sign(track1[0,2]-track1[0,0])
+                b = x1-v*ct1 # recalculate y-intercept
+                fit = np.array([v,b])
+                fity = np.array([0,y1])
+            else:
+                # fit time vs. x
+                fit = np.polyfit(t1,x1,1)
+                fity = np.polyfit(t1,y1,1)
                 
-        # check crash within valid
-        valid_list = list(valid.keys())
-        for i,car1 in enumerate(valid_list):
-            bx,by = valid[car1]
-            for car2 in valid_list[i+1:]:
-                ax,ay = valid[car2]
-                ioux = self.iou_ts(ax,bx)
-                iouy = self.iou_ts(ay,by)
-                if ioux > 0 and iouy > 0: # trajectory overlaps with a valid track
-                    if bx[4]-bx[0] > ax[4]-ax[0]: # keep the longer track    
-                        invalid.add(car2)
-                    else:
-                        invalid.add(car1)
-        valid = set(valid.keys())
-        valid = valid-invalid
-        print("Valid tracklets: {}/{}".format(len(valid),len(groupList)))
+            for j in range(n_car):
+                if (i == j):
+                    continue
+                track2 = groups.get_group(groupList[j])
+                t2 = track2["Frame #"].values
+                track2 = np.array(track2[pts])
+                x2 = (track2[:,0] + track2[:,2])/2
+                y2 = (track2[:,1] + track2[:,7])/2
 
-        return valid
+                target = np.polyval(fit, t2)
+                targety = np.polyval(fity, t2)
+                sorted_t = [t1[0],t1[-1],t2[0],t2[-1]]
+                sorted_t.sort()
+                pt1 = (sorted_t[1]+sorted_t[2])/2 # closest t on track1
+                var = np.abs(t2-pt1) * VARX # TODO: compare to the closest time instead of ct1
+                vary = np.abs(t2-pt1) * VARY
+                input = torch.transpose(torch.tensor([x2,y2]),0,1)
+                target = torch.transpose(torch.tensor([target, targety]),0,1)
+                var = torch.transpose(torch.tensor([var,vary]),0,1)
+                CX[i,j] = loss(input,target,var)
+                
+        # for debugging only
+        self.CX = CX
+        self.groupList = groupList
+        
+        BX = CX < THRESHOLD_X
+        
+        for i in range(len(CX)): # make CX CY symmetrical
+            BX[i,:] = np.logical_and(BX[i,:], BX[:,i])
+            
+        # 4. start by sorting CX
+        a,b = np.unravel_index(np.argsort(CX, axis=None), CX.shape)
+        # parent = {idx:idx for idx in range(n_car)} # temporary match to find path
+        parent = {}
+        path = {idx: {idx} for idx in range(n_car)} # disjoint set
+        for i in range(len(a)):
+            if CX[a[i],b[i]] > THRESHOLD_X:
+                break
+            else: 
+                path_a, path_b = list(path[a[i]]),list(path[b[i]])
+                if np.all(BX[np.ix_(path_a, path_b)]): # if no conflict with any path
+                    path[a[i]] = path[a[i]].union(path[b[i]])
+                    for aa in path[a[i]]:
+                        path[aa] = path[a[i]].copy()
+                    
+            # print({groupList[key]:[groupList[ii] for ii in value] for key,value in path.items() if len(value)>1}) 
+
+
+        # modify ID
+        while path:
+            key = list(path.keys())[0]
+            reid = {groupList[old]: groupList[key] for old in path[key]} # change id=groupList[v] to groupList[key]
+            self.df = self.df.replace({'ID': reid})
+            for v in list(path[key]) + [key]:
+                try:
+                    path.pop(v)
+                except KeyError:
+                    pass
+
+            
+                
+        print("\n")
+        print("Before DA: {} unique IDs".format(len(groupList))) 
+        print("After DA: {} unique IDs".format(self.df.groupby("ID").ngroups))
+      
+        return 
     
     def confidence(self, track, beta, xmin, xmax):
         '''
@@ -996,13 +1106,30 @@ class Data_Association():
         framesnap = framesnap.groupby('ID').apply(self.average_meas)
         return framesnap
       
-           
-    def postprocess(self, REMOVE_INVALID=True, SELECT_ONE_MEAS=True, CONNECT_TRACKS=True, SMOOTH_TRACKS=True, SAVE=""):
+    def associate(self):
+        method = self.params["method"]
+        thresh1, thresh2 = self.params["threshold"]
+            
+        if "tsmn" in method:
+            self.stitch_objects_tsmn_ll(thresh1, thresh2) # 0.3, 0.04 for tsmn
+        elif "gnn" in method:
+            self.stitch_objects_gnn(thresh1, thresh2)
+        elif "bm" in method:
+            self.stitch_objects_bm(thresh1, thresh2)
+        elif "jpda" in method:
+            self.stitch_objects_jpda(thresh1, thresh2)
+        else:
+            print("DA method not defined")
+        return
+    
+
+    
+    def postprocess(self, REMOVE_INVALID=True, SELECT_ONE_MEAS=True, CONNECT_TRACKS=True, REMOVE_OUTLIER=True, SAVE=""):
         # count lane spaned for each ID
         
         if REMOVE_INVALID:
             print("Remove invalid tracks...")
-            valid = self.get_invalid(self.df) # remove obvious invalid tracks from df
+            valid,collision = ev.get_invalid(self.df) # remove obvious invalid tracks from df
             self.df = self.df.groupby("ID").filter(lambda x: (x['ID'].iloc[0] in valid)).reset_index(drop=True)
         # check lane-change vehicles
         groups = self.df.groupby("ID")
@@ -1019,9 +1146,9 @@ class Data_Association():
             self.df = utils.applyParallel(self.df.groupby("Frame #"), self.del_repeat_meas_per_frame).reset_index(drop=True) # keep only one meas per frame per track
         if CONNECT_TRACKS:
             self.df = self.df.groupby("ID").apply(utils.connect_track).reset_index(drop=True)     # connect tracks such that frame # are continuous
-        if SMOOTH_TRACKS:
-            # TODO: implement this
-            self.smooth_tracks() # gaussian filtering to remove outliers
+        if REMOVE_OUTLIER:
+            self.df = self.df.groupby("ID").apply(ev.mark_outliers_car).reset_index(drop=True)
+            self.df = self.df[self.df["Generation method"]!="outlier"]
         if len(SAVE)>0:
             self.df.to_csv(SAVE, index = False)
         return
@@ -1042,25 +1169,27 @@ if __name__ == "__main__":
     file_path = data_path+r"\MC_reinterpolated.csv"
     
     params = {"method": "tsmn",
-              "start": 500,
-              "end": 1000,
+              "threshold": (0,0), # 0.3, 0.04 for tsmn
+              "start": 1000,
+              "end": 2000,
               "plot_start": 0, # for plotting tracks in online methods
               "plot_end": 10,
               "preprocess": False
               }
     
     da = Data_Association(file_path, params)
-    # da.stitch_objects_gnn(1.5,0)
-    # da.stitch_objects_bm(1.5,0)
-    da.stitch_objects_tsmn_ll(30,10) # 0.3, 0.04 for tsmn
-    # da.stitch_objects_confidence(THRESHOLD_AFF=6, THRESHOLD_CONF=0.5) # not finish debugging
+    # da.df = da.df[da.df["ID"].isin([293,299,310])]
+    # da.df = da.df[da.df["ID"].isin([304,305,313,316,323,334,341])]
+    # da.associate()
+    # da.evaluate() # absence of GT
+    da.stitch_objects_tsmn_ll(THRESHOLD_X=50, THRESHOLD_Y=0, VARX = 0.02, VARY=0.01)
     da.postprocess(REMOVE_INVALID=False, 
-                   SELECT_ONE_MEAS=False, 
-                   CONNECT_TRACKS=False, 
-                   SMOOTH_TRACKS=False,
-                   # SAVE = data_path+r"\DA\p1c5_tsmn.csv"
-                    SAVE = ""
-                   )
+                    SELECT_ONE_MEAS=False, 
+                    CONNECT_TRACKS=False, 
+                    REMOVE_OUTLIER=False,
+                    SAVE = data_path+r"\DA\MC_tsmn.csv"
+                    # SAVE = ""
+                    )
     da.visualize_BA()
     
     
