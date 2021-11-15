@@ -62,7 +62,7 @@ class Data_Association():
         # if len(params["lanes"]) > 0:
         #     self.df = self.df[self.df["lane"].isin(params["lanes"])]
         self.original = self.df.copy()
-    
+        self.data = {}
     
     def dist_score(self, B, B_data, DIST_MEAS='maha', DIRECTION=True):
         '''
@@ -1123,14 +1123,20 @@ class Data_Association():
         return
     
 
-    
-    def postprocess(self, REMOVE_INVALID=True, SELECT_ONE_MEAS=True, CONNECT_TRACKS=True, REMOVE_OUTLIER=True, SAVE=""):
-        # count lane spaned for each ID
+    def evaluate(self):
+        '''
+        get_invalid
+        mark_outliers
+        '''
+        print("{} tracklets are stitched".format(self.original.groupby("ID").ngroups-self.df.groupby("ID").ngroups))
+        valid0,collision0 = ev.get_invalid(self.original, ratio=0.4)
+        valid,collision = ev.get_invalid(self.df, ratio=0.4) # remove obvious invalid tracks from df
+        print("{} more valid tracklets are created".format(len(valid)-len(valid0)))
+        self.data["valid"] = valid
+        self.data["collision"] = collision
+        print("Valid tracklets: {}/{}".format(len(valid), self.df.groupby("ID").ngroups))
+        print("Collision with valid: {}".format(collision))
         
-        if REMOVE_INVALID:
-            print("Remove invalid tracks...")
-            valid,collision = ev.get_invalid(self.df) # remove obvious invalid tracks from df
-            self.df = self.df.groupby("ID").filter(lambda x: (x['ID'].iloc[0] in valid)).reset_index(drop=True)
         # check lane-change vehicles
         groups = self.df.groupby("ID")
         multiple_lane = set()
@@ -1139,16 +1145,39 @@ class Data_Association():
                 # frames = group.groupby("Frame #")
                 # for frame_id, frame in frames:
                 if np.abs(np.max(group[["bbr_y","bbl_y"]].values)-np.min(group[["bbr_y","bbl_y"]].values)) > 12/3.281:
-                    multiple_lane.add(carid)
+                    if carid in valid:
+                        multiple_lane.add(carid)
                         # break
+                    
+        self.data["lane_change"] = multiple_lane
         print("Possible lane-change tracks:", multiple_lane)
+        
+        self.df = self.df.groupby("ID").apply(ev.mark_outliers_car).reset_index(drop=True)
+        outlier_ratio = {carid: np.count_nonzero(car["Generation method"].values=="outlier")/car.bbr_x.count() for carid, car in self.df.groupby("ID")}
+        self.data["outlier_ratio"] = outlier_ratio
+        outlier_high = {key: value for key, value in outlier_ratio.items() if (value > self.params["outlier_thresh"]) and (key in valid)}  
+        print("Outlier ratio above {}: {}".format(self.params["outlier_thresh"],outlier_high))
+        vis.plot_histogram(np.fromiter(outlier_ratio.values(), dtype=float), bins=40,
+                           labels="", 
+                           xlabel = "Outlier ratio", 
+                           ylabel = "Probability", 
+                           title = "Outlier ratio distribution")
+        return
+    
+    def postprocess(self, REMOVE_INVALID=True, REMOVE_OUTLIER=True, SELECT_ONE_MEAS=True, CONNECT_TRACKS=True,  SAVE=""):
+        # count lane spaned for each ID
+        
+        if REMOVE_INVALID:
+            print("Remove invalid tracks...")
+            self.df = self.df.groupby("ID").filter(lambda x: (x['ID'].iloc[0] in self.data["valid"])).reset_index(drop=True)
+        if REMOVE_OUTLIER:
+            pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+            self.df.loc[self.df["Generation method"]=="outlier", pts]=np.nan
         if SELECT_ONE_MEAS:
             self.df = utils.applyParallel(self.df.groupby("Frame #"), self.del_repeat_meas_per_frame).reset_index(drop=True) # keep only one meas per frame per track
         if CONNECT_TRACKS:
             self.df = self.df.groupby("ID").apply(utils.connect_track).reset_index(drop=True)     # connect tracks such that frame # are continuous
-        if REMOVE_OUTLIER:
-            self.df = self.df.groupby("ID").apply(ev.mark_outliers_car).reset_index(drop=True)
-            self.df = self.df[self.df["Generation method"]!="outlier"]
+        
         if len(SAVE)>0:
             self.df.to_csv(SAVE, index = False)
         return
@@ -1163,6 +1192,7 @@ class Data_Association():
             vis.plot_time_space(self.df, lanes=[lane_idx], time="frame", space="x", ax=axs[1])
             fig.tight_layout()
     
+    
 if __name__ == "__main__":
 
     data_path = r"E:\I24-postprocess\MC_tracking" 
@@ -1170,26 +1200,26 @@ if __name__ == "__main__":
     
     params = {"method": "tsmn",
               "threshold": (0,0), # 0.3, 0.04 for tsmn
-              "start": 1000,
-              "end": 2000,
+              "start": 0,
+              "end": 1000,
               "plot_start": 0, # for plotting tracks in online methods
               "plot_end": 10,
-              "preprocess": False
+              "preprocess": False,
+              "outlier_thresh": 0.25
               }
     
     da = Data_Association(file_path, params)
     # da.df = da.df[da.df["ID"].isin([293,299,310])]
     # da.df = da.df[da.df["ID"].isin([304,305,313,316,323,334,341])]
-    # da.associate()
-    # da.evaluate() # absence of GT
     da.stitch_objects_tsmn_ll(THRESHOLD_X=50, THRESHOLD_Y=0, VARX = 0.02, VARY=0.01)
-    da.postprocess(REMOVE_INVALID=False, 
-                    SELECT_ONE_MEAS=False, 
-                    CONNECT_TRACKS=False, 
-                    REMOVE_OUTLIER=False,
-                    SAVE = data_path+r"\DA\MC_tsmn.csv"
-                    # SAVE = ""
-                    )
-    da.visualize_BA()
+    da.evaluate() # absence of GT
+    # da.postprocess(REMOVE_INVALID=True, 
+    #                REMOVE_OUTLIER=True,
+    #                 SELECT_ONE_MEAS=True, 
+    #                 CONNECT_TRACKS=True, 
+    #                 # SAVE = data_path+r"\DA\MC_tsmn.csv"
+    #                 SAVE = ""
+    #                 )
+    # da.visualize_BA()
     
     

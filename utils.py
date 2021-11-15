@@ -1000,7 +1000,6 @@ def connect_track(car):
         car["camera"] = car["camera"].interpolate(method='pad')
         car["direction"] = car["direction"].interpolate(method='pad')
 
-    
     return car
     
 

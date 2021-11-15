@@ -23,110 +23,141 @@ import utils_evaluation as ev
 import utils_vis as vis
 import numpy as np
 import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings("ignore")
 
 class GlobalMetrics():
     
-    def __init__(self, filepath, params, rawpath=None):
+    def __init__(self, params, raw_path, da_path=None, rec_path=None):
         '''
-        
         '''
-        self.df = utils.read_data(filepath)
+        self.raw = utils.read_data(raw_path)
         print("Select from Frame {} to {}".format(params["start"], params["end"] ))
-        self.df = self.df[(self.df["Frame #"] >= params["start"]) & (self.df["Frame #"] <= params["end"])]
+        self.raw = self.raw[(self.raw["Frame #"] >= params["start"]) & (self.raw["Frame #"] <= params["end"])]
+        
+        if da_path:
+            self.da = utils.read_data(da_path)
+            self.da = self.da[(self.da["Frame #"] >= params["start"]) & (self.da["Frame #"] <= params["end"])]
+        else: self.da = None
+        if rec_path:
+            self.rec = utils.read_data(rec_path)
+            self.rec = self.rec[(self.rec["Frame #"] >= params["start"]) & (self.rec["Frame #"] <= params["end"])]
+        else: self.rec = None   
         self.params = params
         self.metrics = {}
         self.data = {} # storing evaluation metrics long data
-       
-        if rawpath:
-            self.raw = utils.read_data(rawpath)
-            self.raw = self.raw[(self.raw["Frame #"] >= params["start"]) & (self.raw["Frame #"] <= params["end"])]
+                
             
     def evaluate_by_frame(self):
         # extract spacing distribution
         return
       
     def evaluate(self):
-        print("*** Evaluation mode: ", self.params["mode"])
-        if self.params["mode"] == "DA":
-            groups = self.df.groupby("ID")
-            groupList = list(groups.groups)
-            self.metrics["Total tracklets"] = self.df.groupby("ID").ngroups
-            
-            # invalid/valid tracks and collision in time space
-            print("Check for valid tracks and collision...")
-            valid, collision = ev.get_invalid(self.df, ratio=0.4)
+        # evaluation raw data
+        self.metrics["Total tracklets"] = []
+        self.metrics["Valid tracklets"] = []
+        self.metrics["Collision with valid tracks"] = []
+        self.metrics["Possible lane change"] = []
+        self.metrics["Tracks with multiple detections"] = []
+        name = "Tracks > " + str(self.params["outlier_thresh"]*100) + "% outliers"
+        self.metrics[name] = []
+        
+        self.data["outlier_ratio"] = []
+        self.data['xrange'] = []
+        self.data['Width variance'] = []
+        self.data['Length variance'] = []
+        self.data['y variance'] = []
+        self.data["correction_score"] = ev.get_correction_score(self.da, self.rec)
+        
+        for df in [self.raw, self.da, self.rec]:
+            if df is None:
+                continue
+            groupList = list(df.groupby("ID").groups)
+            valid, collision = ev.get_invalid(df, ratio=self.params["outlier_thresh"])      
             invalid = set(groupList)-valid-collision
-            self.metrics["Valid tracklets"] = valid
-            self.metrics["Collision with valid tracks"] = collision
+            lane_change = ev.get_lane_change(df) - invalid
+            multiple_frames = ev.get_multiple_frame_track(df) # dict
+            outlier_ratio = {carid: np.count_nonzero(car["Generation method"].values=="outlier")/car.bbr_x.count() for carid, car in df.groupby("ID")}
+            outlier_high = {key: value for key, value in outlier_ratio.items() if (value > self.params["outlier_thresh"]) and (key in valid)}  
+            xranges = ev.get_x_covered(df, ratio=True)  
+            w_var = ev.get_variation(df, "width")
+            l_var = ev.get_variation(df, "length")
+            y_var = ev.get_variation(df, "y")
+            df = df.groupby("ID").apply(ev.mark_outliers_car).reset_index(drop=True)
             
-            # lane-change tracks
-            print("Check for lane change...")
-            lane_change = ev.get_lane_change(self.df) - invalid
-            self.metrics["Possible lane change"] = lane_change
+            # metrics are to be printed (in print_metrics)
+            self.metrics["Total tracklets"].append(df.groupby("ID").ngroups)
+            self.metrics["Valid tracklets"].append(valid)
+            self.metrics["Collision with valid tracks"].append(collision)
+            self.metrics["Possible lane change"].append(lane_change)
+            self.metrics["Tracks with multiple detections"].append(multiple_frames)
+            self.metrics[name].append(outlier_high)
             
-            # tracks that have multiple meas per frame
-            print("Check for multiple detections...")
-            multiple_frames = ev.get_multiple_frame_track(self.df) # dict
-            if hasattr(self,"raw"):
-                multiple_frames_raw = ev.get_multiple_frame_track(self.raw) 
-                self.metrics["Tracks with multiple detections"] = {key:value for key,value in multiple_frames.items() if (key not in multiple_frames_raw or value != multiple_frames_raw[key])}
-            else:
-                self.metrics["Tracks with multiple detections"] = multiple_frames
-            
-            # outliers
-            print("Checking for outliers...")
-            self.raw = self.raw.groupby("ID").apply(ev.mark_outliers_car).reset_index(drop=True)
-            outlier_ratio_raw = {carid: np.count_nonzero(car["Generation method"].values=="outlier")/car.bbr_x.count() for carid, car in self.raw.groupby("ID")}
-            self.df = self.df.groupby("ID").apply(ev.mark_outliers_car).reset_index(drop=True)
-            outlier_ratio = {carid: np.count_nonzero(car["Generation method"].values=="outlier")/car.bbr_x.count() for carid, car in self.df.groupby("ID")}
-            outlier_high = {key: value for key, value in outlier_ratio.items() if (value > self.params["outlier_thresh"]) and (key in valid)}
-            name = "Tracks > " + str(self.params["outlier_thresh"]*100) + "% outliers"
-            self.metrics[name] = outlier_high
-            self.data["outlier_ratio"] = [outlier_ratio_raw, outlier_ratio]
-            
-            # xrange covered
-            xranges0 = ev.get_x_covered(self.raw, ratio=True)
-            xranges1 = ev.get_x_covered(self.df, ratio=True)
-            self.data['xrange'] = [xranges0, xranges1]
-            
-            # change of xrange covered
-            # xrange_delta = {key: value-xranges0[key] for key,value in xranges1.items() if key in xranges0}
-            
-            # # w,h,y distribution carid: (mean, std)
-            # w_dist0 = ev.get_distribution(self.raw, "width")
-            # w_dist1 = ev.get_distribution(self.df, "width")
-            
-            # l_dist0 = ev.get_distribution(self.raw, "length")
-            # l_dist1 = ev.get_distribution(self.df, "length")
-            
-            # y_dist0 = ev.get_distribution(self.raw, "y")
-            # y_dist1 = ev.get_distribution(self.df, "y")
-            
+            # data is to be plotted (in visualize)
+            self.data["outlier_ratio"].append(outlier_ratio)
+            self.data['xrange'].append(xranges)
+            self.data['Width variance'].append(w_var)
+            self.data['Length variance'].append(l_var)
+            self.data['y variance'].append(y_var)
+
+        self.metrics["Score > " + str(self.params["score_thresh"])] = {carid:score for carid,score in self.data["correction_score"].items() if score>self.params["score_thresh"]}
         return
 
     def visualize_metrics(self):
         for name in self.data:
             data = self.data[name]
-            if "xrange" in name:
+            if isinstance(data, list):
                 data_list = [np.fromiter(data_item.values(), dtype=float) for data_item in data]
-                vis.plot_histogram(data_list, bins=40,
-                                   labels=["raw", self.params["mode"]], 
-                                   xlabel="FOV covered (%)", 
-                                   ylabel="Probability", 
-                                   title="X range (%) distribution")
-            elif "outlier" in name:
-                data_list = [np.fromiter(data_item.values(), dtype=float) for data_item in data]
-                vis.plot_histogram(data_list, bins=40,
-                                   labels=["raw", self.params["mode"]], 
-                                   xlabel="Outlier ratio", 
-                                   ylabel="Probability", 
-                                   title="Outlier ratio distribution")
-      
+            else:
+                data_list = np.fromiter(data.values(), dtype=float)
+            if  name == "xrange":
+               xlabel = "FOV covered (%)"
+               ylabel = "Probability"
+               title = "X range (%) distribution"
+               
+            elif "delta" in name:
+                xlabel = name
+                ylabel = "Probability"
+                title = "{} distribution".format(name)
+                
+            elif name == "outlier_ratio":
+                xlabel = "Outlier ratio"
+                ylabel = "Probability"
+                title = "Outlier ratio distribution"
+            
+            elif "variance" in name:
+                xlabel = name
+                ylabel = "Probability"
+                title = "{} variance distribution".format(name[0])
+            
+            elif "correction_score" in name:
+                xlabel = "Correction score"
+                ylabel = "Probability"
+                title = "Correction score distribution"
+
+            vis.plot_histogram(data_list, bins=40,
+                                   labels="" if len(data_list)==1 else ["raw", "da", "rec"], 
+                                   xlabel= xlabel, 
+                                   ylabel= ylabel, 
+                                   title= title)
+         
+        # plot correction score vs. DA's outlier ratio
+        plt.figure()
+        for carid, score in self.data["correction_score"].items():
+            try:
+                plt.scatter(score,self.data["outlier_ratio"][1][carid], s=2, c='b')
+            except:
+                pass
+        plt.xlabel("correction score")
+        plt.ylabel("outlier ratio")  
+        plt.title("Correction score vs. outlier ratio")
+        return
+         
     def print_metrics(self):
         print("\n")
         for name in self.metrics:
             if "Valid tracklets" in name: 
-                print("{:<30}: {}".format(name,len(self.metrics[name])))
+                print("{:<30}: {}".format(name,[len(item) for item in self.metrics[name]]))
 
             else:
                 if (not isinstance(self.metrics[name], int)) and (len(self.metrics[name])==0):
@@ -138,38 +169,37 @@ class GlobalMetrics():
         '''
         identify a problematic track
         '''
-        car = self.df[self.df["ID"]==carid]
+        # raw = self.raw[self.raw["ID"]==carid]
+        da = self.da[self.da["ID"]==carid]
+        rec = self.rec[self.rec["ID"]==carid]
         if plot:
-            vis.plot_track_df(car)
+            vis.plot_track_compare(da,rec)
         if dashboard:
-            vis.dashboard([car])
+            vis.dashboard([da, rec],["da","rectified"])
         return
     
     
 if __name__ == "__main__":
     
-
     data_path = r"E:\I24-postprocess\MC_tracking" 
-    file_path = data_path+r"\DA\MC_tsmn.csv"
-    mode = "DA"
-    
-    raw_file_path = data_path+r"\MC_reinterpolated.csv"
-    # mode = "raw"
+    raw_path = data_path+r"\MC_reinterpolated.csv"
+    da_path = data_path+r"\DA\MC_tsmn.csv"
+    rec_path = data_path+r"\rectified\MC_tsmn.csv"
     
     params = {
-              "start": 1000,
-              "end": 2000,
+              "start": 0,
+              "end": 1000,
               "outlier_thresh": 0.25,
-              "mode": mode
+              "score_thresh": 3
               }
 
     
-    gm = GlobalMetrics(file_path, params, rawpath=raw_file_path)
+    gm = GlobalMetrics(params, raw_path, da_path, rec_path)
     gm.evaluate()
     gm.print_metrics()
     gm.visualize_metrics()
     
-    # gm.evaluate_single_track(133, plot=True, dashboard=True)
+    # gm.evaluate_single_track(216, plot=True, dashboard=True)
     
    
     

@@ -8,6 +8,8 @@ This utils file contains functions that compute
 """
 import numpy as np
 from shapely.geometry import Polygon
+from scipy.stats import variation
+import numpy.linalg as LA
 
 def iou_ts(a,b):
     """
@@ -24,19 +26,19 @@ def iou_ts(a,b):
     iou - float between [0,1] 
     """
     a,b = np.reshape(a,(1,-1)), np.reshape(b,(1,-1))
-
+    if np.isnan(np.sum(a)+np.sum(b)):
+        return 0
     p = Polygon([(a[0,2*i],a[0,2*i+1]) for i in range(4)])
     q = Polygon([(b[0,2*i],b[0,2*i+1]) for i in range(4)])
-
     intersection_area = p.intersection(q).area
     union_area = min(p.area, q.area)
     iou = float(intersection_area/union_area)
-            
+      
     return iou
     
 def get_invalid(df, ratio=0.4):
     '''
-    valid: length covers more than 50% of the FOV
+    valid: length covers more than RATIO percent of the FOV
     invalid: length covers less than 10% of FOV, or
             crashes with any valid tracks
     undetermined: tracks that are short but not overlaps with any valid tracks
@@ -45,8 +47,7 @@ def get_invalid(df, ratio=0.4):
     xmin, xmax = min(df["x"].values),max(df["x"].values)
     fmin, fmax = min(df["Frame #"].values),max(df["Frame #"].values)
     groups = df.groupby("ID")
-    groupList = list(groups.groups)
-    pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    # s = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
     
     valid = {}
     collision = set()
@@ -77,7 +78,7 @@ def get_invalid(df, ratio=0.4):
                     collision.add(car1)
     valid = set(valid.keys())
     valid = valid-collision
-    print("Valid tracklets: {}/{}".format(len(valid),len(groupList)))
+    # print("Valid tracklets: {}/{}".format(len(valid),len(groupList)))
 
     return valid, collision
 
@@ -105,9 +106,9 @@ def mark_outliers_car(car):
     Identify outliers based on y,w,l
     mark as outliers but not removing
     '''
-    my,sy = np.median(car.y.values), np.nanstd(car.y.values)
-    mw,sw = np.median(car.width.values), np.nanstd(car.width.values)
-    ml,sl = np.median(car.length.values), np.nanstd(car.length.values)
+    my,sy = np.nanmedian(car.y.values), np.nanstd(car.y.values)
+    mw,sw = np.nanmedian(car.width.values), np.nanstd(car.width.values)
+    ml,sl = np.nanmedian(car.length.values), np.nanstd(car.length.values)
     
     valid = np.logical_and.reduce(((my-sy*2)<=car.y.values, car.y.values<=(my+2*sy), 
                            (mw-sw*2)<=car.width.values, car.width.values<=(mw+2*sw), 
@@ -128,14 +129,34 @@ def get_x_covered(df, ratio=True):
             xranges[key] /= fov
     return xranges
 
-def get_distribution(df, col):
+def get_variation(df, col):
     '''
-    return a dictionary with key=carid, value=(mean, std) of column name
+    return a dictionary with key=carid, value=coefficient of variation (var/mean)
     '''
     output = {}
     groups = df.groupby("ID")
     for carid,group in groups:
-        output[carid] = (np.nanmean(group[col].values), np.nanstd(group[col].values))
+        var = variation(group[col].values, axis=0)
+        if np.isnan(var):
+            continue
+        output[carid] = var
     return output
     
+def get_correction_score(df_raw, df_rec):
+    groups_raw = df_raw.groupby("ID")
+    groups_rec = df_rec.groupby("ID")
     
+    pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    
+    scores = {}
+    for carid, rec in groups_rec:
+        try:
+            raw = groups_raw.get_group(carid)
+            diff = np.array(raw[pts]).astype("float")-np.array(rec[pts]).astype("float")
+            score = np.nanmean(LA.norm(diff,axis=1))
+            scores[carid] = score
+        except:
+            pass
+    return scores
+
+

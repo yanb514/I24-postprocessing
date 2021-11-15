@@ -107,7 +107,7 @@ def draw_map_box(Y, nO, lats, lngs):
     insertapikey(map_name)
     return jupyter_display(map_name)
     
-def plot_track(x, y, x_id, y_id, xmin, xmax, frame_id = 0, length=15,width=4):
+def plot_frame(x, y, x_id, y_id, xmin, xmax, frame_id = 0, length=15,width=4):
     fig, ax = plt.subplots(figsize=(length,width))
 
     for i in range(len(x)):
@@ -134,6 +134,29 @@ def plot_track(x, y, x_id, y_id, xmin, xmax, frame_id = 0, length=15,width=4):
     plt.xlim([xmin,xmax])
     plt.ylim([0,45])
     plt.title(frame_id)
+    plt.legend()
+    plt.show() 
+    return
+
+def plot_track(x):
+    fig, ax = plt.subplots(figsize=(15,1))
+
+    for i in range(len(x)):
+        coord = x[i,:]
+        coord = np.reshape(coord,(-1,2)).tolist()
+        coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+        xs, ys = zip(*coord) #lon, lat as x, y
+        plt.plot(xs,ys, c='r', label='pred' if i==0 else '')#alpha=i/len(D)
+        # plt.text(xs[0], ys[0], str(x_id[i]), fontsize=8)
+        plt.scatter(x[i,2],x[i,3],color='r') # 
+
+    
+    plt.xlabel('meter')
+    plt.ylabel('meter')
+    
+    # plt.xlim([xmin,xmax])
+    # plt.ylim([0,45])
+    # plt.title(frame_id)
     plt.legend()
     plt.show() 
     return
@@ -364,12 +387,23 @@ def plot_histogram(data_list, bins, labels, xlabel, ylabel, title):
     ylabel
     title
     '''
-    bs=np.histogram(np.hstack((data_list)), bins=bins)[1]
-    bw = bs[1]-bs[0]
+    # remove nans
+    
     color = ["r","g","b"]
     fig, ax1 = plt.subplots(1, 1)
-    for i,data in enumerate(data_list):
-        ax1.hist(data, bins = bs, density = True, weights = [bw]*len(data), facecolor=color[i%len(color)], alpha=0.75, label=labels[i])
+    if isinstance(data_list, list):
+        for data in data_list:
+            data = data[~np.isnan(data)]
+        bs=np.histogram(np.hstack((data_list)), bins=bins)[1]
+        bw = bs[1]-bs[0]
+        for i,data in enumerate(data_list):
+            ax1.hist(data, bins = bs, density = True, weights = [bw]*len(data), facecolor=color[i%len(color)], alpha=0.75, label=labels[i])
+    else:
+        data_list = np.fromiter(data_list, dtype=float)
+        data_list = data_list[~np.isnan(data_list)]
+        bs=np.histogram(data_list, bins=bins)[1]
+        bw = bs[1]-bs[0]
+        ax1.hist(data_list, bins = bs, density = True, weights = [bw]*len(data_list), facecolor=color[0], alpha=0.75, label=labels)
     ax1.set_xlabel(xlabel)
     ax1.set_ylabel(ylabel)
     ax1.set_title(title)
