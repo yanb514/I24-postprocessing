@@ -11,8 +11,8 @@ Data format:
 2. `Timestamp`: Unix timestamp
 3. `ID`: unique vehicle ID
 4. `Object class`: vehicle type
-5. :simple_smile: `BBox xmin/ymin/xmax/ymax`: 2D bounding box dimensions
-6. * `vel_x/vel_y`: velocity
+5. `BBox xmin/ymin/xmax/ymax`: 2D bounding box dimensions
+6. ** `vel_x/vel_y`: velocity
 7. * `fbrx/y`: the pixel coordinates of the front bottom right corner w.r.t. each vehicle's traveling direction
 8. * `fblx/y`: ... front bottom left ...
 9. * `bbrx/y`: ... back bottom right ...
