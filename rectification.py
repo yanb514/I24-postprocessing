@@ -21,6 +21,7 @@ class Rectification():
         self.df = self.df[(self.df["Frame #"] >= params["start"]) & (self.df["Frame #"] <= params["end"])]
         self.original = self.df.copy()
         self.params = params
+        self.data = {}
         return
         
     def obj1(self, X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
@@ -273,6 +274,7 @@ class Rectification():
                                    title= "Acceleration distribution")
         if SCORE_DIST:
             score = ev.get_correction_score(self.original, self.df)
+            self.data["correction_score"]=score
             vis.plot_histogram(score.values(), bins=40,
                                    labels=[""], 
                                    xlabel= "Score", 
@@ -349,15 +351,15 @@ if __name__ == "__main__":
     re.rectify()
     #%%
     re.postprocess(REMOVE_COLLISION=False, 
-                   EXTEND = False,
-                   SAVE = data_path+r"\rectified\MC_tsmn.csv"
+                   EXTEND = True,
+                    SAVE = data_path+r"\rectified\MC_tsmn.csv"
                     # SAVE = ""
                     )
     #%%
-    re.visualize(TIME_SPACE = False,
-                  SPEED_DIST = False,
-                  ACCELERATION_DIST = False,
-                  SCORE_DIST = True)
+    # re.visualize(TIME_SPACE = True,
+    #               SPEED_DIST = True,
+    #               ACCELERATION_DIST = True,
+    #               SCORE_DIST = True)
     # %%
     # re.evaluate_single_track(216, plot=True, dashboard=True)
     # # %%

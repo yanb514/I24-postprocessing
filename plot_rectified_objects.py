@@ -403,8 +403,7 @@ if __name__ == "__main__":
          # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\FOR ANNOTATORS\p1c24_gt.csv"
          csv_file = r"E:\I24-postprocess\0616-dataset-alpha\3D tracking\rectified\{}_{}.csv".format(camera_name,sequence_idx)  
          # csv_file = r"E:\I24-postprocess\0616-dataset-alpha\Automatic 3D (uncorrected)\{}_{}_track_outputs_3D.csv".format(camera_name,sequence_idx)
-         sequence = r"E:\I24-postprocess\0616-dataset-alpha\Raw Video\{}_{}.mp4".format(camera_name,sequence_idx)
-         
+ 
          BOI = [1244,1279,1333,1375,1437,1536,1578,1608,1669,1714,1782]
     
      plot_vehicle_csv(sequence,csv_file,frame_rate = frame_rate,show_2d = show_2d,show_3d = show_3d,show_LMCS = show_LMCS,show_rectified = show_rectified, save = save,ds=ds)

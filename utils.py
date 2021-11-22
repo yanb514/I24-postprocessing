@@ -452,14 +452,21 @@ def extend_prediction(car, args):
     xlast = car['x'].iloc[-1]    
     xfirst = car['x'].iloc[0]
     
+    pts_fixed = ["ID","Object class","BBox xmin","BBox ymin","BBox xmax","BBox ymax","vel_x","vel_y","direction","camera","acceleration","height", "ts_bias for cameras ['p1c2', 'p1c3', 'p1c4']","lane"]
+    
     if (dir == 1) & (xlast < xmax):#
         car = forward_predict(car,xmin,xmax,'xmax',maxFrame)
+        car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
     if (dir == -1) & (xlast > xmin):
         car = forward_predict(car,xmin,xmax,'xmin', maxFrame)
+        car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
     if (dir == 1) & (xfirst > xmin):#tested
         car = backward_predict(car,xmin,xmax,'xmin')
+        car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
     if (dir == -1) & (xfirst < xmax):
         car = backward_predict(car,xmin,xmax,'xmax')
+        car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
+    
     return car
         
 
@@ -994,11 +1001,13 @@ def connect_track(car):
         new_index = pd.Index(frames, name="Frame #")
         car = car.set_index("Frame #").reindex(new_index).reset_index()
         # interpolate / fill nan
+        pts_fixed = ["ID","Object class","BBox xmin","BBox ymin","BBox xmax","BBox ymax","vel_x","vel_y","Generation method","direction","camera","acceleration","speed","x","y","theta","width","length","height", "ts_bias for cameras ['p1c2', 'p1c3', 'p1c4']","lane"]
         car["Timestamp"] = car.Timestamp.interpolate()
-        car["ID"] = car["ID"].interpolate(method='pad')
-        car["Object class"] = car["Object class"].interpolate(method='pad')
-        car["camera"] = car["camera"].interpolate(method='pad')
-        car["direction"] = car["direction"].interpolate(method='pad')
+        # copy the rest column
+        car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
+        # car["Object class"] = car["Object class"].interpolate(method='pad')
+        # car["camera"] = car["camera"].interpolate(method='pad')
+        # car["direction"] = car["direction"].interpolate(method='pad')
 
     return car
     

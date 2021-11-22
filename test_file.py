@@ -14,6 +14,8 @@ import utils_vis as vis
 import numpy.linalg as LA
 import pandas as pd
 
+
+
 # %%
 if __name__ == "__main__":
     # MC tracking
@@ -26,6 +28,7 @@ if __name__ == "__main__":
     # tform_path = r"C:\Users\wangy79\Documents\I24_trajectory\manual-track-labeler-main\DATA\tform"
     # camera_name, sequence = "p1c2", "0"
     
+
     #%% preprocess MC
     df = utils.preprocess_MC(file_path, "")
     # assign frame idx TODO: may have issues

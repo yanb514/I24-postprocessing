@@ -150,9 +150,11 @@ def get_correction_score(df_raw, df_rec):
     
     scores = {}
     for carid, rec in groups_rec:
+        # rec = np.array(rec[pts]).astype("float")
         try:
             raw = groups_raw.get_group(carid)
-            diff = np.array(raw[pts]).astype("float")-np.array(rec[pts]).astype("float")
+            b = rec["Frame #"].isin(raw["Frame #"].values)
+            diff = np.array(raw[pts]).astype("float")-np.array(rec.loc[b,:][pts]).astype("float")
             score = np.nanmean(LA.norm(diff,axis=1))
             scores[carid] = score
         except:

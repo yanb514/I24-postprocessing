@@ -894,7 +894,7 @@ class Data_Association():
                 sorted_t = [t1[0],t1[-1],t2[0],t2[-1]]
                 sorted_t.sort()
                 pt1 = (sorted_t[1]+sorted_t[2])/2 # closest t on track1
-                var = np.abs(t2-pt1) * VARX # TODO: compare to the closest time instead of ct1
+                var = np.abs(t2-pt1) * VARX 
                 vary = np.abs(t2-pt1) * VARY
                 input = torch.transpose(torch.tensor([x2,y2]),0,1)
                 target = torch.transpose(torch.tensor([target, targety]),0,1)
@@ -1213,13 +1213,13 @@ if __name__ == "__main__":
     # da.df = da.df[da.df["ID"].isin([304,305,313,316,323,334,341])]
     da.stitch_objects_tsmn_ll(THRESHOLD_X=50, THRESHOLD_Y=0, VARX = 0.02, VARY=0.01)
     da.evaluate() # absence of GT
-    # da.postprocess(REMOVE_INVALID=True, 
-    #                REMOVE_OUTLIER=True,
-    #                 SELECT_ONE_MEAS=True, 
-    #                 CONNECT_TRACKS=True, 
-    #                 # SAVE = data_path+r"\DA\MC_tsmn.csv"
-    #                 SAVE = ""
-    #                 )
-    # da.visualize_BA()
+    da.postprocess(REMOVE_INVALID=True, 
+                    REMOVE_OUTLIER=True,
+                    SELECT_ONE_MEAS=True, 
+                    CONNECT_TRACKS=True, 
+                    # SAVE = data_path+r"\DA\MC_tsmn.csv"
+                    SAVE = ""
+                    )
+    da.visualize_BA()
     
     

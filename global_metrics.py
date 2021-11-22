@@ -77,13 +77,14 @@ class GlobalMetrics():
             invalid = set(groupList)-valid-collision
             lane_change = ev.get_lane_change(df) - invalid
             multiple_frames = ev.get_multiple_frame_track(df) # dict
+            df = df.groupby("ID").apply(ev.mark_outliers_car).reset_index(drop=True)
             outlier_ratio = {carid: np.count_nonzero(car["Generation method"].values=="outlier")/car.bbr_x.count() for carid, car in df.groupby("ID")}
             outlier_high = {key: value for key, value in outlier_ratio.items() if (value > self.params["outlier_thresh"]) and (key in valid)}  
             xranges = ev.get_x_covered(df, ratio=True)  
             w_var = ev.get_variation(df, "width")
             l_var = ev.get_variation(df, "length")
             y_var = ev.get_variation(df, "y")
-            df = df.groupby("ID").apply(ev.mark_outliers_car).reset_index(drop=True)
+            
             
             # metrics are to be printed (in print_metrics)
             self.metrics["Total tracklets"].append(df.groupby("ID").ngroups)
@@ -174,7 +175,7 @@ class GlobalMetrics():
         rec = self.rec[self.rec["ID"]==carid]
         if plot:
             vis.plot_track_compare(da,rec)
-        if dashboard:
+        if dashboard:s
             vis.dashboard([da, rec],["da","rectified"])
         return
     
@@ -199,7 +200,7 @@ if __name__ == "__main__":
     gm.print_metrics()
     gm.visualize_metrics()
     
-    # gm.evaluate_single_track(216, plot=True, dashboard=True)
+    # gm.evaluate_single_track(197, plot=True, dashboard=True)
     
    
     
