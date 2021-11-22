@@ -44,3 +44,8 @@ There are multiple ways to visualize data. The visualization toolbox will be upd
 
 ## Evaluation
 Currently I'm writing an evaluator for synthetic data (when ground truth is available).
+### Benchmarking using synthetic data
+- Synthetic data that resembles the raw 3D tracking data will be generated in `benchmark_TM.py`
+    - Point-trajectory data is generated using TransModler, I added vehicle dimension and upsampled the trajectory to get the state information. Data format follows the one above
+    - [TODO]: implement manual pollution to (1) mask part of the data to create fragments and (2) add noise on the bbox.
+- [TODO]: MOT evaluator will be implemented.
