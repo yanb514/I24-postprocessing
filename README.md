@@ -5,7 +5,7 @@ Before running this notebook, please do the following
     - (3D tracking) https://vanderbilt.box.com/s/sgb996yj09bmev6yhc7slf053nz74p9q
     - (Synthetic data, for algorithm benchmarking) https://vanderbilt.app.box.com/folder/150598703751
 
-
+:simple_smile:
 Data format: 
 1. `Frame #`: frame index (30 fps)
 2. `Timestamp`: Unix timestamp
