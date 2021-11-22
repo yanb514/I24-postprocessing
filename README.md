@@ -4,6 +4,7 @@ Before running this notebook, please do the following
 - Download the trajectory data at 
     - (3D tracking) https://vanderbilt.box.com/s/sgb996yj09bmev6yhc7slf053nz74p9q
     - (Synthetic data, for algorithm benchmarking) https://vanderbilt.app.box.com/folder/150598703751
+        - Based on the simulation data from TransModler, details see `benchmark_TM.py`
 
 ### Data format: 
 1. `Frame #`: frame index (30 fps)
