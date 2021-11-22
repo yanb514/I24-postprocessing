@@ -6,6 +6,14 @@ Before running this notebook, please do the following
     - (Synthetic data, for algorithm benchmarking) https://vanderbilt.app.box.com/folder/150598703751
         - Based on the simulation data from TransModler, details see `benchmark_TM.py`
 
+### Postprocessing pipeline
+- Data association
+    - This step is to reduce fragments, details see `data_association.py`
+    - MOTA evaluation
+- Data rectification
+    - This step is to produce trajectory data that satisfy vehicle dynamics (e.g., velocity/acceleration smoothing)
+    - details see `rectification.py`
+
 ### Data format: 
 1. `Frame #`: frame index (30 fps)
 2. `Timestamp`: Unix timestamp
