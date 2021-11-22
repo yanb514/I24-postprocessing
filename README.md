@@ -5,13 +5,12 @@ Before running this notebook, please do the following
     - (3D tracking) https://vanderbilt.box.com/s/sgb996yj09bmev6yhc7slf053nz74p9q
     - (Synthetic data, for algorithm benchmarking) https://vanderbilt.app.box.com/folder/150598703751
 
-:simple_smile:
-Data format: 
+### Data format: 
 1. `Frame #`: frame index (30 fps)
 2. `Timestamp`: Unix timestamp
 3. `ID`: unique vehicle ID
 4. `Object class`: vehicle type
-5. `BBox xmin/ymin/xmax/ymax`: 2D bounding box dimensions
+5. **`BBox xmin/ymin/xmax/ymax`: 2D bounding box dimensions
 6. ** `vel_x/vel_y`: velocity
 7. ** `fbrx/y`: the pixel coordinates of the front bottom right corner w.r.t. each vehicle's traveling direction
 8. ** `fblx/y`: ... front bottom left ...
