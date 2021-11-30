@@ -43,8 +43,8 @@ Before running this notebook, please do the following
 There are multiple ways to visualize data. The visualization toolbox will be updated. As of now, the best way is to run `animation.py`.
 
 ## Evaluation
-`synth_evaluator`: Calculate multi-object tracking performance metrics, such as TP, FP, FN, FRAG, IDS, MOTA, MOTP. Use this when ground truth data is available.
-`global_metrics`: Examine global traffic condition, plot histograms of the state, and identify abnormal trajectories. Use this when ground truth data is not available.
+1. `synth_evaluator`: Calculate multi-object tracking performance metrics, such as TP, FP, FN, FRAG, IDS, MOTA, MOTP. Use this when ground truth data is available.
+2. `global_metrics`: Examine global traffic condition, plot histograms of the state, and identify abnormal trajectories. Use this when ground truth data is not available.
 
 ### Benchmarking using synthetic data
 - Synthetic data that resembles the raw 3D tracking data will be generated in `benchmark_TM.py`
