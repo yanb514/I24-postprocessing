@@ -175,7 +175,7 @@ class GlobalMetrics():
         rec = self.rec[self.rec["ID"]==carid]
         if plot:
             vis.plot_track_compare(da,rec)
-        if dashboard:s
+        if dashboard:
             vis.dashboard([da, rec],["da","rectified"])
         return
     

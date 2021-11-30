@@ -753,7 +753,8 @@ class Data_Association():
             else:
                 # fit time vs. x
                 fit = np.polyfit(t1,x1,1)
-                fity = np.polyfit(t1,y1,1)
+                # fity = np.polyfit(t1,y1,1)
+                fity = np.array([0, np.nanmean(y1)])
                 
             for j in range(n_car):
                 if (i == j):
@@ -840,13 +841,10 @@ class Data_Association():
       
         return 
     
-    def stitch_objects_tsmn_ll(self, THRESHOLD_X=0.3, THRESHOLD_Y=0, VARX=0.03, VARY=0.03):
+    def stitch_objects_tsmn_ll(self, THRESHOLD_C=50, VARX=0.03, VARY=0.03):
         '''
         similar to stitch_objects_tsmn
         instead of binary fit, calculate a loss (log likelihood)
-        
-        THRESHOLD_1: allowable acceleration/deceleration (m/s2)
-        THRESHOLD_2: allowable steering angle (rad)
         '''
         groups = self.df.groupby("ID")
         groupList = list(groups.groups)
@@ -854,9 +852,10 @@ class Data_Association():
        
         n_car = len(groupList)
         CX = np.ones((n_car, n_car)) * 999 # cone of X
-        CY = np.ones((n_car, n_car)) * 999 # 
+
         track_len = []
         loss = torch.nn.GaussianNLLLoss()
+        empty_id = set()
         
         for i,c1 in enumerate(groupList):
             print("\rTracklet {}/{}".format(i,n_car),end = "\r",flush = True)
@@ -868,29 +867,63 @@ class Data_Association():
             track1 = np.array(track1[pts])
             x1 = (track1[:,0] + track1[:,2])/2
             y1 = (track1[:,1] + track1[:,7])/2
-            if len(track1)<1:
+            notnan = ~np.isnan(x1)
+            t1 = t1[notnan]
+            x1 = x1[notnan]
+            y1 = y1[notnan]
+            
+            if len(t1)<1:
+                empty_id.add(c1)
                 continue
-            elif len(track1)<2:
+            
+            elif len(t1)<2:
                 v = np.sign(track1[0,2]-track1[0,0])
                 b = x1-v*ct1 # recalculate y-intercept
-                fit = np.array([v,b])
+                fitx = np.array([v,b])
                 fity = np.array([0,y1])
             else:
                 # fit time vs. x
-                fit = np.polyfit(t1,x1,1)
-                fity = np.polyfit(t1,y1,1)
+                fitx = np.polyfit(t1,x1,1)
+                # fity = np.polyfit(t1,y1,1)
+                fity = np.array([0, np.mean(y1)])
                 
-            for j in range(n_car):
-                if (i == j):
-                    continue
+            for j in range(i+1,n_car):
+
                 track2 = groups.get_group(groupList[j])
                 t2 = track2["Frame #"].values
                 track2 = np.array(track2[pts])
                 x2 = (track2[:,0] + track2[:,2])/2
                 y2 = (track2[:,1] + track2[:,7])/2
 
-                target = np.polyval(fit, t2)
+                notnan = ~np.isnan(x2)
+                if sum(notnan)==0: # if all data is nan (missing)
+                    continue
+                t2 = t2[notnan]
+                x2 = x2[notnan]
+                y2 = y2[notnan]
+                ct2 = np.mean(t2)
+            
+                if len(t2)<2:
+                    v = np.sign(track2[0,2]-track2[0,0])
+                    b = x2-v*ct2 # recalculate y-intercept
+                    fit2x = np.array([v,b])
+                    fit2y = np.array([0,y2])
+                else:
+                    # fit time vs. x
+                    fitx = np.polyfit(t1,x1,1)
+                    # fity = np.polyfit(t1,y1,1)
+                    fity = np.array([0, np.mean(y1)])
+                    
+                # consider only forward projection from the earlier track
+                if t2[0]-t1[-1]>-3 and t2[-1]-t1[-1]>-3: # t1 first t2 next
+                    project t1
+                elif t1[0]-t2[-1]>-3 and t1[-1]-t2[-1]>-3: # t2 first t1 next
+                    project t2
+                else:
+                    continue
+                targetx = np.polyval(fitx, t2)
                 targety = np.polyval(fity, t2)
+
                 sorted_t = [t1[0],t1[-1],t2[0],t2[-1]]
                 sorted_t.sort()
                 pt1 = (sorted_t[1]+sorted_t[2])/2 # closest t on track1
@@ -912,8 +945,7 @@ class Data_Association():
             
         # 4. start by sorting CX
         a,b = np.unravel_index(np.argsort(CX, axis=None), CX.shape)
-        # parent = {idx:idx for idx in range(n_car)} # temporary match to find path
-        parent = {}
+
         path = {idx: {idx} for idx in range(n_car)} # disjoint set
         for i in range(len(a)):
             if CX[a[i],b[i]] > THRESHOLD_X:
@@ -925,9 +957,9 @@ class Data_Association():
                     for aa in path[a[i]]:
                         path[aa] = path[a[i]].copy()
                     
-            # print({groupList[key]:[groupList[ii] for ii in value] for key,value in path.items() if len(value)>1}) 
-
-
+        # delete IDs that are empty
+        self.df = self.df.groupby("ID").filter(lambda x: (x["ID"].iloc[0] not in empty_id))
+        self.path = path.copy()
         # modify ID
         while path:
             key = list(path.keys())[0]
@@ -944,6 +976,7 @@ class Data_Association():
         print("\n")
         print("Before DA: {} unique IDs".format(len(groupList))) 
         print("After DA: {} unique IDs".format(self.df.groupby("ID").ngroups))
+        print("True: {} unique IDs".format(len([id for id in groupList if id<1000])))
       
         return 
     
@@ -1171,11 +1204,18 @@ class Data_Association():
             print("Remove invalid tracks...")
             self.df = self.df.groupby("ID").filter(lambda x: (x['ID'].iloc[0] in self.data["valid"])).reset_index(drop=True)
         if REMOVE_OUTLIER:
+            print("Remove outliers...")
+            if "outlier_ratio" not in self.data.keys():
+                print("mark outliers")
+                self.df["Generation method"] = ""
+                self.df = self.df.groupby("ID").apply(ev.mark_outliers_car).reset_index(drop=True)
             pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
             self.df.loc[self.df["Generation method"]=="outlier", pts]=np.nan
         if SELECT_ONE_MEAS:
+            print("Select one meas...")
             self.df = utils.applyParallel(self.df.groupby("Frame #"), self.del_repeat_meas_per_frame).reset_index(drop=True) # keep only one meas per frame per track
         if CONNECT_TRACKS:
+            print("Connect invalid tracks...")
             self.df = self.df.groupby("ID").apply(utils.connect_track).reset_index(drop=True)     # connect tracks such that frame # are continuous
         
         if len(SAVE)>0:
@@ -1197,29 +1237,34 @@ if __name__ == "__main__":
 
     data_path = r"E:\I24-postprocess\MC_tracking" 
     file_path = data_path+r"\MC_reinterpolated.csv"
+
+    raw_path = r"E:\I24-postprocess\benchmark\TM_1000_pollute.csv"
     
     params = {"method": "tsmn",
               "threshold": (0,0), # 0.3, 0.04 for tsmn
-              "start": 0,
-              "end": 1000,
+              "start": 1000, # starting frame
+              "end": 1100, # ending frame
               "plot_start": 0, # for plotting tracks in online methods
               "plot_end": 10,
               "preprocess": False,
               "outlier_thresh": 0.25
               }
     
-    da = Data_Association(file_path, params)
-    # da.df = da.df[da.df["ID"].isin([293,299,310])]
-    # da.df = da.df[da.df["ID"].isin([304,305,313,316,323,334,341])]
-    da.stitch_objects_tsmn_ll(THRESHOLD_X=50, THRESHOLD_Y=0, VARX = 0.02, VARY=0.01)
-    da.evaluate() # absence of GT
-    da.postprocess(REMOVE_INVALID=True, 
-                    REMOVE_OUTLIER=True,
-                    SELECT_ONE_MEAS=True, 
-                    CONNECT_TRACKS=True, 
+    da = Data_Association(raw_path, params)
+
+    da.stitch_objects_tsmn_ll(THRESHOLD_X=70, THRESHOLD_Y=0, VARX = 0.04, VARY=0.02)
+    # da.df.to_csv(r"E:\I24-postprocess\benchmark\TM_300_pollute_DA.csv", index=False)
+    # da.evaluate() # absence of GT
+    # da.df = utils.read_data(r"E:\I24-postprocess\benchmark\TM_200_pollute_DA.csv")
+    #%%
+    da.postprocess(REMOVE_INVALID=False, 
+                    REMOVE_OUTLIER=False,
+                    SELECT_ONE_MEAS=False, 
+                    CONNECT_TRACKS=False, 
                     # SAVE = data_path+r"\DA\MC_tsmn.csv"
-                    SAVE = ""
+                    # SAVE = ""
+                    SAVE =  r"E:\I24-postprocess\benchmark\TM_100_pollute_DA.csv"
                     )
-    da.visualize_BA()
+    da.visualize_BA(lanes=[1,2,3,4])
     
     

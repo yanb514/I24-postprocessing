@@ -1004,7 +1004,11 @@ def connect_track(car):
         pts_fixed = ["ID","Object class","BBox xmin","BBox ymin","BBox xmax","BBox ymax","vel_x","vel_y","Generation method","direction","camera","acceleration","speed","x","y","theta","width","length","height", "ts_bias for cameras ['p1c2', 'p1c3', 'p1c4']","lane"]
         car["Timestamp"] = car.Timestamp.interpolate()
         # copy the rest column
-        car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
+        try:
+            car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
+        except KeyError:
+            pts_fixed = ["ID","Object class","BBox xmin","BBox ymin","BBox xmax","BBox ymax","vel_x","vel_y","Generation method","direction","camera","acceleration","speed","x","y","theta","width","length","height","lane"]
+            car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
         # car["Object class"] = car["Object class"].interpolate(method='pad')
         # car["camera"] = car["camera"].interpolate(method='pad')
         # car["direction"] = car["direction"].interpolate(method='pad')

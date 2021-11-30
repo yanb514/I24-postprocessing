@@ -335,12 +335,12 @@ class Rectification():
     
 if __name__ == "__main__":
 
-    data_path = r"E:\I24-postprocess\MC_tracking" 
-    file_path = data_path+r"\DA\MC_tsmn.csv"
-    
-    params = {"norm": "l1",
-              "start": 0,
-              "end": 1000,
+    # data_path = r"E:\I24-postprocess\MC_tracking" 
+    # file_path = data_path+r"\DA\MC_tsmn.csv"
+    file_path = r"E:\I24-postprocess\benchmark\TM_300_pollute_DA_p.csv"
+    params = {"norm": "l1", # TODO: implement this toggle
+              "start": 1000,
+              "end": 1300,
               "plot_start": 0, # for plotting tracks in online methods
               "plot_end": 10,
               "postprocess": True,
@@ -350,9 +350,11 @@ if __name__ == "__main__":
     re = Rectification(file_path, params)
     re.rectify()
     #%%
+    re.df.to_csv(r"E:\I24-postprocess\benchmark\TM_300_pollute_DA_RE_p.csv", index=False)
+    #%%
     re.postprocess(REMOVE_COLLISION=False, 
                    EXTEND = True,
-                    SAVE = data_path+r"\rectified\MC_tsmn.csv"
+                    SAVE = r"E:\I24-postprocess\benchmark\TM_300_pollute_DA_RE_p.csv"
                     # SAVE = ""
                     )
     #%%

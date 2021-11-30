@@ -110,16 +110,72 @@ if __name__ == "__main__":
     for i in range(len(diff)):
         for j in range(4):
             plt.scatter(diff[i][j],diff[i][2*j+1])
-    # %%
-    ed = []
-    for i in range(len(diff)):
-        if Y1[i][0] != np.nan:
-            ed.append(dist_score(Y1[i],Y2[i],'ed'))
-    maha = []
-    for i in range(len(diff)):
-        if Y1[i][0] != np.nan:
-            maha.append(dist_score(Y1[i],Y2[i],'maha'))   
-            
+    #%%  fragments
+    track1 = ev.rec[ev.rec["ID"].isin([91, 93])]
+    plt.scatter(track1["Frame #"].values, track1.x.values)
+    #%%
+    idpath = {}
+    for idx, idx_v in da.path.items():
+        idpath[da.groupList[idx]] = [da.groupList[id] for id in idx_v]
+    #%%
+    path = da.path.copy()
+    groupList = da.groupList.copy()
+    while path:
+        key = list(path.keys())[0]
+        reid = {groupList[old]: groupList[key] for old in path[key]} # change id=groupList[v] to groupList[key]
+        print(reid)
+        for v in list(path[key]) + [key]:
+            try:
+                path.pop(v)
+            except KeyError:
+                pass
+#%%
+    pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    loss = torch.nn.GaussianNLLLoss()
+    track1 = da.original[da.original["ID"]==66]
+    track2 = da.original[da.original["ID"]==66001]
+    t1 = track1["Frame #"].values
+    ct1 = np.nanmean(t1)
+    track1 = np.array(track1[pts])
+    x1 = (track1[:,0] + track1[:,2])/2
+    y1 = (track1[:,1] + track1[:,7])/2
+    notnan = ~np.isnan(x1)
+    t1 = t1[notnan]
+    x1 = x1[notnan]
+    y1 = y1[notnan]    
+
+    v = np.sign(track1[0,2]-track1[0,0])
+    b = x1-v*ct1 # recalculate y-intercept
+
+    fit = np.polyfit(t1,x1,1)
+    # fity = np.polyfit(t1,y1,1)
+    fity = np.array([0, np.nanmean(y1)])
+        
+
+    
+    t2 = track2["Frame #"].values
+    track2 = np.array(track2[pts])
+    x2 = (track2[:,0] + track2[:,2])/2
+    y2 = (track2[:,1] + track2[:,7])/2
+
+    notnan = ~np.isnan(x2)
+
+    t2 = t2[notnan]
+    x2 = x2[notnan]
+    y2 = y2[notnan]
+
+    target = np.polyval(fit, t2)
+    targety = np.polyval(fity, t2)
+
+    sorted_t = [t1[0],t1[-1],t2[0],t2[-1]]
+    sorted_t.sort()
+    pt1 = (sorted_t[1]+sorted_t[2])/2 # closest t on track1
+    var = np.abs(t2-pt1) * 0.02 
+    vary = np.abs(t2-pt1) * 0.02
+    input = torch.transpose(torch.tensor([x2,y2]),0,1)
+    target = torch.transpose(torch.tensor([target, targety]),0,1)
+    var = torch.transpose(torch.tensor([var,vary]),0,1)
+    print(loss(input,target,var))
    
     #%%
     id1,id2=360,373
