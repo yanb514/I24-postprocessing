@@ -43,9 +43,11 @@ Before running this notebook, please do the following
 There are multiple ways to visualize data. The visualization toolbox will be updated. As of now, the best way is to run `animation.py`.
 
 ## Evaluation
-Currently I'm writing an evaluator for synthetic data (when ground truth is available).
+`synth_evaluator`: Calculate multi-object tracking performance metrics, such as TP, FP, FN, FRAG, IDS, MOTA, MOTP. Use this when ground truth data is available.
+`global_metrics`: Examine global traffic condition, plot histograms of the state, and identify abnormal trajectories. Use this when ground truth data is not available.
+
 ### Benchmarking using synthetic data
 - Synthetic data that resembles the raw 3D tracking data will be generated in `benchmark_TM.py`
     - Point-trajectory data is generated using TransModler, I added vehicle dimension and upsampled the trajectory to get the state information. Data format follows the one above
-    - [TODO]: implement manual pollution to (1) mask part of the data to create fragments and (2) add noise on the bbox.
-- [TODO]: MOT evaluator will be implemented.
+    - Manual pollution is added to (1) mask part of the data to create fragments and (2) add noise on the bbox.
+
