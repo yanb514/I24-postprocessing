@@ -38,6 +38,8 @@ import matplotlib.pyplot as plt
 import utils_evaluation as ev
 import torch
 
+# import warnings
+# warnings.filterwarnings("error")
 
 class Data_Association():
     
@@ -717,130 +719,7 @@ class Data_Association():
         return 1/(2*N)*np.sum(np.log(var)+(input-target)**2/var)
         
         
-    def stitch_objects_tsmn_ll_2(self, THRESHOLD_X=0.3, THRESHOLD_Y=0.03):
-        '''
-        similar to stitch_objects_tsmn
-        instead of binary fit, calculate a loss (log likelihood)
-        
-        THRESHOLD_1: allowable acceleration/deceleration (m/s2)
-        THRESHOLD_2: allowable steering angle (rad)
-        '''
-        groups = self.df.groupby("ID")
-        groupList = list(groups.groups)
-        pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
-       
-        n_car = len(groupList)
-        CX = np.ones((n_car, n_car)) * 999 # cone of X
-        CY = np.ones((n_car, n_car)) * 999 # 
-        track_len = []
-        for i,c1 in enumerate(groupList):
-            print("\rTracklet {}/{}".format(i,n_car),end = "\r",flush = True)
-            # get the fitted line for c1
-            track1 = groups.get_group(c1)
-            track_len.append(len(track1))
-            t1 = track1["Frame #"].values
-            ct1 = np.nanmean(t1)
-            track1 = np.array(track1[pts])
-            x1 = (track1[:,0] + track1[:,2])/2
-            y1 = (track1[:,1] + track1[:,7])/2
-            if len(track1)<1:
-                continue
-            elif len(track1)<2:
-                v = np.sign(track1[0,2]-track1[0,0])
-                b = x1-v*ct1 # recalculate y-intercept
-                fit = np.array([v,b])
-                fity = np.array([0,y1])
-            else:
-                # fit time vs. x
-                fit = np.polyfit(t1,x1,1)
-                # fity = np.polyfit(t1,y1,1)
-                fity = np.array([0, np.nanmean(y1)])
-                
-            for j in range(n_car):
-                if (i == j):
-                    continue
-                track2 = groups.get_group(groupList[j])
-                t2 = track2["Frame #"].values
-                track2 = np.array(track2[pts])
-                x2 = (track2[:,0] + track2[:,2])/2
-                y2 = (track2[:,1] + track2[:,7])/2
-
-                target = np.polyval(fit, t2)
-                targety = np.polyval(fity, t2)
-                sorted_t = [t1[0],t1[-1],t2[0],t2[-1]]
-                sorted_t.sort()
-                pt1 = (sorted_t[1]+sorted_t[2])/2 # closest t on track1
-                var = np.abs(t2-pt1) * 0.03 # TODO: compare to the closest time instead of ct1
-                vary = np.abs(t2-pt1) * 0.03
-                # CX[i,j] = self.log_likelihood(x2, target, var)
-                # CY[i,j] = self.log_likelihood(y2, targety, vary)
-                input = torch.transpose(torch.tensor([x2,y2]),0,1)
-                target = torch.transpose(torch.tensor([target, targety]),0,1)
-                var = torch.transpose(torch.tensor([var,vary]),0,1)
-                
-        # for debugging only
-        self.CX = CX
-        self.CY = CY
-        self.groupList = groupList
-        BX = CX < THRESHOLD_X
-        BY = CY < THRESHOLD_Y
-        
-        for i in range(len(CX)): # make CX CY symmetrical
-            BX[i,:] = np.logical_and(BX[i,:], BX[:,i])
-            BY[i,:] = np.logical_and(BY[i,:], BY[:,i])
-            
-        match = np.logical_and(BX,BY) # symmetrical
-        
-        # 2: sort by length of tracks descending
-        # sort_len = sorted(range(len(track_len)), key=lambda k: track_len[k])[::-1]
-        # matched = set()
-        # for i in sort_len:
-        #     idx = np.where(match[:,i])[0]
-        #     if len(idx)>0:
-        #         parent = {groupList[ii]: groupList[i] for ii in idx if (ii not in matched) and (i not in matched)}
-        #         self.df['ID'] = self.df['ID'].apply(lambda x: parent[x] if x in parent else x)
-        #     matched = matched.union(set(idx))
-        
-        # 3. deal with the most constrained track first
-        sort_len = sorted(range(len(track_len)), key=lambda k: track_len[k])[::-1]
-        matched = set()
-        for i in sort_len:
-            if i in matched:
-                continue
-
-            matched_i = set()
-            matched_i.add(i)
-            idx = np.where(match[:,i])[0]
-            if len(idx) == 0: # no assignment
-                continue
-            elif len(idx) == 1: # only one choice, assign it!
-                parent = {groupList[idx[0]]: groupList[i]}
-                matched_i.add(idx[0])
-            else: # more than one candidates, review internal conflicts
-                track_c = CY[idx,i]
-                sort_c = sorted(range(len(track_c)), key=lambda k: track_c[k])[::-1] # order of processing
-                # conflict = set()
-                parent = {}
-                for c in sort_c:
-                    # check if c is conflict with anyone in the matched_interval
-                    # for m in matched_i:
-                    if all(BX[idx[c],list(matched_i)]) and all(BY[idx[c],list(matched_i)]): # if c does not conflict with any in matched_i
-                        # continue
-                            # conflict.add(idx[c])
-                            # break
-                        if (idx[c] not in matched):
-                            parent[groupList[idx[c]]] = groupList[i]
-                            matched_i.add(idx[c])
-            # print(parent)
-            self.df['ID'] = self.df['ID'].apply(lambda x: parent[x] if x in parent else x)
-            matched = matched.union(matched_i)  
-        
-        print("\n")
-        print("Before DA: {} unique IDs".format(len(groupList))) 
-        print("After DA: {} unique IDs".format(self.df.groupby("ID").ngroups))
-      
-        return 
-    
+   
     def stitch_objects_tsmn_ll(self, THRESHOLD_C=50, VARX=0.03, VARY=0.03):
         '''
         similar to stitch_objects_tsmn
@@ -859,6 +738,7 @@ class Data_Association():
         
         for i,c1 in enumerate(groupList):
             print("\rTracklet {}/{}".format(i,n_car),end = "\r",flush = True)
+
             # get the fitted line for c1
             track1 = groups.get_group(c1)
             track_len.append(len(track1))
@@ -872,23 +752,22 @@ class Data_Association():
             x1 = x1[notnan]
             y1 = y1[notnan]
             
-            if len(t1)<1:
+            if len(t1)<1 or (c1 in empty_id):
                 empty_id.add(c1)
                 continue
             
             elif len(t1)<2:
-                v = np.sign(track1[0,2]-track1[0,0])
+                v = np.sign(track1[0,2]-track1[0,0]) # assume 1/-1 m/frame = 30m/s
                 b = x1-v*ct1 # recalculate y-intercept
-                fitx = np.array([v,b])
-                fity = np.array([0,y1])
+                fitx = np.array([v,b[0]])
+                fity = np.array([0,y1[0]])
             else:
                 # fit time vs. x
                 fitx = np.polyfit(t1,x1,1)
-                # fity = np.polyfit(t1,y1,1)
-                fity = np.array([0, np.mean(y1)])
+                fity = np.polyfit(t1,y1,1)
+                # fity = np.array([0, np.mean(y1)])
                 
             for j in range(i+1,n_car):
-
                 track2 = groups.get_group(groupList[j])
                 t2 = track2["Frame #"].values
                 track2 = np.array(track2[pts])
@@ -896,7 +775,8 @@ class Data_Association():
                 y2 = (track2[:,1] + track2[:,7])/2
 
                 notnan = ~np.isnan(x2)
-                if sum(notnan)==0: # if all data is nan (missing)
+                if sum(notnan)==0 or (groupList[j] in empty_id): # if all data is nan (missing)
+                    empty_id.add(groupList[j])
                     continue
                 t2 = t2[notnan]
                 x2 = x2[notnan]
@@ -906,49 +786,80 @@ class Data_Association():
                 if len(t2)<2:
                     v = np.sign(track2[0,2]-track2[0,0])
                     b = x2-v*ct2 # recalculate y-intercept
-                    fit2x = np.array([v,b])
-                    fit2y = np.array([0,y2])
+                    fit2x = np.array([v,b[0]])
+                    fit2y = np.array([0,y2[0]])
                 else:
                     # fit time vs. x
-                    fitx = np.polyfit(t1,x1,1)
-                    # fity = np.polyfit(t1,y1,1)
-                    fity = np.array([0, np.mean(y1)])
+                    fit2x = np.polyfit(t2,x2,1)
+                    fit2y = np.polyfit(t2,y2,1)
+                    # fit2y = np.array([0, np.mean(y2)])
+                 
+                nll = 999
+                if all(t2-t1[-1]>=0): # t1 comes first
+                    # 1. project t1 forward to t2's time
+                    targetx = np.polyval(fitx, t2)
+                    targety = np.polyval(fity, t2)
+                    pt1 = t1[-1]
+                    varx = (t2-pt1) * VARX 
+                    vary = (t2-pt1) * VARY
+                    input = torch.transpose(torch.tensor([x2,y2]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
                     
-                # consider only forward projection from the earlier track
-                if t2[0]-t1[-1]>-3 and t2[-1]-t1[-1]>-3: # t1 first t2 next
-                    project t1
-                elif t1[0]-t2[-1]>-3 and t1[-1]-t2[-1]>-3: # t2 first t1 next
-                    project t2
-                else:
-                    continue
-                targetx = np.polyval(fitx, t2)
-                targety = np.polyval(fity, t2)
-
-                sorted_t = [t1[0],t1[-1],t2[0],t2[-1]]
-                sorted_t.sort()
-                pt1 = (sorted_t[1]+sorted_t[2])/2 # closest t on track1
-                var = np.abs(t2-pt1) * VARX 
-                vary = np.abs(t2-pt1) * VARY
-                input = torch.transpose(torch.tensor([x2,y2]),0,1)
-                target = torch.transpose(torch.tensor([target, targety]),0,1)
-                var = torch.transpose(torch.tensor([var,vary]),0,1)
-                CX[i,j] = loss(input,target,var)
+                    # 2. project t2 backward to t1's time
+                    targetx = np.polyval(fit2x, t1)
+                    targety = np.polyval(fit2y, t1)
+                    pt2 = t2[0]
+                    varx = (pt2-t1) * VARX 
+                    vary = (pt2-t1) * VARY
+                    input = torch.transpose(torch.tensor([x1,y1]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
+                    
+                elif all(t1-t2[-1]>=0): # t2 comes first: 
+                    # 3. project t1 backward to t2's time
+                    targetx = np.polyval(fitx, t2)
+                    targety = np.polyval(fity, t2)
+                    pt1 = t1[0]
+                    varx = (pt1-t2) * VARX 
+                    vary = (pt1-t2) * VARY
+                    input = torch.transpose(torch.tensor([x2,y2]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
+                    
+                    # 4. project t2 forward to t1's time
+                    targetx = np.polyval(fit2x, t1)
+                    targety = np.polyval(fit2y, t1)
+                    pt2 = t2[-1]
+                    varx = (t1-pt2) * VARX 
+                    vary = (t1-pt2) * VARY
+                    input = torch.transpose(torch.tensor([x1,y1]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
+                    
+                
+                CX[i,j] = nll
                 
         # for debugging only
         self.CX = CX
         self.groupList = groupList
+        self.empty_id = empty_id
         
-        BX = CX < THRESHOLD_X
+        BX = CX < THRESHOLD_C
         
         for i in range(len(CX)): # make CX CY symmetrical
-            BX[i,:] = np.logical_and(BX[i,:], BX[:,i])
+            BX[i,:] = np.logical_or(BX[i,:], BX[:,i])
             
         # 4. start by sorting CX
         a,b = np.unravel_index(np.argsort(CX, axis=None), CX.shape)
 
         path = {idx: {idx} for idx in range(n_car)} # disjoint set
         for i in range(len(a)):
-            if CX[a[i],b[i]] > THRESHOLD_X:
+            if CX[a[i],b[i]] > THRESHOLD_C:
                 break
             else: 
                 path_a, path_b = list(path[a[i]]),list(path[b[i]])
@@ -980,67 +891,7 @@ class Data_Association():
       
         return 
     
-    def confidence(self, track, beta, xmin, xmax):
-        '''
-        consider xrange covered
-        TODO: add duplicated measurements at the same time
-        '''
-        xcover = max(max(track.x.values)-min(track.x.values),1e-6)
-        xrange = xmax-xmin
-        xuncover = xrange-xcover
-        return np.exp(-beta*xuncover/xcover)
-    
-    def affinity_s(self, T1, T2):
-        '''
-        Shape affinity measure
-        T1, T2 are dataframes
-        '''
-        w1 = abs(np.nanmean(T1["bbr_y"].values - T1["bbl_y"].values))
-        w2 = abs(np.nanmean(T2["bbr_y"].values - T2["bbl_y"].values))
-        l1 = abs(np.nanmean(T1["bbr_x"].values - T1["fbr_x"].values))
-        l2 = abs(np.nanmean(T2["bbr_x"].values - T2["fbr_x"].values))
-        return -abs(w1-w2)/(w1+w2)*abs(l1-l2)/(l1+l2)
-    
-    def affinity_p(self, T1, T2):
-        '''
-        Position affinity measure (mahalanobis distance)
-        '''
-        t1s = min(T1["Frame #"].values)
-        t1e = max(T1["Frame #"].values)
-        t2s = min(T2["Frame #"].values)
-        t2e = max(T2["Frame #"].values)
-        pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
-        
-        track1 = np.array(T1[pts])
-        track2 = np.array(T2[pts])
-        if len(track1)>1:
-            fit1 = np.polyfit(T1["Frame #"].values,track1,1)
-        else:
-            fit1 = np.array([np.zeros((8)),track1[0]])
-        if len(track2)>1:
-            fit2 = np.polyfit(T2["Frame #"].values,track2,1)
-        else:
-            fit2 = np.array([np.zeros((8)),track2[0]])
-            
-        # start
-        if t1s < t2s: #extend T2 to t1s
-            x_pred = np.polyval(fit2, t1s) 
-            start_dist = self.dist_score(track1[0], x_pred, 'maha') 
-        else: # extend T1 to t2s
-            x_pred = np.polyval(fit1, t2s)
-            start_dist = self.dist_score(track2[0], x_pred, 'maha') 
-        
-        # end 
-        if t1e < t2e: # extend T1 to t2e
-            x_pred = np.polyval(fit1, t2e)
-            end_dist = self.dist_score(track2[-1], x_pred, 'maha') 
-        else: # extend T2 to t1e
-            x_pred = np.polyval(fit2, t1e)
-            end_dist = self.dist_score(track1[-1], x_pred, 'maha') 
-        
-        return start_dist + end_dist
-    
-    def stitch_objects_confidence(self, THRESHOLD_AFF=5, THRESHOLD_CONF=0.5):
+   
         '''
         Based on file:///Users/yanbing_wang/Downloads/sensors-21-02894.pdf
         1. identify high-confident tracks H, the rest is L
@@ -1156,11 +1007,38 @@ class Data_Association():
         return
     
 
-    def evaluate(self):
+    def evaluate(self, synth=True):
         '''
+        synth = True: for synthetic experiments only
+            compute fragments and ID switches
         get_invalid
         mark_outliers
         '''
+        if synth:
+            idpath = {}
+            FRAG = {}
+            IDS = {}
+            visited = set()
+            for idx, idx_v in self.path.items():
+                trueID = self.groupList[idx]
+                if trueID in self.empty_id or trueID in visited:
+                    continue
+                assID = [self.groupList[id] for id in idx_v]
+                idpath[trueID] = assID
+                if trueID >= 1000 and all([l>=1000 for l in assID]) and (trueID//1000 in idpath.keys()):
+                    FRAG[trueID] = assID
+                visited.add(trueID)
+                visited = visited.union(set(assID))
+                if trueID>=1000: trueID = trueID//1000
+                if any([l//1000 != trueID and l!= trueID for l in assID]):
+                    IDS[trueID] = assID
+            self.idpath = idpath
+            self.FRAG = FRAG
+            self.IDS = IDS
+            print("Fragments: {}".format(FRAG))
+            print("ID switches: {}".format(IDS))
+            return     
+            
         print("{} tracklets are stitched".format(self.original.groupby("ID").ngroups-self.df.groupby("ID").ngroups))
         valid0,collision0 = ev.get_invalid(self.original, ratio=0.4)
         valid,collision = ev.get_invalid(self.df, ratio=0.4) # remove obvious invalid tracks from df
@@ -1243,7 +1121,7 @@ if __name__ == "__main__":
     params = {"method": "tsmn",
               "threshold": (0,0), # 0.3, 0.04 for tsmn
               "start": 1000, # starting frame
-              "end": 1100, # ending frame
+              "end": 1200, # ending frame
               "plot_start": 0, # for plotting tracks in online methods
               "plot_end": 10,
               "preprocess": False,
@@ -1252,19 +1130,20 @@ if __name__ == "__main__":
     
     da = Data_Association(raw_path, params)
 
-    da.stitch_objects_tsmn_ll(THRESHOLD_X=70, THRESHOLD_Y=0, VARX = 0.04, VARY=0.02)
+    # da.df = da.df[da.df["ID"].isin([80,82,80000,80002,82000])] # for debugging purposes
+    da.stitch_objects_tsmn_ll(THRESHOLD_C=30, VARX = 0.05, VARY=0.02)
     # da.df.to_csv(r"E:\I24-postprocess\benchmark\TM_300_pollute_DA.csv", index=False)
-    # da.evaluate() # absence of GT
+    da.evaluate(synth=True) # set to False if absence of GT
     # da.df = utils.read_data(r"E:\I24-postprocess\benchmark\TM_200_pollute_DA.csv")
     #%%
     da.postprocess(REMOVE_INVALID=False, 
                     REMOVE_OUTLIER=False,
                     SELECT_ONE_MEAS=False, 
-                    CONNECT_TRACKS=False, 
+                    CONNECT_TRACKS=True, 
                     # SAVE = data_path+r"\DA\MC_tsmn.csv"
                     # SAVE = ""
-                    SAVE =  r"E:\I24-postprocess\benchmark\TM_100_pollute_DA.csv"
+                    SAVE =  r"E:\I24-postprocess\benchmark\TM_200_pollute_DA.csv"
                     )
-    da.visualize_BA(lanes=[1,2,3,4])
+    # da.visualize_BA(lanes=[1,2,3,4])
     
     

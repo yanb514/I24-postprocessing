@@ -19,7 +19,7 @@ from multiprocessing import Pool, cpu_count
 # read data
 def read_data(file_name, skiprows = 0, index_col = False):     
 #      path = pathlib.Path().absolute().joinpath('tracking_outputs',file_name)
-    df = pd.read_csv(file_name, skiprows = skiprows,error_bad_lines=False,index_col = index_col)
+    df = pd.read_csv(file_name, skiprows = skiprows,index_col = index_col) # error_bad_lines=False
     df = df.rename(columns={"GPS lat of bbox bottom center": "lat", "GPS long of bbox bottom center": "lon", 'Object ID':'ID'})
     return df
     
@@ -1001,14 +1001,12 @@ def connect_track(car):
         new_index = pd.Index(frames, name="Frame #")
         car = car.set_index("Frame #").reindex(new_index).reset_index()
         # interpolate / fill nan
-        pts_fixed = ["ID","Object class","BBox xmin","BBox ymin","BBox xmax","BBox ymax","vel_x","vel_y","Generation method","direction","camera","acceleration","speed","x","y","theta","width","length","height", "ts_bias for cameras ['p1c2', 'p1c3', 'p1c4']","lane"]
+        pts_fixed = ["ID","Object class","direction","width","length","height"]
         car["Timestamp"] = car.Timestamp.interpolate()
+        
         # copy the rest column
-        try:
-            car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
-        except KeyError:
-            pts_fixed = ["ID","Object class","BBox xmin","BBox ymin","BBox xmax","BBox ymax","vel_x","vel_y","Generation method","direction","camera","acceleration","speed","x","y","theta","width","length","height","lane"]
-            car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
+        car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
+        
         # car["Object class"] = car["Object class"].interpolate(method='pad')
         # car["camera"] = car["camera"].interpolate(method='pad')
         # car["direction"] = car["direction"].interpolate(method='pad')

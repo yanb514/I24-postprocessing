@@ -14,6 +14,9 @@ import numpy.linalg as LA
 import matplotlib.pyplot as plt
 import utils_vis as vis
 
+import warnings
+warnings.filterwarnings("default")
+
 class Synth_Evaluator():
     
     def __init__(self,gt_path,rec_path,params = None):
@@ -735,15 +738,15 @@ class Synth_Evaluator():
 if __name__ == "__main__":
     
     gt_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
-    raw_path = r"E:\I24-postprocess\benchmark\TM_100_pollute_DA.csv"
+    raw_path = r"E:\I24-postprocess\benchmark\TM_1000_pollute_DA_RE.csv"
     
     
     
     params = {
         "start_frame": 1000,
-        "cutoff_frame": 1100,
+        "cutoff_frame": 2020,
         "match_iou":0.51,
-        "sequence":True,
+        "sequence":False,
         "gtmode": "gt" , # "gt", "raw", "da", "rec"
         "recmode": "da",
         "score_threshold": 3,

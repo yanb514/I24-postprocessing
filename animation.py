@@ -194,7 +194,7 @@ if __name__ == "__main__":
     data_path = r"E:\I24-postprocess\MC_tracking" 
     # raw_path = data_path+r"\MC_reinterpolated.csv"
     gt_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
-    raw_path = r"E:\I24-postprocess\benchmark\TM_100_pollute_DA.csv"
+    raw_path = r"E:\I24-postprocess\benchmark\TM_1000_pollute_DA.csv"
     da_path = data_path+r"\DA\MC_tsmn.csv"
     rec_path = data_path+r"\rectified\MC_tsmn.csv"
     	
@@ -208,6 +208,6 @@ if __name__ == "__main__":
         "rs": 10, # pixel resampling rate
         "max_rows": 50000 # an estimate of the max rows of csv reader for large files, so that it reads only part of the data for plotting
         }
-    # plot_vehicle_csv(da_path, rec_path, params) # plot both paths
-    plot_vehicle_csv(gt_path, None, params) # set the second arg to None to plot only one path
+    plot_vehicle_csv(gt_path, raw_path, params) # plot both paths
+    # plot_vehicle_csv(gt_path, None, params) # set the second arg to None to plot only one path
     

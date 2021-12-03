@@ -3,7 +3,7 @@
 Created on Thu Nov 18 21:03:14 2021
 
 @author: wangy79
-benmark using TransModeler simulation data
+benmark using TransModeler (TM) simulation data
 """
 import utils
 import pandas as pd
@@ -207,7 +207,7 @@ def pollute_car(car, AVG_CHUNK_LENGTH, OUTLIER_RATIO):
     for index in sorted(random.sample(range(0,len(car)),n_chunks)):
         to_idx = max(index, index+AVG_CHUNK_LENGTH+np.random.normal(0,20)) # The length of missing chunks follow Gaussian distribution N(AVG_CHUNK_LENGTH, 20)
         car.loc[index:to_idx, pts] = np.nan # Mask the chunks as nan to indicate missing detections
-        if id>1000: id+=1 # assign unique IDs to fragments
+        if id>=1000: id+=1 # assign unique IDs to fragments
         else: id*=1000
         car.loc[to_idx:, ["ID"]] = id
         

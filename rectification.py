@@ -337,10 +337,10 @@ if __name__ == "__main__":
 
     # data_path = r"E:\I24-postprocess\MC_tracking" 
     # file_path = data_path+r"\DA\MC_tsmn.csv"
-    file_path = r"E:\I24-postprocess\benchmark\TM_300_pollute_DA_p.csv"
+    file_path = r"E:\I24-postprocess\benchmark\TM_1000_pollute_DA.csv"
     params = {"norm": "l1", # TODO: implement this toggle
               "start": 1000,
-              "end": 1300,
+              "end": 2020,
               "plot_start": 0, # for plotting tracks in online methods
               "plot_end": 10,
               "postprocess": True,
@@ -350,7 +350,7 @@ if __name__ == "__main__":
     re = Rectification(file_path, params)
     re.rectify()
     #%%
-    re.df.to_csv(r"E:\I24-postprocess\benchmark\TM_300_pollute_DA_RE_p.csv", index=False)
+    re.df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_pollute_DA_RE.csv", index=False)
     #%%
     re.postprocess(REMOVE_COLLISION=False, 
                    EXTEND = True,
