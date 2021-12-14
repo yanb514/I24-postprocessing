@@ -446,13 +446,13 @@ def extend_prediction(car, args):
     constant acceleration model
     '''
     # print(car['ID'].iloc[0])
-    xmin, xmax, maxFrame = args
+    xmin, xmax, minFrame, maxFrame = args
     dir = car['direction'].iloc[0]
 
     xlast = car['x'].iloc[-1]    
     xfirst = car['x'].iloc[0]
     
-    pts_fixed = ["ID","Object class","BBox xmin","BBox ymin","BBox xmax","BBox ymax","vel_x","vel_y","direction","camera","acceleration","height", "ts_bias for cameras ['p1c2', 'p1c3', 'p1c4']","lane"]
+    pts_fixed = ["ID","Object class"]
     
     if (dir == 1) & (xlast < xmax):#
         car = forward_predict(car,xmin,xmax,'xmax',maxFrame)
@@ -461,10 +461,10 @@ def extend_prediction(car, args):
         car = forward_predict(car,xmin,xmax,'xmin', maxFrame)
         car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
     if (dir == 1) & (xfirst > xmin):#tested
-        car = backward_predict(car,xmin,xmax,'xmin')
+        car = backward_predict(car,xmin,xmax,'xmin', minFrame)
         car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
     if (dir == -1) & (xfirst < xmax):
-        car = backward_predict(car,xmin,xmax,'xmax')
+        car = backward_predict(car,xmin,xmax,'xmax', minFrame)
         car[pts_fixed] = car[pts_fixed].interpolate(method='pad')
     
     return car
@@ -558,14 +558,14 @@ def forward_predict(car,xmin,xmax,target, maxFrame):
     return pd.concat([car, car_ext], sort=False, axis=0)    
     
 
-def backward_predict(car,xmin,xmax,target):
+def backward_predict(car,xmin,xmax,target,minFrame):
     '''
     backward predict up until frame 0
     '''
     # first
     # print(car['ID'].iloc[0])
     framefirst = car['Frame #'].values[0]
-    if framefirst <= 1:
+    if framefirst <= minFrame:
         return car
     yfirst = car['y'].values[0]
     xfirst = car['x'].values[0]
@@ -630,7 +630,7 @@ def backward_predict(car,xmin,xmax,target):
 #     Yre = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)        
     
     frames = np.arange(framefirst-len(x),framefirst)
-    pos_frames = frames>=0
+    pos_frames = frames>=minFrame
     # discard frame# < 0
     car_ext = {'Frame #': frames[pos_frames],
                 'x':x[pos_frames],
@@ -887,9 +887,10 @@ def post_process(df):
     print('extending tracks to edges of the frame...')
     camera = df['camera'].iloc[0]
     xmin, xmax, ymin, ymax = get_camera_range([camera])
+    minFrame = min(df['Frame #'])
     maxFrame = max(df['Frame #'])
     print(xmin, xmax)
-    args = (xmin, xmax, maxFrame)
+    args = (xmin, xmax, minFrame, maxFrame)
     tqdm.pandas()
     # df = df.groupby('ID').apply(extend_prediction, args=args).reset_index(drop=True)
     df = applyParallel(df.groupby("ID"), extend_prediction, args=args).reset_index(drop=True)
@@ -1044,7 +1045,7 @@ def calc_dynamics_car(car):
     vy = dy/dt
     vy = np.append(vy, vy[-1])
     v = np.sqrt(vx**2+vy**2)
-    theta = np.arcsin(vy/v)+np.arccos(direction)
+    theta = np.arccos(direction) - np.arcsin(vy/v)
     a = np.diff(v)/dt
     a = np.append(a, a[-1])
     car.loc[:,"speed"] = v

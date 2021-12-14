@@ -24,6 +24,7 @@ import math
 import matplotlib.pyplot as plt
 import time
 import utils_vis as vis
+import numpy.linalg as LA
 
 
 class Experiment():
@@ -114,7 +115,18 @@ class Experiment():
             # state_err.append(error)
             state_err[state] = error
         return state_err
-        
+    
+    def score(self, meas, rec, norm='l21'):
+        '''
+        commpute the correction score
+        '''
+        pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+        Y1 = np.array(meas[pts])    
+        Yre = np.array(rec[pts])
+        score = opt.loss(Yre, Y1, norm)
+
+        return score
+    
     def grid_evaluate(self):
         '''
         create a 2D array to store the accuracy metrics according to missing rate and noise std
@@ -125,13 +137,19 @@ class Experiment():
         grid = np.zeros((len(missing_list), len(noise_list))) # dummy 2D array to store the error of each state
         self.err_grid = {state: grid.copy() for state in self.states} # dict of 2D-array
         
+        correction_score = np.zeros((len(missing_list), len(noise_list))) 
+        
         for i,m in enumerate(missing_list):
             for j, n in enumerate(noise_list):
                 print("\rEvaluating {}/{}".format(i*len(noise_list)+j+1,len(missing_list)*len(noise_list)),end = "\r",flush = True)
                 for e in range(self.params["epoch"]):
                     meas = self.downgrade(m,n)
-                    rec = opt.rectify_single_camera(meas, self.params["lams"])
+                    rec = meas.copy()
+                    rec = opt.rectify_single_camera(rec, self.params["lams"])
                     state_err = self.evaluate(rec)
+                    correction_score[i,j] = self.score(meas, rec,'l2')
+                    vis.plot_track_compare(meas, rec)
+                    vis.dashboard([meas,rec],["meas","rec"])
                     # print(m,n,state_err)
                     for state in state_err:
                         # grid[i][j] += err
@@ -140,6 +158,8 @@ class Experiment():
         for state in state_err:# get the mean
             self.err_grid[state] /= self.params["epoch"]
         # self.err_grid = np.array(grid)/self.params["epoch"]
+        self.correction_score = correction_score
+        
     def runtime_analysis(self):
         missing = 0.2
         noise = 0.2
@@ -189,19 +209,19 @@ class Experiment():
         
     
 if __name__ == "__main__":
-    N = 20 # number of frames
+    N = 40 # number of frames
     state = {"width": 2,
              "length": 4,
              "x0": 0,
              "y0": 10,
              "theta": [0] * N,
-             "speed": [30] * N
+             "speed": 10*np.sin(np.arange(0,1/30*N,1/30))+30 # [30] * N
              }
-    params = {"missing": np.arange(0,0.7,0.1), # missing rate
-               "noise": np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
+    params = {"missing": [0.4], #np.arange(0,0.7,0.1), # missing rate
+               "noise": [0], # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
               "N": N,
-              "epoch": 10, # number of random runs of generate
-              "lams" : (1,0,0,0.1,0.1,0)
+              "epoch": 1, # number of random runs of generate
+              "lams" : (1,0,0,0,0,0)
         }
     
     ex = Experiment(state, params)
@@ -209,6 +229,7 @@ if __name__ == "__main__":
     if isinstance(N,list): # trigger run time analysis
         ex.runtime_analysis()
         # %%
+    print(N, ex.correction_score)
     ex.visualize()
 
     

@@ -9,6 +9,44 @@ from functools import partial
 from multiprocessing import Pool, cpu_count
 import utils_vis as vis
 
+def loss(Yre, Y1, norm='l21'):
+    '''
+    different ways to compute the diff matrix
+    '''
+    notNan = ~np.isnan(np.sum(Y1,axis=-1))
+    Y1 = Y1[notNan,:]
+    Yre = Yre[notNan,:]
+    diff = np.abs(Y1-Yre)
+    N = len(diff)
+    if N==0:
+        return 0
+    if norm=='l21':
+        return np.nanmean(LA.norm(diff,axis=1))
+    elif norm=='l2':
+        return LA.norm(diff,'fro')/N
+    elif norm=='xy': # weighted xy
+        mae_x = np.abs(diff[:,[0,2,4,6]])
+        mae_y = np.abs(diff[:,[1,3,5,7]]) 
+        alpha = 0.3
+        mae_xy = alpha*mae_x + (1-alpha)*mae_y
+        return LA.norm(mae_xy,'fro')/N
+    
+def get_costs(Yre, Y1, x,y,v,a,theta, norm):
+    '''
+    for normalizing lambdas
+    '''
+    N = len(a)
+    c1m, c2m, c3m, c4m, c5m = 1,1,1,1,1 # directly calculate 2-norm
+    c1 = loss(Yre, Y1, norm)/c1m
+    c2 = LA.norm(a,2)/N/30/c2m
+    j = np.diff(a)
+    c3 = LA.norm(j,2)/N/30/c3m
+    st = sin(theta)
+    c4 = LA.norm(st,2)/N/c4m
+    o = np.diff(theta)
+    c5 = LA.norm(o,2)/N/c5m
+    return c1,c2,c3,c4,c5
+    
 def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
     """The cost function
         X = [a,theta,v0,x0,y0,w,l]^T
@@ -22,17 +60,9 @@ def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
     x0,y0,w,l = X[2*N:]
     
     Yre,x,y,a = generate(w,l,x0, y0, theta,v, outputall=True)
-
+    Yre = Yre[notNan,:]
     # min perturbation
-    diff = Y1-Yre[notNan,:]
-    # c1 = lam1*np.nanmean(LA.norm(diff,axis=1)) # L2 norm
-    # c1 = lam1*np.nanmean(LA.norm(diff,ord=1,axis=1)) # L1 norm
-    # weighted distance
-    mae_x = np.abs(diff[:,[0,2,4,6]])
-    mae_y = np.abs(diff[:,[1,3,5,7]]) 
-    alpha = 0.3
-    mae_xy = alpha*mae_x + (1-alpha)*mae_y
-    c1 = lam1*LA.norm(mae_xy,ord=1)
+    c1 = lam1 * loss(Yre, Y1, 'l21')
     
     # regularize acceleration # not the real a or j, multiply a constant dt
     c2 = lam2*LA.norm(a,2)/nvalid/30
@@ -50,23 +80,8 @@ def obj1(X, Y1,N,dt,notNan, lam1,lam2,lam3,lam4,lam5):
     c5 = lam5*LA.norm(o,2)/nvalid/30
 
     return c1+c2+c3+c4+c5
-    
-def get_costs(Yre, Y1, x,y,v,a,theta,notNan, cmax=None):
-    if cmax: # using normalization
-        c1m, c2m, c3m, c4m, c5m = cmax
-    else: # not using normalization
-        c1m, c2m, c3m, c4m, c5m = 1,1,1,1,1 # directly calculate 2-norm
-    dt = 1/30
-    diff = Y1-Yre[notNan,:]
-    c1 = np.nanmean(LA.norm(diff,axis=1))/c1m
-    c2 = LA.norm(a,2)/np.count_nonzero(notNan)/30/c2m
-    j = np.diff(a)/dt
-    c3 = LA.norm(j,2)/np.count_nonzero(notNan)/900/c3m
-    st = sin(theta)
-    c4 = LA.norm(st,2)/np.count_nonzero(notNan)/c4m
-    o = np.diff(theta)/dt
-    c5 = LA.norm(o,2)/np.count_nonzero(notNan)/30/c5m
-    return c1,c2,c3,c4,c5
+
+
 
     
 def unpack1(res,N,dt):
@@ -90,14 +105,6 @@ def rectify_single_camera(df, args):
     df: a single track in one camera view
     '''             
     lam1, lam2, lam3,lam4,lam5,niter = args
-
-    # optimization parameters
-    lam1 = lam1# modification of measurement 1000
-    lam2 = lam2 # acceleration 0
-    lam3 = lam3 # jerk 0.1      
-    lam4 = lam4 # theta 1000      
-    lam5 = lam5 # omega 2     
-    niter = niter
     
     timestamps = df.Timestamp.values
     dt = np.diff(timestamps)
@@ -117,8 +124,8 @@ def rectify_single_camera(df, args):
         return None 
     
     # reorder Y1 to deal with backward traveling measurements
-    new_order = np.argsort(np.sum(Y1[:, [0,2,4,6]],axis=1))[::int(sign)]
-    Y1 = Y1[new_order,:]
+    # new_order = np.argsort(np.sum(Y1[:, [0,2,4,6]],axis=1))[::int(sign)]
+    # Y1 = Y1[new_order,:]
     
     first_valid = np.where(notNan==True)[0][0]
     
@@ -150,21 +157,24 @@ def rectify_single_camera(df, args):
     diff = Y1-Y0[notNan,:]
     c1max = np.nanmean(LA.norm(diff,axis=1))
     c1max = max(c1max, 1e-4)
-    
+
     # SOLVE FOR MAX C2-C5 BY SETTING LAM2-5 = 0
     lams = (100,0,0,0,0)
     minimizer_kwargs = {"method":"L-BFGS-B", "args":(Y1,N,dt,notNan,*lams),'bounds':bnds,'options':{'disp': False}}
     res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=0)
-
+    print('\n')
+    print('Initilization: ',loss(Y0[notNan,:], Y1, norm='l2'))
     # extract results    
     Yre, x,y,v,a,theta,w,l = unpack1(res,N,dt)
-    _,c2max,c3max,c4max,c5max = get_costs(Yre, Y1, x,y,v,a,theta,notNan)
+    Yre = Yre[notNan,:]
+    _,c2max,c3max,c4max,c5max = get_costs(Yre, Y1, x,y,v,a,theta,'l21')
     c2max,c3max,c4max,c5max = max(c2max, 1e-4), max(c3max, 1e-4), max(c4max, 1e-4), max(c5max, 1e-4)
     # SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
     lams = (lam1/c1max,lam2/c2max,lam3/c3max,lam4/c4max,lam5/c5max)
     minimizer_kwargs = {"method":"L-BFGS-B", "args":(Y1,N,dt,notNan,*lams),'bounds':bnds,'options':{'disp': False}}
     res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
     Yre, x,y,v,a,theta,w,l = unpack1(res,N,dt)
+    print('Final: ',loss(Y0[notNan,:], Y1, norm='l2'))
     
     df.loc[:,pts] = Yre        
     df.loc[:,'acceleration'] = a

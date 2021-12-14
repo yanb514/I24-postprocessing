@@ -37,6 +37,13 @@ import scipy
 import matplotlib.pyplot as plt
 import utils_evaluation as ev
 import torch
+import itertools
+import multiprocessing
+
+import cProfile
+import pstats
+import io
+from line_profiler import LineProfiler
 
 # import warnings
 # warnings.filterwarnings("error")
@@ -541,53 +548,7 @@ class Data_Association():
         self.df = newdf
         return
 
-        '''
-        try to match tracks that are "close" to each other in time-space dimension
-        offline matching, take advantage of a linear model
-        '''
-        groups = self.df.groupby("ID")
-        groupList = list(groups.groups)
-        pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
-       
-        n_car = len(groupList)
-        DX = np.ones((n_car, n_car)) * 99 
-        DY = np.ones((n_car, n_car)) * 99
-        
-        for i,c1 in enumerate(groupList):
-            # get the fitted line for c1
-            track1 = groups.get_group(c1)
-            t1 = track1["Frame #"].values
-            track1 = np.array(track1[pts])
-            x1 = (track1[:,0] + track1[:,2])/2
-            y1 = np.nanmean((track1[:,1] + track1[:,7])/2)
-            cx1 = np.nanmean(x1)
-     
-            fit = np.polyfit(t1,x1,1)
-            a,b,c = -fit[0], 1, -fit[1] # x1 = a*t1 + c
-            
-            for j in range(n_car):
-                if i == j:
-                    continue
-                track2 = groups.get_group(groupList[j])
-                t2 = track2["Frame #"].values
-                track2 = np.array(track2[pts])
-                x2 = (track2[:,0] + track2[:,2])/2
-                y2 = np.nanmean((track2[:,1] + track2[:,7])/2)
-                cx2 = np.nanmean(x2)
-                DX[i,j] = self.pts_to_line(t2,x2,a,b,c)
-                DY[i,j] = np.abs(y1-y2)/np.abs(cx1-cx2) # tan\theta
-                
-        matched = np.logical_and(DX<THRESHOLD_1, DY<THRESHOLD_2)
-    
-        for i in range(n_car-1,-1,-1):
-            idx = np.where(np.logical_and(matched[:,i], matched[i,:]))[0]
-            if len(idx)>0:
-                newid = groupList[idx[0]] # assigned to the first ID appeared in scene
-                parent = {groupList[i]: newid for i in list(idx)+[i]}
-                self.df['ID'] = self.df['ID'].apply(lambda x: parent[x] if x in parent else x)
-                
-        # post process
-        return
+
     
     def stitch_objects_tsmn(self, THRESHOLD_1=0.3, THRESHOLD_2=0.03):
         '''
@@ -720,28 +681,30 @@ class Data_Association():
         
         
    
-    def stitch_objects_tsmn_ll(self, THRESHOLD_C=50, VARX=0.03, VARY=0.03):
+    def stitch_objects_tsmn_ll(self, THRESHOLD_C=50, VARX=0.03, VARY=0.03, time_out = 500):
         '''
         similar to stitch_objects_tsmn
         instead of binary fit, calculate a loss (log likelihood)
         '''
-        groups = self.df.groupby("ID")
-        groupList = list(groups.groups)
+ 
+        groups = {k: v for k, v in self.df.groupby("ID")}
+        groupList = list(groups.keys())
+        # groupList = list(groups.groups)
         pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
        
         n_car = len(groupList)
         CX = np.ones((n_car, n_car)) * 999 # cone of X
 
-        track_len = []
         loss = torch.nn.GaussianNLLLoss()
         empty_id = set()
         
+        
         for i,c1 in enumerate(groupList):
             print("\rTracklet {}/{}".format(i,n_car),end = "\r",flush = True)
-
             # get the fitted line for c1
-            track1 = groups.get_group(c1)
-            track_len.append(len(track1))
+            # track1 = groups.get_group(c1)
+            track1 = groups[c1]
+
             t1 = track1["Frame #"].values
             ct1 = np.nanmean(t1)
             track1 = np.array(track1[pts])
@@ -762,13 +725,15 @@ class Data_Association():
                 fitx = np.array([v,b[0]])
                 fity = np.array([0,y1[0]])
             else:
-                # fit time vs. x
-                fitx = np.polyfit(t1,x1,1)
-                fity = np.polyfit(t1,y1,1)
-                # fity = np.array([0, np.mean(y1)])
+                X = np.vstack([t1,np.ones(len(t1))]).T # N x 2
+                fitx = np.linalg.lstsq(X, x1, rcond=None)[0]
+                fity = np.linalg.lstsq(X, y1, rcond=None)[0]
                 
+                    
             for j in range(i+1,n_car):
-                track2 = groups.get_group(groupList[j])
+                # track2 = groups.get_group(groupList[j])
+                track2 = groups[groupList[j]]
+                
                 t2 = track2["Frame #"].values
                 track2 = np.array(track2[pts])
                 x2 = (track2[:,0] + track2[:,2])/2
@@ -789,16 +754,21 @@ class Data_Association():
                     fit2x = np.array([v,b[0]])
                     fit2y = np.array([0,y2[0]])
                 else:
-                    # fit time vs. x
-                    fit2x = np.polyfit(t2,x2,1)
-                    fit2y = np.polyfit(t2,y2,1)
-                    # fit2y = np.array([0, np.mean(y2)])
-                 
+                    # OLS faster
+                    X = np.vstack([t2,np.ones(len(t2))]).T
+                    fit2x = np.linalg.lstsq(X, x2, rcond=None)[0]
+                    fit2y = np.linalg.lstsq(X, y2, rcond=None)[0] 
+                
                 nll = 999
                 if all(t2-t1[-1]>=0): # t1 comes first
+                    if t2[0] - t1[-1] > time_out:
+                        # print("time out {} and {}".format(c1, groupList[j]))
+                        continue
                     # 1. project t1 forward to t2's time
-                    targetx = np.polyval(fitx, t2)
-                    targety = np.polyval(fity, t2)
+                    # targetx = np.polyval(fitx, t2)
+                    # targety = np.polyval(fity, t2)
+                    targetx = np.matmul(X, fitx)
+                    targety = np.matmul(X, fity)
                     pt1 = t1[-1]
                     varx = (t2-pt1) * VARX 
                     vary = (t2-pt1) * VARY
@@ -806,7 +776,7 @@ class Data_Association():
                     target = torch.transpose(torch.tensor([targetx, targety]),0,1)
                     var = torch.transpose(torch.tensor([varx,vary]),0,1)
                     nll = min(nll, loss(input,target,var))
-                    
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
                     # 2. project t2 backward to t1's time
                     targetx = np.polyval(fit2x, t1)
                     targety = np.polyval(fit2y, t1)
@@ -817,8 +787,11 @@ class Data_Association():
                     target = torch.transpose(torch.tensor([targetx, targety]),0,1)
                     var = torch.transpose(torch.tensor([varx,vary]),0,1)
                     nll = min(nll, loss(input,target,var))
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
                     
-                elif all(t1-t2[-1]>=0): # t2 comes first: 
+                elif all(t1-t2[-1]>=0): # t2 comes first:
+                    if t1[0] - t2[-1] > time_out:
+                        continue
                     # 3. project t1 backward to t2's time
                     targetx = np.polyval(fitx, t2)
                     targety = np.polyval(fity, t2)
@@ -829,6 +802,7 @@ class Data_Association():
                     target = torch.transpose(torch.tensor([targetx, targety]),0,1)
                     var = torch.transpose(torch.tensor([varx,vary]),0,1)
                     nll = min(nll, loss(input,target,var))
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
                     
                     # 4. project t2 forward to t1's time
                     targetx = np.polyval(fit2x, t1)
@@ -840,8 +814,10 @@ class Data_Association():
                     target = torch.transpose(torch.tensor([targetx, targety]),0,1)
                     var = torch.transpose(torch.tensor([varx,vary]),0,1)
                     nll = min(nll, loss(input,target,var))
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
                     
-                
+                # else:
+                    # print("time overlap {} and {}".format(c1, groupList[j]))
                 CX[i,j] = nll
                 
         # for debugging only
@@ -883,7 +859,7 @@ class Data_Association():
                     pass
 
             
-                
+        self.df = self.df.sort_values(by=['Frame #','ID']).reset_index(drop=True)         
         print("\n")
         print("Before DA: {} unique IDs".format(len(groupList))) 
         print("After DA: {} unique IDs".format(self.df.groupby("ID").ngroups))
@@ -891,90 +867,190 @@ class Data_Association():
       
         return 
     
-   
+    def stitch_objects_tsmn_ll_mp(self, THRESHOLD_C=50, VARX=0.03, VARY=0.03, time_out = 500):
         '''
-        Based on file:///Users/yanbing_wang/Downloads/sensors-21-02894.pdf
-        1. identify high-confident tracks H, the rest is L
-        2. associated as much tracks in L to H as possible, leftover is L', remove all H
-        3. associate L' to each other, remove all H
-        4. remove all L
+        multiple pool for stitch_objects_tsmn_ll
         '''
-        groups = self.df.groupby("ID")
-        groupList = list(groups.groups)
+ 
+        groups = {k: v for k, v in self.df.groupby("ID")}
+        groupList = list(groups.keys())
+        # groupList = list(groups.groups)
         pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
        
         n_car = len(groupList)
-        CONF = [0] * n_car # tracklets confidence
-        xmin, xmax = min(self.df["x"].values),max(self.df["x"].values)
+        CX = np.ones((n_car, n_car)) * 999 # cone of X
 
-        # seperate high conf and low-conf tracks
+        loss = torch.nn.GaussianNLLLoss()
+        empty_id = set()
+        
+        combinations = itertools.combinations(groupList, 2)
         for i,c1 in enumerate(groupList):
-            T1 = groups.get_group(c1)
-            CONF[i] = self.confidence(T1, beta=1, xmin=xmin, xmax=xmax)
-        H = set(np.where(np.array(CONF)>THRESHOLD_CONF)[0]) # idx of high-confident tracks
-        L = set(np.arange(0,n_car,1)) - H
-        H = list(H)
-        H.sort()
-        L = list(L)
-        L.sort()
-        print("{}/{} tracks are high-confident".format(len(H),len(groupList)))
-        
-        # stitch L to H as much as possible
-        AFF = np.zeros((len(L),len(H)))
-        for l in range(len(L)):
-            for h in range(len(H)):
-                Tl,Th = groups.get_group(groupList[L[l]]), groups.get_group(groupList[H[h]])
-                AFF[l][h] = self.affinity_p(Tl, Th) + self.affinity_s(Tl, Th)
-        # AFF[AFF>THRESHOLD_AFF] = float('inf')
-        # AFF
-        AFF = AFF<THRESHOLD_AFF
-        Lp = set() # associated low-confident tracks
-        for h in range(len(H)):
-            idx = np.where(AFF[:,h])[0]
-            if len(idx)>0:
-                newid = groupList[H[h]] # assigned to the id of high-conf track
-                T1 = groups.get_group(groupList[H[h]])
-                P = {}
-                for l in idx:
-                    T2 = groups.get_group(groupList[L[l]])
-                    t1,t2 = min(T2["Frame #"].values),max(T2["Frame #"].values)
-                    if (t1>min(T1["Frame #"].values)) and (t2<max(T1["Frame #"].values)):
+            print("\rTracklet {}/{}".format(i,n_car),end = "\r",flush = True)
+            # get the fitted line for c1
+            # track1 = groups.get_group(c1)
+            track1 = groups[c1]
+
+            t1 = track1["Frame #"].values
+            ct1 = np.nanmean(t1)
+            track1 = np.array(track1[pts])
+            x1 = (track1[:,0] + track1[:,2])/2
+            y1 = (track1[:,1] + track1[:,7])/2
+            notnan = ~np.isnan(x1)
+            t1 = t1[notnan]
+            x1 = x1[notnan]
+            y1 = y1[notnan]
+            
+            if len(t1)<1 or (c1 in empty_id):
+                empty_id.add(c1)
+                continue
+            
+            elif len(t1)<2:
+                v = np.sign(track1[0,2]-track1[0,0]) # assume 1/-1 m/frame = 30m/s
+                b = x1-v*ct1 # recalculate y-intercept
+                fitx = np.array([v,b[0]])
+                fity = np.array([0,y1[0]])
+            else:
+                X = np.vstack([t1,np.ones(len(t1))]).T # N x 2
+                fitx = np.linalg.lstsq(X, x1, rcond=None)[0]
+                fity = np.linalg.lstsq(X, y1, rcond=None)[0]
+                
+                    
+            for j in range(i+1,n_car):
+                # track2 = groups.get_group(groupList[j])
+                track2 = groups[groupList[j]]
+                
+                t2 = track2["Frame #"].values
+                track2 = np.array(track2[pts])
+                x2 = (track2[:,0] + track2[:,2])/2
+                y2 = (track2[:,1] + track2[:,7])/2
+
+                notnan = ~np.isnan(x2)
+                if sum(notnan)==0 or (groupList[j] in empty_id): # if all data is nan (missing)
+                    empty_id.add(groupList[j])
+                    continue
+                t2 = t2[notnan]
+                x2 = x2[notnan]
+                y2 = y2[notnan]
+                ct2 = np.mean(t2)
+            
+                if len(t2)<2:
+                    v = np.sign(track2[0,2]-track2[0,0])
+                    b = x2-v*ct2 # recalculate y-intercept
+                    fit2x = np.array([v,b[0]])
+                    fit2y = np.array([0,y2[0]])
+                else:
+                    # OLS faster
+                    X = np.vstack([t2,np.ones(len(t2))]).T
+                    fit2x = np.linalg.lstsq(X, x2, rcond=None)[0]
+                    fit2y = np.linalg.lstsq(X, y2, rcond=None)[0] 
+                
+                nll = 999
+                if all(t2-t1[-1]>=0): # t1 comes first
+                    if t2[0] - t1[-1] > time_out:
+                        # print("time out {} and {}".format(c1, groupList[j]))
                         continue
-                    else:
-                        # parent = {groupList[L[l]]: newid for l in idx}
-                        P[groupList[L[l]]] = newid
-                        Lp.add(L[l])
-                self.df['ID'] = self.df['ID'].apply(lambda x: P[x] if x in P else x)
-                print(P)
-                # self.df['ID'] = self.df['ID'].apply(lambda x: parent[x] if x in parent else x)
-        print("{} low-confident tracks are associated to high-confident tracks".format(len(Lp)))
+                    # 1. project t1 forward to t2's time
+                    # targetx = np.polyval(fitx, t2)
+                    # targety = np.polyval(fity, t2)
+                    targetx = np.matmul(X, fitx)
+                    targety = np.matmul(X, fity)
+                    pt1 = t1[-1]
+                    varx = (t2-pt1) * VARX 
+                    vary = (t2-pt1) * VARY
+                    input = torch.transpose(torch.tensor([x2,y2]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
+                    # 2. project t2 backward to t1's time
+                    targetx = np.polyval(fit2x, t1)
+                    targety = np.polyval(fit2y, t1)
+                    pt2 = t2[0]
+                    varx = (pt2-t1) * VARX 
+                    vary = (pt2-t1) * VARY
+                    input = torch.transpose(torch.tensor([x1,y1]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
+                    
+                elif all(t1-t2[-1]>=0): # t2 comes first:
+                    if t1[0] - t2[-1] > time_out:
+                        continue
+                    # 3. project t1 backward to t2's time
+                    targetx = np.polyval(fitx, t2)
+                    targety = np.polyval(fity, t2)
+                    pt1 = t1[0]
+                    varx = (pt1-t2) * VARX 
+                    vary = (pt1-t2) * VARY
+                    input = torch.transpose(torch.tensor([x2,y2]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
+                    
+                    # 4. project t2 forward to t1's time
+                    targetx = np.polyval(fit2x, t1)
+                    targety = np.polyval(fit2y, t1)
+                    pt2 = t2[-1]
+                    varx = (t1-pt2) * VARX 
+                    vary = (t1-pt2) * VARY
+                    input = torch.transpose(torch.tensor([x1,y1]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
+                    
+                # else:
+                    # print("time overlap {} and {}".format(c1, groupList[j]))
+                CX[i,j] = nll
+                
+        # for debugging only
+        self.CX = CX
+        self.groupList = groupList
+        self.empty_id = empty_id
         
-        L = list(set(L) - Lp)
-        L.sort()
-        AFFL = np.ones((len(L), len(L)))*np.inf
-        for l1 in range(len(L)):
-            for l2 in range(l1+1,len(L)):
-                T1,T2 = groups.get_group(groupList[L[l1]]),groups.get_group(groupList[L[l2]])
-                AFFL[l1,l2] = self.affinity_p(T1, T2) + self.affinity_s(T1, T2)
-        AFFL = AFFL<THRESHOLD_AFF
-        for i in range(len(L)-1,-1,-1):
-            idx = np.where(AFFL[:,i])[0]
-            if len(idx)>0:
-                newid = groupList[idx[0]] # assigned to the first ID appeared in scene
-                parent = {groupList[i]: newid for i in list(idx)+[i]}
-                print(parent)
-                self.df['ID'] = self.df['ID'].apply(lambda x: parent[x] if x in parent else x)
-                L_set = set([L[l] for l in idx])
-                Lp = Lp.union(L_set)
+        BX = CX < THRESHOLD_C
         
-        L = set(L) - Lp # not associated
-        L_id = set([groupList[i] for i in L])
-        self.df = self.df.groupby("ID").filter(lambda x: (x['ID'].iloc[-1] not in L_id))
-        print("{} tracks are not associated: {}".format(len(L),L_id))
+        for i in range(len(CX)): # make CX CY symmetrical
+            BX[i,:] = np.logical_or(BX[i,:], BX[:,i])
+            
+        # 4. start by sorting CX
+        a,b = np.unravel_index(np.argsort(CX, axis=None), CX.shape)
+
+        path = {idx: {idx} for idx in range(n_car)} # disjoint set
+        for i in range(len(a)):
+            if CX[a[i],b[i]] > THRESHOLD_C:
+                break
+            else: 
+                path_a, path_b = list(path[a[i]]),list(path[b[i]])
+                if np.all(BX[np.ix_(path_a, path_b)]): # if no conflict with any path
+                    path[a[i]] = path[a[i]].union(path[b[i]])
+                    for aa in path[a[i]]:
+                        path[aa] = path[a[i]].copy()
+                    
+        # delete IDs that are empty
+        self.df = self.df.groupby("ID").filter(lambda x: (x["ID"].iloc[0] not in empty_id))
+        self.path = path.copy()
+        # modify ID
+        while path:
+            key = list(path.keys())[0]
+            reid = {groupList[old]: groupList[key] for old in path[key]} # change id=groupList[v] to groupList[key]
+            self.df = self.df.replace({'ID': reid})
+            for v in list(path[key]) + [key]:
+                try:
+                    path.pop(v)
+                except KeyError:
+                    pass
+
+            
+        self.df = self.df.sort_values(by=['Frame #','ID']).reset_index(drop=True)         
+        print("\n")
         print("Before DA: {} unique IDs".format(len(groupList))) 
         print("After DA: {} unique IDs".format(self.df.groupby("ID").ngroups))
-        
-        return
+        print("True: {} unique IDs".format(len([id for id in groupList if id<1000])))
+      
+        return 
     
     def average_meas(self, x):
         if len(x)>2:
@@ -1096,8 +1172,12 @@ class Data_Association():
             print("Connect invalid tracks...")
             self.df = self.df.groupby("ID").apply(utils.connect_track).reset_index(drop=True)     # connect tracks such that frame # are continuous
         
+        # mark missing as missing in Generation method
+        self.df.loc[self.df.bbr_x.isnull(), 'Generation method'] = 'missing'
+        
         if len(SAVE)>0:
             self.df.to_csv(SAVE, index = False)
+            
         return
     
 
@@ -1121,7 +1201,7 @@ if __name__ == "__main__":
     params = {"method": "tsmn",
               "threshold": (0,0), # 0.3, 0.04 for tsmn
               "start": 1000, # starting frame
-              "end": 1200, # ending frame
+              "end": 2050, # ending frame
               "plot_start": 0, # for plotting tracks in online methods
               "plot_end": 10,
               "preprocess": False,
@@ -1130,8 +1210,24 @@ if __name__ == "__main__":
     
     da = Data_Association(raw_path, params)
 
-    # da.df = da.df[da.df["ID"].isin([80,82,80000,80002,82000])] # for debugging purposes
-    da.stitch_objects_tsmn_ll(THRESHOLD_C=30, VARX = 0.05, VARY=0.02)
+    # da.df = da.df[da.df["ID"].isin([66,66008,66009])] # for debugging purposes
+    da.stitch_objects_tsmn_ll(THRESHOLD_C=30, VARX = 0.05, VARY=0.02, time_out = 2000)
+    
+    # %% profile
+    # pr = cProfile.Profile()
+    # pr.enable()
+    # da.stitch_objects_tsmn_ll(THRESHOLD_C=30, VARX = 0.05, VARY=0.02, time_out = 100)
+    # pr.disable()
+    # s = io.StringIO()
+    # ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
+    # ps.print_stats()
+    
+    # with open('test_OLS.txt', 'w+') as f:
+    #     f.write(s.getvalue())
+        
+    
+    # %%
+    # da.stitch_objects_tsmn_ll(THRESHOLD_C=30, VARX = 0.05, VARY=0.02, time_out = 100)
     # da.df.to_csv(r"E:\I24-postprocess\benchmark\TM_300_pollute_DA.csv", index=False)
     da.evaluate(synth=True) # set to False if absence of GT
     # da.df = utils.read_data(r"E:\I24-postprocess\benchmark\TM_200_pollute_DA.csv")
@@ -1142,7 +1238,7 @@ if __name__ == "__main__":
                     CONNECT_TRACKS=True, 
                     # SAVE = data_path+r"\DA\MC_tsmn.csv"
                     # SAVE = ""
-                    SAVE =  r"E:\I24-postprocess\benchmark\TM_200_pollute_DA.csv"
+                    SAVE =  r"E:\I24-postprocess\benchmark\TM_1000_pollute_DA.csv"
                     )
     # da.visualize_BA(lanes=[1,2,3,4])
     

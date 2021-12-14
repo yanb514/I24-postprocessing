@@ -43,10 +43,10 @@ def plot_time_space(df, lanes=[1], time="Time", space="Distance", ax=None, show 
             ax.fill_between(x,y1,y2,alpha=0.5,color = colors[j%len(colors)], label="{}".format(carid))
             # ax.plot(x,y1,color = colors[j%len(colors)], label="{}".format(carid))
             j += 1
-        try:
-            ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-        except:
-            pass
+        # try:
+        #     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        # except:
+        #     pass
 
         ax.set_xlabel(time)
         ax.set_ylabel(space)
@@ -186,6 +186,7 @@ def preprocess(df):
             'direction','camera','acceleration','speed','x','y','theta','width','length','height',"lane"]
     df = df.reindex(columns=col)
 
+    df = df.sort_values(by=['Frame #','ID']).reset_index(drop=True)         
     return df
 
 def pollute_car(car, AVG_CHUNK_LENGTH, OUTLIER_RATIO):
@@ -220,14 +221,17 @@ def pollute_car(car, AVG_CHUNK_LENGTH, OUTLIER_RATIO):
     return car
 
 def pollute(df, AVG_CHUNK_LENGTH, OUTLIER_RATIO):
+    print("Downgrading data...")
     df = df.groupby('ID').apply(pollute_car, AVG_CHUNK_LENGTH, OUTLIER_RATIO).reset_index(drop=True)
+    # df = applyParallel(df.groupby("ID"), pollute_car).reset_index(drop=True)
     return df
 
 # %%
 if __name__ == "__main__":
     data_path = r"E:\I24-postprocess\benchmark\TM_trajectory.csv"
-    df = pd.read_csv(data_path, nrows=1000)
+    df = pd.read_csv(data_path, nrows=5000)
 
+    print(len(df))
     df = standardize(df)
     df = calc_state(df)
     df = preprocess(df)
@@ -237,14 +241,14 @@ if __name__ == "__main__":
     df = df[df["Frame #"]>1000]
     
     df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_GT.csv", index=False) # save the ground truth data
-    
+    #%%
     df = pollute(df, AVG_CHUNK_LENGTH=30, OUTLIER_RATIO=0.2) # manually perturb (downgrade the data)
     df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_pollute.csv", index=False) # save the downgraded data
-    
+    print("saved.")
     # %% visualize in time-space diagram
-    # plot_time_space(df, lanes=[1,2,3,4], time="Frame #", space="x", ax=None, show =True)
+    plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)
     
     # %% examine an individual track by its ID
-    # car = df[df["ID"]==16]
-    # vis.plot_track_df(car[:50])
+    car = df[df["ID"]==13]
+    vis.plot_track_df(car[80:180])
     
