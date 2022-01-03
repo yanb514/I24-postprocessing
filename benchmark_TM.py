@@ -224,12 +224,13 @@ def pollute(df, AVG_CHUNK_LENGTH, OUTLIER_RATIO):
     print("Downgrading data...")
     df = df.groupby('ID').apply(pollute_car, AVG_CHUNK_LENGTH, OUTLIER_RATIO).reset_index(drop=True)
     # df = applyParallel(df.groupby("ID"), pollute_car).reset_index(drop=True)
+    df = df.sort_values(by=['Frame #','ID']).reset_index(drop=True)         
     return df
 
 # %%
 if __name__ == "__main__":
     data_path = r"E:\I24-postprocess\benchmark\TM_trajectory.csv"
-    df = pd.read_csv(data_path, nrows=5000)
+    df = pd.read_csv(data_path, nrows=2000)
 
     print(len(df))
     df = standardize(df)
@@ -237,18 +238,21 @@ if __name__ == "__main__":
     df = preprocess(df)
     
     # you can select some time-space window such that the trajectory lengths are similar (run plot_time_space to visualize)
-    df = df[df["x"]>1000]
-    df = df[df["Frame #"]>1000]
-    
-    df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_GT.csv", index=False) # save the ground truth data
+    # df = df[df["x"]>1000]
+    # df = df[df["Frame #"]>1000]
+    print(df["Frame #"].iloc[-1])
+    print(np.max(df["Frame #"].values))
+    # df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_GT.csv", index=False) # save the ground truth data
     #%%
     df = pollute(df, AVG_CHUNK_LENGTH=30, OUTLIER_RATIO=0.2) # manually perturb (downgrade the data)
-    df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_pollute.csv", index=False) # save the downgraded data
-    print("saved.")
+    print(df["Frame #"].iloc[-1])
+    print(np.max(df["Frame #"].values))
+    # df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_pollute.csv", index=False) # save the downgraded data
+    # print("saved.")
     # %% visualize in time-space diagram
-    plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)
+    # plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)
     
     # %% examine an individual track by its ID
-    car = df[df["ID"]==13]
-    vis.plot_track_df(car[80:180])
+    # car = df[df["ID"]==13]
+    # vis.plot_track_df(car[80:180])
     

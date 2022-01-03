@@ -230,6 +230,6 @@ if __name__ == "__main__":
         ex.runtime_analysis()
         # %%
     print(N, ex.correction_score)
-    ex.visualize()
+    # ex.visualize()
 
     

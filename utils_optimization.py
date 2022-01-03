@@ -151,8 +151,9 @@ def rectify_single_camera(df, args):
                  [x0,y0,w0,l0]),axis=-1)
 
     bnds = [(0,50) for i in range(0,N)]+\
-            [(-np.pi/8+np.arccos(sign),np.pi/8+np.arccos(sign)) for i in range(N)]+\
-            [(-np.inf,np.inf),(0,np.inf),(1,4),(2,np.inf)]        
+            [(np.arccos(sign),np.arccos(sign)) for i in range(N)]+\
+            [(-np.inf,np.inf),(0,np.inf),(1,4),(2,np.inf)]  
+            # [(-np.pi/8+np.arccos(sign),np.pi/8+np.arccos(sign)) for i in range(N)]+\
     Y0 = generate(w0,l0,x0, y0, theta0,v0)
     diff = Y1-Y0[notNan,:]
     c1max = np.nanmean(LA.norm(diff,axis=1))
@@ -174,7 +175,7 @@ def rectify_single_camera(df, args):
     minimizer_kwargs = {"method":"L-BFGS-B", "args":(Y1,N,dt,notNan,*lams),'bounds':bnds,'options':{'disp': False}}
     res = basinhopping(obj1, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
     Yre, x,y,v,a,theta,w,l = unpack1(res,N,dt)
-    print('Final: ',loss(Y0[notNan,:], Y1, norm='l2'))
+    print('Final: ',loss(Yre[notNan,:], Y1, norm='l2'))
     
     df.loc[:,pts] = Yre        
     df.loc[:,'acceleration'] = a
