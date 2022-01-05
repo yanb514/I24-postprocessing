@@ -309,21 +309,21 @@ def dashboard(cars, legends=None):
     carid = cars[0]["ID"].iloc[0]
     for caridx,car in enumerate(cars):
         
-        if legends[caridx] != 'rectified':
+        if legends[caridx] not in {'rectified','gt'}:
             car = utils.calc_dynamics_car(car)
-            print('calculate dynamics')
+            print(legends[caridx], ' calculate dynamics')
          
         x = car['Frame #'].values
         c = colors[caridx%len(colors)]
         
         # time vs. x
-        xx = (car['bbr_x'].values+car['fbr_x'].values)/2
+        xx = (car['x'].values+car['x'].values)/2
         ax1.scatter(x,xx,color=c,s=2,label="{}".format(legends[caridx]))
         ax1.plot(x,xx,color=c)
         ax1.legend()
         
         # time vs. y
-        y = (car['bbr_y'].values+car['bbl_y'].values)/2
+        y = (car['y'].values+car['y'].values)/2
         ax2.scatter(x,y,color=c,s=2,label="{}".format(legends[caridx]))
         ax2.plot(x,y,color=c)
 
@@ -358,13 +358,13 @@ def dashboard(cars, legends=None):
     # speed
     ax3.set_xlabel('Frame #')
     ax3.set_title('Speed (m/s)')
-    ax3.set_ylim([10,50])
+    # ax3.set_ylim([10,50])
     ax3.yaxis.set_major_formatter(FormatStrFormatter('%.0f'))
     
     # acceleration
     ax4.set_xlabel('Frame #')
     ax4.set_title('acceleration (m/s2)')
-    ax4.set_ylim([-10,10])
+    # ax4.set_ylim([-10,10])
     ax4.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
     
     # theta

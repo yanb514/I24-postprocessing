@@ -1,14 +1,212 @@
 import pandas as pd
 import numpy as np
-from numpy import sin,cos
-from scipy.optimize import minimize, basinhopping
 import numpy.linalg as LA
-import utils
+from numpy import sin,cos
+from scipy.optimize import minimize, basinhopping, LinearConstraint,Bounds
 from tqdm import tqdm
 from functools import partial
 from multiprocessing import Pool, cpu_count
+import utils
 import utils_vis as vis
 
+# ==================== FOR 1D DOT TOY EXAMPLE ONLY ===============
+def generate_1d(x0, v0, a, dt):
+    '''
+    generate vehicle states using 1-st order dynamics
+    x(k+1) = x(k)+v(k)dt
+    v(k+1) = v(k)+a(k)dt
+    
+    x0, v0: initial position and velocity, in float
+    a: Nx1 array, acceleration, but only a[:-2] is used in dynamics
+    dt: float or Nx1 array
+    
+    return: x,v,a
+    '''
+    N = len(a)
+    
+    x = np.zeros(N)
+    v = np.zeros(N)
+    x[0] = x0
+    v[0] = v0
+    for k in range(0,N-2):
+        v[k+1] = v[k] + a[k]*dt
+        x[k+1] = x[k] + v[k]*dt
+    x[-1] = x[-2] + v[-2]*dt 
+    v[-1] = v[-2]
+    
+    return x,v,a
+
+def nan_helper(y):
+    """Helper to handle indices and logical indices of NaNs.
+
+    Input:
+        - y, 1d numpy array with possible NaNs
+    Output:
+        - nans, logical indices of NaNs
+        - index, a function, with signature indices= index(logical_indices),
+          to convert logical indices of NaNs to 'equivalent' indices
+    Example:
+        >>> # linear interpolation of NaNs
+        >>> nans, x= nan_helper(y)
+        >>> y[nans]= np.interp(x(nans), x(~nans), y[~nans])
+    """
+
+    return np.isnan(y), lambda z: z.nonzero()[0]
+
+def obj_1d(X, x, N, dt, notNan, lam):
+    """ The cost function for 1d
+            X: decision variables X = [xhat, vhat, ahat]
+                xhat: rectified positions (N x 1)
+                ahat: rectified acceleration (N-2 x 1)
+            x: position measurements (N x 1), could have NaN
+            N: int number of measurements
+            dt: float delta T 
+            notNan: bool array indicating timestamps that have measurements
+            lam: given parameter
+        Return: float
+    """ 
+    nvalid = np.count_nonzero(notNan)
+    # unpack decision variables
+    xhat = X[:N]
+    vhat = X[N:2*N]
+    ahat = X[2*N:]
+    
+    # select valid measurements
+    xhat = xhat[notNan]
+    x = x[notNan]
+    
+    # min perturbation
+    # c1 = loss(x, xhat, 'l2')
+    c1 = LA.norm(x-xhat,2)**2
+    # print("c1: ",c1)
+    # regularize acceleration # not the real a or j, multiply a constant dt
+    c2 = LA.norm(ahat,2)**2
+    # print("c2: ",c2)
+    cost = lam*c1 + (1-lam) * c2
+    # print(cost)
+    return c1
+
+def const_1d(n, dt):
+    """ The constraint representing linear dynamics
+        n: number of decision variables
+        Return: matrix A (nxn), such that A dot X = [0]_(nx1)
+        for scipy.optimize.LinearConstraint: lb<= A.dot(X) <= ub 'trust-constr'
+    """ 
+    A = np.zeros((n,n))
+    N = int(n/3) # number of total timestamps
+    
+    # xhat(1) = xhat(0)+vhat(0)*dt
+    # A[1][0] = -1
+    # A[1][1] = 1
+    # A[1][N] = -dt
+    
+    for i in range(1, N): # xhat
+        # xhat(k+1)-xhat(k)-vhat(k)*dt = 0
+        A[i][i] = 1
+        A[i][i-1] = -1
+        A[i][i-1+N] = -dt
+        
+        # xhat(k+1)=xhat(k)+vhat(k)*dt = xhat(k)+vhat(k-1)*dt+ahat(k-1)dt^2
+        # A[i][i] = 1
+        # A[i][i-1] = -1
+        # A[i][i-2+N] = -dt
+        # A[i][i-3+N+N] = -dt**2
+        
+    for i in range(N+1, 2*N): # vhat 
+        # vhat(k+1)-vhat(k)-ahat(k)*dt = 0
+        A[i][i] = 1
+        A[i][i-1] = -1
+        A[i][i-1+N] = -dt
+    
+    
+    # ahat[-1] = ahat[-3], ahat[-2] = ahat[-3]
+    A[-1][-1] = 1
+    A[-1][-2] = -1
+    A[-2][-2] = 1
+    A[-2][-3] = -1
+    
+    return A
+ 
+   
+def rectify_1d(df, args):
+    '''                        
+    solve for the optimization problem:
+        minimize obj_1d(X, x, N, dt, notNan, lam)
+        s.t. A = const_1d(X, dt), AX = 0  
+    args: tuple (lam. niter)
+    '''  
+    # TODO: deal with signs
+    # get data
+    x = df.x.values
+    v = df.speed.values
+    a = df.acceleration.values
+    N = len(x)
+    n = 3*N
+    lam,niter = args
+    
+    dt = 1/30
+    # sign = df["direction"].iloc[0]           
+    notNan = ~np.isnan(x)
+
+    # Define constraints
+    A = const_1d(n, dt)
+    linear_constraint = LinearConstraint(A, np.zeros(n), np.zeros(n)) 
+    # Bounds constraints
+    lb = [-np.inf]*N + [0]*N + [-10]*N
+    ub = [np.inf]*N + [50]*N + [10]*N
+    bounds = Bounds(lb,ub)
+    
+    # Initialize decision variables
+    nans, ind = nan_helper(a)
+    a[nans]= np.interp(ind(nans), ind(~nans), a[~nans])
+    xhat0,vhat0,ahat0 = generate_1d(x[0], v[0], a, dt)
+    X0 = np.concatenate((xhat0,vhat0,ahat0), axis=0)
+
+    initial_cost = obj_1d(X0, x, N, dt, notNan, lam)
+    
+    print("Initial cost: ", initial_cost)
+    print("Initial constraint: ",  LA.norm(np.dot(A, X0),2))
+
+    # 3 methods for constrained optimization
+    # 1. trust-constr
+    # res = minimize(obj_1d, X0, (x, N, dt, notNan, lam),method='trust-constr',
+    #             constraints=[linear_constraint],
+    #             options={'verbose': 1, 'maxiter': 50}, bounds=bounds)
+    # minimizer_kwargs = {"method":"trust-constr", "args":(x, N, dt, notNan, lam),
+    #                     "constraints":[linear_constraint],'bounds':bounds,'options':{'verbose': 0}}
+    # res = basinhopping(obj_1d, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
+    
+    # 2. SLSQP
+    eq_cons = {'type': 'eq',
+            'fun' : lambda x: LA.norm(np.dot(A, x),2)**2}  
+    # res = minimize(obj_1d, X0, (x, N, dt, notNan, lam), method='SLSQP',
+    #            constraints=[eq_cons], options={'ftol': 1e-9, 'disp': True},
+    #            bounds=bounds)
+    minimizer_kwargs = {"method":"SLSQP", "args":(x, N, dt, notNan, lam),
+                        "constraints": [eq_cons],'bounds':bounds,'options':{'disp': True}}
+    res = basinhopping(obj_1d, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
+    
+    # 3. COBYLA
+    
+    final_cost = obj_1d(res.x, x, N, dt, notNan, lam)
+    print("Final cost: ", final_cost)
+    print("Final constraint: ",  LA.norm(np.dot(A, res.x),2))
+
+    # extract results    
+    xhat = res.x[:N]
+    vhat = res.x[N:2*N]
+    # vhat = np.append(vhat, vhat[-1])
+    ahat = res.x[2*N:]
+    # ahat = np.append(ahat, ahat[-2:])
+    
+    # write to df
+    df.loc[:,'acceleration'] = ahat
+    df.loc[:,'speed'] = vhat   
+    df.loc[:,'x'] = xhat           
+    
+    return df
+
+# ============================================
 def loss(Yre, Y1, norm='l21'):
     '''
     different ways to compute the diff matrix
