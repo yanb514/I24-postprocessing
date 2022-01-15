@@ -26,12 +26,13 @@ class Experiment():
         
         # create ground truth data
         # Y, x, y, a = opt.generate(self.width, self.length, states["x0"], states["y0"], self.theta, self.speed, outputall=True)
-        x,v,a = opt.generate_1d(states["x0"], states["v0"], self.acceleration, self.dt)
+        x,v,a,j = opt.generate_1d([states["x0"], states["v0"], states["a0"]], self.jerk, self.dt, self.order)
         self.states = {}
         self.states["x"] = x
         self.states["speed"] = v
         self.states["theta"] = 0
         self.states["acceleration"] = a
+        self.states["jerk"] = j
         
         self.params = params
         
@@ -43,6 +44,7 @@ class Experiment():
         self.gt["speed"] = v
         self.gt["x"] = x
         self.gt["acceleration"] = a
+        self.gt["jerk"] = j
         self.gt['direction'] = np.sign(np.cos(self.states["theta"]))
         self.gt['ID'] = 0
         self.gt['y'] = 0
@@ -71,7 +73,7 @@ class Experiment():
                 nans = np.array([False] * len(meas))
                 nans[::step] = True # True is missing
                 missing_idx = [i for i in range(len(nans)) if ~nans[i]]
-        meas.loc[missing_idx,["speed","acceleration","x"]] = np.nan
+        meas.loc[missing_idx,["speed","acceleration","x","jerk"]] = np.nan
         # vis.plot_track_df(meas)
         return meas
         
@@ -126,7 +128,7 @@ class Experiment():
                 for e in range(self.params["epoch"]):
                     meas = self.downgrade(m,n)
                     rec = meas.copy()
-                    rec = opt.rectify_1d(rec, self.params["lams"])
+                    rec = opt.rectify_1d(rec, self.params["args"])
                     self.rec = rec
                     state_err = self.evaluate(rec)
                     # correction_score[i,j] = self.score(meas, rec,'l2')
@@ -191,22 +193,25 @@ class Experiment():
         
     
 if __name__ == "__main__":
-    N = 10 # number of frames
+    N = 50 # number of frames
     state = {"width": 2,
              "length": 4,
              "x0": 0,
              "v0": 32,
              "y0": 10,
+             "a0": 0,
              "theta": [0] * N,
              "dt": 1/30,
              # "speed": 10*np.sin(np.arange(0,1/30*N,1/30))+30 # [30] * N
-             "acceleration": 10*np.sin(np.arange(0,1/30*N,1/30))
+             # "acceleration": 10*np.sin(np.arange(0,1/30*N,1/30))
+             "jerk": 2*np.sin(np.arange(0,1/30*N,1/30)),
+             "order": 3 # highest order of derivatives in dynamics
              }
-    params = {"missing": [0], #np.arange(0,0.7,0.1), # missing rate
-               "noise": [0], # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
+    params = {"missing": [0.2], #np.arange(0,0.7,0.1), # missing rate
+              "noise": [0], # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
               "N": N,
               "epoch": 1, # number of random runs of generate
-              "lams" : (1,0)
+              "args" : (1,0,state["order"]) # lam,niter 
         }
     
     ex = Experiment(state, params)

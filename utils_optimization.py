@@ -10,31 +10,49 @@ import utils
 import utils_vis as vis
 
 # ==================== FOR 1D DOT TOY EXAMPLE ONLY ===============
-def generate_1d(x0, v0, a, dt):
+def generate_1d(initial_state, highest_order_dynamics, dt, order):
     '''
     generate vehicle states using 1-st order dynamics
     x(k+1) = x(k)+v(k)dt
     v(k+1) = v(k)+a(k)dt
     
-    x0, v0: initial position and velocity, in float
-    a: Nx1 array, acceleration, but only a[:-2] is used in dynamics
+    initial_state: list. [x0, v0, a0] 
+    highest_order_dynamics: Nx1 array, acceleration, but only a[:-order] is used in dynamics
     dt: float or Nx1 array
-    
+    order: highest order of derivative. 2: acceleration. 3: jerk
     return: x,v,a
     '''
-    N = len(a)
+    N = len(highest_order_dynamics)
     
-    x = np.zeros(N)
-    v = np.zeros(N)
-    x[0] = x0
-    v[0] = v0
-    for k in range(0,N-2):
-        v[k+1] = v[k] + a[k]*dt
-        x[k+1] = x[k] + v[k]*dt
-    x[-1] = x[-2] + v[-2]*dt 
-    v[-1] = v[-2]
-    
-    return x,v,a
+    if order == 3:
+        j = highest_order_dynamics
+        a = np.zeros(N)
+        x = np.zeros(N)
+        v = np.zeros(N)
+        x0,v0,a0 = initial_state
+        a[0] = a0
+        x[0] = x0
+        v[0] = v0
+        
+        for k in range(0,N-1):
+            a[k+1] = a[k] + j[k]*dt
+            v[k+1] = v[k] + a[k]*dt
+            x[k+1] = x[k] + v[k]*dt
+        
+    elif order == 2:
+        j = np.nan
+        a = highest_order_dynamics
+        x = np.zeros(N)
+        v = np.zeros(N)
+        x0,v0 = initial_state
+        x[0] = x0
+        v[0] = v0
+        
+        for k in range(0,N-1):
+            v[k+1] = v[k] + a[k]*dt
+            x[k+1] = x[k] + v[k]*dt
+
+    return x,v,a,j
 
 def nan_helper(y):
     """Helper to handle indices and logical indices of NaNs.
@@ -53,11 +71,13 @@ def nan_helper(y):
 
     return np.isnan(y), lambda z: z.nonzero()[0]
 
-def obj_1d(X, x, N, dt, notNan, lam):
+def obj_1d(X, x, order, N, dt, notNan, lam):
     """ The cost function for 1d
             X: decision variables X = [xhat, vhat, ahat]
-                xhat: rectified positions (N x 1)
-                ahat: rectified acceleration (N-2 x 1)
+                xhat: rectified positions (N x 1) 0:N
+                vhat: N:2N-1
+                ahat: 2N-1: 3N-3 rectified acceleration (N-2 x 1)
+                jhat: 3N-3: 4N-6
             x: position measurements (N x 1), could have NaN
             N: int number of measurements
             dt: float delta T 
@@ -65,65 +85,49 @@ def obj_1d(X, x, N, dt, notNan, lam):
             lam: given parameter
         Return: float
     """ 
-    nvalid = np.count_nonzero(notNan)
+    # nvalid = np.count_nonzero(notNan)
     # unpack decision variables
     xhat = X[:N]
-    vhat = X[N:2*N]
-    ahat = X[2*N:]
+    offset1 = int((1+order-1)*(order-1)/2)
+
+    highest_order_dynamics = X[order*N-offset1:] # to be regularized
     
     # select valid measurements
     xhat = xhat[notNan]
     x = x[notNan]
     
     # min perturbation
-    # c1 = loss(x, xhat, 'l2')
     c1 = LA.norm(x-xhat,2)**2
     # print("c1: ",c1)
     # regularize acceleration # not the real a or j, multiply a constant dt
-    c2 = LA.norm(ahat,2)**2
+    c2 = LA.norm(highest_order_dynamics,2)**2
     # print("c2: ",c2)
     cost = lam*c1 + (1-lam) * c2
     # print(cost)
-    return c1
+    return cost
 
-def const_1d(n, dt):
+def const_1d(N, dt, order):
     """ The constraint representing linear dynamics
-        n: number of decision variables
-        Return: matrix A (nxn), such that A dot X = [0]_(nx1)
+        N: number of timesteps for xhat, n=3N-3
+        Return: matrix A (2N-3 x 3N-3), such that A dot X = [0]_(nx1)
         for scipy.optimize.LinearConstraint: lb<= A.dot(X) <= ub 'trust-constr'
     """ 
-    A = np.zeros((n,n))
-    N = int(n/3) # number of total timestamps
+    offset = int((1+order)*order/2)
+    n = (order+1)*N-offset
+    m = order*N-offset
+    A = np.zeros((m,n))
     
-    # xhat(1) = xhat(0)+vhat(0)*dt
-    # A[1][0] = -1
-    # A[1][1] = 1
-    # A[1][N] = -dt
-    
-    for i in range(1, N): # xhat
-        # xhat(k+1)-xhat(k)-vhat(k)*dt = 0
-        A[i][i] = 1
-        A[i][i-1] = -1
-        A[i][i-1+N] = -dt
-        
-        # xhat(k+1)=xhat(k)+vhat(k)*dt = xhat(k)+vhat(k-1)*dt+ahat(k-1)dt^2
-        # A[i][i] = 1
-        # A[i][i-1] = -1
-        # A[i][i-2+N] = -dt
-        # A[i][i-3+N+N] = -dt**2
-        
-    for i in range(N+1, 2*N): # vhat 
-        # vhat(k+1)-vhat(k)-ahat(k)*dt = 0
-        A[i][i] = 1
-        A[i][i-1] = -1
-        A[i][i-1+N] = -dt
-    
-    
-    # ahat[-1] = ahat[-3], ahat[-2] = ahat[-3]
-    A[-1][-1] = 1
-    A[-1][-2] = -1
-    A[-2][-2] = 1
-    A[-2][-3] = -1
+    for o in range(order):
+        offset_pre = int((1+o)*o/2)
+        offset_post = int((2+o)*(o+1)/2)
+        start_row = o*N-offset_pre
+        end_row = (o+1)*N-offset_post
+        step = N-o
+        for i in range(start_row, end_row):
+            A[i][i+o] = -1
+            A[i][i+o+1] = 1
+            A[i][i+o+step] = -dt
+            
     
     return A
  
@@ -137,69 +141,102 @@ def rectify_1d(df, args):
     '''  
     # TODO: deal with signs
     # get data
+    lam,niter,order = args
     x = df.x.values
     v = df.speed.values
     a = df.acceleration.values
+    j = df.jerk.values
     N = len(x)
-    n = 3*N
-    lam,niter = args
+    offset = int((1+order)*order/2)
+    n = (1+order)*N-offset
     
     dt = 1/30
     # sign = df["direction"].iloc[0]           
     notNan = ~np.isnan(x)
 
     # Define constraints
-    A = const_1d(n, dt)
-    linear_constraint = LinearConstraint(A, np.zeros(n), np.zeros(n)) 
+    A = const_1d(N, dt, order) 
+    
     # Bounds constraints
-    lb = [-np.inf]*N + [0]*N + [-10]*N
-    ub = [np.inf]*N + [50]*N + [10]*N
+    lb,ub = [],[]
+    lb_list = [-np.inf, 0, -10, -5] # x0, v0, a0, j0
+    ub_list = [np.inf, 50, 10, 5]
+    for o in range(order+1):
+        lb += [lb_list[o]]*(N-o)
+        ub += [ub_list[o]]*(N-o)
+
     bounds = Bounds(lb,ub)
     
     # Initialize decision variables
-    nans, ind = nan_helper(a)
+    nans, ind = nan_helper(x)
+    x[nans]= np.interp(ind(nans), ind(~nans), x[~nans])
+    v[nans]= np.interp(ind(nans), ind(~nans), v[~nans])
     a[nans]= np.interp(ind(nans), ind(~nans), a[~nans])
-    xhat0,vhat0,ahat0 = generate_1d(x[0], v[0], a, dt)
-    X0 = np.concatenate((xhat0,vhat0,ahat0), axis=0)
-
-    initial_cost = obj_1d(X0, x, N, dt, notNan, lam)
+    j[nans]= np.interp(ind(nans), ind(~nans), j[~nans])
+    highest_order_dyn = j if order==3 else a
     
+    xhat0,vhat0,ahat0,jhat0 = generate_1d([x[0], v[0],a[0]], highest_order_dyn, dt, order)
+    if order == 3:
+        X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2],jhat0[:-3]), axis=0)
+    elif order == 2:
+        X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2]), axis=0)
+    initial_cost = obj_1d(X0, x, order,N, dt, notNan, lam)
+    
+    xhat,vhat,ahat,jhat = generate_1d([x[0], v[0],a[0]], highest_order_dyn, dt, order)
+    X0_opt =  np.concatenate((xhat,vhat[:-1],ahat[:-2],jhat[:-3]), axis=0)
+    optimal_cost = obj_1d(X0_opt, x, order, N, dt, notNan, lam)
+    
+    print("\nOptimal value should be: ",optimal_cost)
+    print("Optimal constraint should be: ", LA.norm(np.dot(A, X0_opt),1))
     print("Initial cost: ", initial_cost)
-    print("Initial constraint: ",  LA.norm(np.dot(A, X0),2))
+    print("Initial constraint: ",  LA.norm(np.dot(A, X0),1))
 
     # 3 methods for constrained optimization
     # 1. trust-constr
-    # res = minimize(obj_1d, X0, (x, N, dt, notNan, lam),method='trust-constr',
-    #             constraints=[linear_constraint],
-    #             options={'verbose': 1, 'maxiter': 50}, bounds=bounds)
-    # minimizer_kwargs = {"method":"trust-constr", "args":(x, N, dt, notNan, lam),
+    # linear_constraint = LinearConstraint(A, -np.zeros(A.shape[0]), np.zeros(A.shape[0]), keep_feasible=True)
+    # minimizer_kwargs = {"method":"trust-constr", "args":(x, order, N, dt, notNan, lam),
     #                     "constraints":[linear_constraint],'bounds':bounds,'options':{'verbose': 0}}
     # res = basinhopping(obj_1d, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
+    # res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam),method='trust-constr',
+    #             constraints=[linear_constraint],
+    #             options={'verbose': 1, 'maxiter': 50}, bounds=bounds)
+    
     
     # 2. SLSQP
-    eq_cons = {'type': 'eq',
-            'fun' : lambda x: LA.norm(np.dot(A, x),2)**2}  
-    # res = minimize(obj_1d, X0, (x, N, dt, notNan, lam), method='SLSQP',
-    #            constraints=[eq_cons], options={'ftol': 1e-9, 'disp': True},
-    #            bounds=bounds)
-    minimizer_kwargs = {"method":"SLSQP", "args":(x, N, dt, notNan, lam),
-                        "constraints": [eq_cons],'bounds':bounds,'options':{'disp': True}}
-    res = basinhopping(obj_1d, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
-    
-    # 3. COBYLA
-    
-    final_cost = obj_1d(res.x, x, N, dt, notNan, lam)
-    print("Final cost: ", final_cost)
-    print("Final constraint: ",  LA.norm(np.dot(A, res.x),2))
+    eq_cons = {'type': 'eq', 
+            'fun' : lambda x: np.dot(A, x)}
 
+    # normalize lambda for multi-objectives - SOLVE FOR MAX C2 BY SETTING LAM = 1
+    res_noreg = minimize(obj_1d, X0, (x, order,N, dt, notNan, 1), method='SLSQP',
+                constraints=[eq_cons], options={'ftol': 1e-9, 'disp': True},
+                bounds=bounds)
+    # c1max = obj_1d(res_noreg.x, x, order, N, dt, notNan, 1)
+    c2max = obj_1d(res_noreg.x, x, order, N, dt, notNan, 0)
+    c1max = c2max/(30**(order-1))
+    print(c1max, c2max)
+    c2max = max(c2max, 1e-6)
+    lam1_norm = lam*c2max/(c1max-lam*c1max+lam*c2max)
+    
+    print("lam1_norm:" , lam1_norm)
+    
+    # SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
+    res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam1_norm), method='SLSQP',
+                constraints=[eq_cons], options={'ftol': 1e-9, 'disp': True},
+                bounds=bounds)
+    final_cost = obj_1d(res.x, x,order, N, dt, notNan, lam1_norm)
+    print("Final cost: ", final_cost)
+    print("Final constraint: ", LA.norm(np.dot(A, res.x)),1)
+    
     # extract results    
     xhat = res.x[:N]
-    vhat = res.x[N:2*N]
-    # vhat = np.append(vhat, vhat[-1])
-    ahat = res.x[2*N:]
-    # ahat = np.append(ahat, ahat[-2:])
-    
+    vhat = res.x[N:2*N-1]
+    vhat = np.append(vhat,np.nan)
+    ahat = res.x[2*N-1:3*N-3]
+    ahat = np.append(ahat, np.ones(2)*np.nan)
+    jhat = res.x[3*N-3:]
+    jhat = np.append(jhat, np.ones(3)*np.nan)
     # write to df
+    df.loc[:,'jerk'] = jhat
     df.loc[:,'acceleration'] = ahat
     df.loc[:,'speed'] = vhat   
     df.loc[:,'x'] = xhat           

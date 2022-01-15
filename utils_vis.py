@@ -302,8 +302,8 @@ def dashboard(cars, legends=None):
     if not legends:
         legends = [""]*len(cars)
         
-    fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(1, 5, figsize=(18,3))
-
+    fig, axs = plt.subplots(2, 3, figsize=(18,8))
+    axs = axs.ravel()
     colors = ["blue","orange","green","red","purple"]
     i=0
     carid = cars[0]["ID"].iloc[0]
@@ -318,59 +318,71 @@ def dashboard(cars, legends=None):
         
         # time vs. x
         xx = (car['x'].values+car['x'].values)/2
-        ax1.scatter(x,xx,color=c,s=2,label="{}".format(legends[caridx]))
-        ax1.plot(x,xx,color=c)
-        ax1.legend()
+        axs[0].scatter(x,xx,color=c,s=2,label="{}".format(legends[caridx]))
+        axs[0].plot(x,xx,color=c)
+        axs[0].legend()
         
         # time vs. y
         y = (car['y'].values+car['y'].values)/2
-        ax2.scatter(x,y,color=c,s=2,label="{}".format(legends[caridx]))
-        ax2.plot(x,y,color=c)
+        axs[1].scatter(x,y,color=c,s=2,label="{}".format(legends[caridx]))
+        axs[1].plot(x,y,color=c)
 
         # time vs. speed
         speed =  car['speed'].values
-        ax3.scatter(x,speed, color=c, s=2)
-        ax3.plot(x,speed,color=c)
+        axs[2].scatter(x,speed, color=c, s=2)
+        axs[2].plot(x,speed,color=c)
         
         # time vs. accel
         accel =  car['acceleration'].values
-        ax4.scatter(x,accel, color=c, s=2)
-        ax4.plot(x,accel,color=c)
+        axs[3].scatter(x,accel, color=c, s=2)
+        axs[3].plot(x,accel,color=c)
         
+        # time vs. jerk
+        if "jerk" in car:
+            jerk =  car['jerk'].values
+            axs[4].scatter(x,jerk, color=c, s=2)
+            axs[4].plot(x,jerk,color=c)
         
         # time vs. theta
         # if legends[caridx]!='rectified':
         #     continue
         theta =  car['theta'].values
-        ax5.scatter(x,theta, color=c, s=2)
-        ax5.plot(x,theta,color=c)
+        axs[5].scatter(x,theta, color=c, s=2)
+        axs[5].plot(x,theta,color=c)
+        
+        
         i += 1
         
-    ax1.set_xlabel('Frame #')
-    ax1.set_ylabel('x (m)')
-    ax1.set_title('Time-space (x) for ID {}'.format(int(carid)))  
+    axs[0].set_xlabel('Frame #')
+    axs[0].set_ylabel('x (m)')
+    axs[0].set_title('Time-space (x) for ID {}'.format(int(carid)))  
         
     # y positions
-    ax2.set_xlabel('Frame #')
-    ax2.set_ylabel('y (m)')
-    ax2.set_title('Time-space (y)')  
+    axs[1].set_xlabel('Frame #')
+    axs[1].set_ylabel('y (m)')
+    axs[1].set_title('Time-space (y)')  
     
     # speed
-    ax3.set_xlabel('Frame #')
-    ax3.set_title('Speed (m/s)')
+    axs[2].set_xlabel('Frame #')
+    axs[2].set_title('Speed (m/s)')
     # ax3.set_ylim([10,50])
-    ax3.yaxis.set_major_formatter(FormatStrFormatter('%.0f'))
+    axs[2].yaxis.set_major_formatter(FormatStrFormatter('%.0f'))
     
     # acceleration
-    ax4.set_xlabel('Frame #')
-    ax4.set_title('acceleration (m/s2)')
+    axs[3].set_xlabel('Frame #')
+    axs[3].set_title('acceleration (m/s2)')
     # ax4.set_ylim([-10,10])
-    ax4.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    axs[3].yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    
+    # jerk
+    axs[4].set_xlabel('Frame #')
+    axs[4].set_title('Jerk (m/s3)')
+    axs[4].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     
     # theta
-    ax5.set_xlabel('Frame #')
-    ax5.set_title('theta (rad)')
-    ax5.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+    axs[5].set_xlabel('Frame #')
+    axs[5].set_title('theta (rad)')
+    axs[5].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     
     plt.show()
     return
