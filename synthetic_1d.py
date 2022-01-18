@@ -26,13 +26,21 @@ class Experiment():
         
         # create ground truth data
         # Y, x, y, a = opt.generate(self.width, self.length, states["x0"], states["y0"], self.theta, self.speed, outputall=True)
-        x,v,a,j = opt.generate_1d([states["x0"], states["v0"], states["a0"]], self.jerk, self.dt, self.order)
+        x,vx,ax,jx = opt.generate_1d([states["x0"], states["v0_x"], states["a0_x"]], self.jerk_x, self.dt, self.order)
+        y,vy,ay,jy = opt.generate_1d([states["x0"], states["v0_y"], states["a0_y"]], self.jerk_y, self.dt, self.order)
+        
         self.states = {}
         self.states["x"] = x
-        self.states["speed"] = v
-        self.states["theta"] = 0
-        self.states["acceleration"] = a
-        self.states["jerk"] = j
+        self.states["speed_x"] = vx
+        self.states["acceleration_x"] = ax
+        self.states["jerk_x"] = jx
+        self.states["y"] = y
+        self.states["speed_y"] = vy
+        self.states["acceleration_y"] = ay
+        self.states["jerk_y"] = jy
+        
+        v = np.sqrt(vx**2+vy**2)
+        self.states["theta"] = np.arcsin(vy/v) # preserve the direction
         
         self.params = params
         
@@ -41,14 +49,19 @@ class Experiment():
         self.gt = pd.DataFrame()
         self.gt['Timestamp'] = np.arange(0,N/30,1/30)
         self.gt['Frame #'] = np.arange(0,N)
-        self.gt["speed"] = v
         self.gt["x"] = x
-        self.gt["acceleration"] = a
-        self.gt["jerk"] = j
+        self.gt["speed_x"] = vx
+        self.gt["acceleration_x"] = ax
+        self.gt["jerk_x"] = jx
+        self.gt["y"] = y
+        self.gt["speed_y"] = vy
+        self.gt["acceleration_y"] = ay
+        self.gt["jerk_y"] = jy
+        
         self.gt['direction'] = np.sign(np.cos(self.states["theta"]))
         self.gt['ID'] = 0
-        self.gt['y'] = 0
-        self.gt['theta'] = 0
+        
+        self.gt['theta'] = self.states["theta"]
         
 
     def downgrade(self, missing_rate, noise_std):
@@ -128,13 +141,12 @@ class Experiment():
                 for e in range(self.params["epoch"]):
                     meas = self.downgrade(m,n)
                     rec = meas.copy()
-                    rec = opt.rectify_1d(rec, self.params["args"])
+                    
+                    rec = opt.rectify_2d(rec, self.params["args"])
                     self.rec = rec
                     state_err = self.evaluate(rec)
-                    # correction_score[i,j] = self.score(meas, rec,'l2')
-                    # vis.plot_track_compare(meas, rec)
-                    vis.dashboard([meas,rec],["gt","rectified"])
-                    # print(m,n,state_err)
+                    vis.dashboard([meas,rec],self.states.keys(),["gt","rectified"])
+
                     for state in state_err:
                         # grid[i][j] += err
                         self.err_grid[state][i][j] += state_err[state]
@@ -194,24 +206,27 @@ class Experiment():
     
 if __name__ == "__main__":
     N = 50 # number of frames
+    # specify GT initial states and highest_order dynamics s.t. GT states can be simulated 
     state = {"width": 2,
              "length": 4,
              "x0": 0,
-             "v0": 32,
              "y0": 10,
-             "a0": 0,
-             "theta": [0] * N,
+             "v0_x": 32,
+             "v0_y": 0,
+             "a0_x": 0,
+             "a0_y": 0,
+             "jerk_x": 2*np.sin(np.arange(0,1/10*N,1/10)),
+             "jerk_y": 0.1*np.sin(np.arange(0,1/10*N,1/10)),
+             # "theta": [0] * N, # theta is calculated using vx and vy
              "dt": 1/30,
-             # "speed": 10*np.sin(np.arange(0,1/30*N,1/30))+30 # [30] * N
-             # "acceleration": 10*np.sin(np.arange(0,1/30*N,1/30))
-             "jerk": 2*np.sin(np.arange(0,1/30*N,1/30)),
              "order": 3 # highest order of derivatives in dynamics
              }
-    params = {"missing": [0.2], #np.arange(0,0.7,0.1), # missing rate
+    
+    params = {"missing": [0], #np.arange(0,0.7,0.1), # missing rate
               "noise": [0], # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
               "N": N,
               "epoch": 1, # number of random runs of generate
-              "args" : (1,0,state["order"]) # lam,niter 
+              "args" : (0.7,0,state["order"]) # lam,niter 
         }
     
     ex = Experiment(state, params)

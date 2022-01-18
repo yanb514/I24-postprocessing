@@ -11,6 +11,7 @@ import gmplot
 import matplotlib.pyplot as plt
 import utils
 from matplotlib.ticker import FormatStrFormatter
+import math
 
 # for visualization
 def insertapikey(fname):
@@ -294,95 +295,48 @@ def plot_time_space(df, lanes=[1], time="frame", space="x", ax=None, show =True)
     return None if show else ax
 
 
-def dashboard(cars, legends=None):
+def dashboard(cars, states = None, car_legends=None):
     '''
     cars: list of dfs
-    show acceleration/speed/theta/... of each car
+    legends: list of state names to be plotted
+        if None, plot acceleration/speed/theta/... of each car
     '''
-    if not legends:
-        legends = [""]*len(cars)
-        
-    fig, axs = plt.subplots(2, 3, figsize=(18,8))
+    n_states = len(states)
+    fig, axs = plt.subplots(math.ceil(n_states/3), 3, figsize=(18,10))
     axs = axs.ravel()
     colors = ["blue","orange","green","red","purple"]
-    i=0
+    units = {"x": "(m)",
+             "speed_x": "(m/s)",
+             "acceleration_x": "(m/s2)",
+             "jerk_x": "(m/s3)",
+             "y": "(m)",
+             "speed_y": "(m/s)",
+             "acceleration_y": "(m/s2)",
+             "jerk_y": "(m/s3)",
+             "theta": "rad"
+             }
+    
     carid = cars[0]["ID"].iloc[0]
-    for caridx,car in enumerate(cars):
-        
-        if legends[caridx] not in {'rectified','gt'}:
-            car = utils.calc_dynamics_car(car)
-            print(legends[caridx], ' calculate dynamics')
-         
-        x = car['Frame #'].values
-        c = colors[caridx%len(colors)]
-        
-        # time vs. x
-        xx = (car['x'].values+car['x'].values)/2
-        axs[0].scatter(x,xx,color=c,s=2,label="{}".format(legends[caridx]))
-        axs[0].plot(x,xx,color=c)
-        axs[0].legend()
-        
-        # time vs. y
-        y = (car['y'].values+car['y'].values)/2
-        axs[1].scatter(x,y,color=c,s=2,label="{}".format(legends[caridx]))
-        axs[1].plot(x,y,color=c)
-
-        # time vs. speed
-        speed =  car['speed'].values
-        axs[2].scatter(x,speed, color=c, s=2)
-        axs[2].plot(x,speed,color=c)
-        
-        # time vs. accel
-        accel =  car['acceleration'].values
-        axs[3].scatter(x,accel, color=c, s=2)
-        axs[3].plot(x,accel,color=c)
-        
-        # time vs. jerk
-        if "jerk" in car:
-            jerk =  car['jerk'].values
-            axs[4].scatter(x,jerk, color=c, s=2)
-            axs[4].plot(x,jerk,color=c)
-        
-        # time vs. theta
-        # if legends[caridx]!='rectified':
-        #     continue
-        theta =  car['theta'].values
-        axs[5].scatter(x,theta, color=c, s=2)
-        axs[5].plot(x,theta,color=c)
-        
-        
-        i += 1
-        
-    axs[0].set_xlabel('Frame #')
-    axs[0].set_ylabel('x (m)')
-    axs[0].set_title('Time-space (x) for ID {}'.format(int(carid)))  
-        
-    # y positions
-    axs[1].set_xlabel('Frame #')
-    axs[1].set_ylabel('y (m)')
-    axs[1].set_title('Time-space (y)')  
     
-    # speed
-    axs[2].set_xlabel('Frame #')
-    axs[2].set_title('Speed (m/s)')
-    # ax3.set_ylim([10,50])
-    axs[2].yaxis.set_major_formatter(FormatStrFormatter('%.0f'))
-    
-    # acceleration
-    axs[3].set_xlabel('Frame #')
-    axs[3].set_title('acceleration (m/s2)')
-    # ax4.set_ylim([-10,10])
-    axs[3].yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
-    
-    # jerk
-    axs[4].set_xlabel('Frame #')
-    axs[4].set_title('Jerk (m/s3)')
-    axs[4].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-    
-    # theta
-    axs[5].set_xlabel('Frame #')
-    axs[5].set_title('theta (rad)')
-    axs[5].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+    for stateidx, state in enumerate(states):
+        
+        for caridx, car in enumerate(cars):
+            if car_legends[caridx] not in {'rectified','gt'}:
+                car = utils.calc_dynamics_car(car)
+                print(car_legends[caridx], ' calculate dynamics')
+             
+            x = car['Frame #'].values
+            c = colors[caridx%len(colors)]
+            
+            # time vs. x
+            xx = (car['x'].values+car['x'].values)/2
+            axs[stateidx].scatter(x,xx,color=c,s=2,label="{}".format(car_legends[caridx]))
+            axs[stateidx].plot(x,xx,color=c)
+            axs[stateidx].legend()
+            
+            axs[stateidx].set_xlabel('Frame #')
+            # axs[stateidx].set_ylabel(state + " " + units[state])
+            axs[stateidx].set_title(state + " " + units[state])  
     
     plt.show()
     return

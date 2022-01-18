@@ -14,7 +14,8 @@ def generate_1d(initial_state, highest_order_dynamics, dt, order):
     '''
     generate vehicle states using 1-st order dynamics
     x(k+1) = x(k)+v(k)dt
-    v(k+1) = v(k)+a(k)dt
+    v(k+1) = v(k)+a(k)dt - if order==2
+    a(k+1) = a(k)+j(k)dt - if order==3
     
     initial_state: list. [x0, v0, a0] 
     highest_order_dynamics: Nx1 array, acceleration, but only a[:-order] is used in dynamics
@@ -132,23 +133,32 @@ def const_1d(N, dt, order):
     return A
  
    
-def rectify_1d(df, args):
+def rectify_1d(df, args, axis):
     '''                        
-    solve for the optimization problem:
+    solve for the optimization problem for both x and y component independently:
         minimize obj_1d(X, x, N, dt, notNan, lam)
         s.t. A = const_1d(X, dt), AX = 0  
     args: tuple (lam. niter)
+    axis: "x" or "y"
     '''  
     # TODO: deal with signs
     # get data
     lam,niter,order = args
-    x = df.x.values
-    v = df.speed.values
-    a = df.acceleration.values
-    j = df.jerk.values
+    
+    if axis == "x":
+        x = df.x.values
+        v = df.speed_x.values
+        a = df.acceleration_x.values
+        j = df.jerk_x.values
+    else:
+        x = df.y.values
+        v = df.speed_y.values
+        a = df.acceleration_y.values
+        j = df.jerk_y.values
+        
     N = len(x)
-    offset = int((1+order)*order/2)
-    n = (1+order)*N-offset
+    # offset = int((1+order)*order/2)
+    # n = (1+order)*N-offset
     
     dt = 1/30
     # sign = df["direction"].iloc[0]           
@@ -175,32 +185,16 @@ def rectify_1d(df, args):
     j[nans]= np.interp(ind(nans), ind(~nans), j[~nans])
     highest_order_dyn = j if order==3 else a
     
-    xhat0,vhat0,ahat0,jhat0 = generate_1d([x[0], v[0],a[0]], highest_order_dyn, dt, order)
+    xhat0,vhat0,ahat0,jhat0 = generate_1d([x[0]+1, v[0],a[0]], highest_order_dyn, dt, order)
     if order == 3:
         X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2],jhat0[:-3]), axis=0)
     elif order == 2:
         X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2]), axis=0)
-    initial_cost = obj_1d(X0, x, order,N, dt, notNan, lam)
+    initial_cost1 = obj_1d(X0, x, order,N, dt, notNan, 1)
+    initial_cost2 = obj_1d(X0, x, order,N, dt, notNan, 0)
     
-    xhat,vhat,ahat,jhat = generate_1d([x[0], v[0],a[0]], highest_order_dyn, dt, order)
-    X0_opt =  np.concatenate((xhat,vhat[:-1],ahat[:-2],jhat[:-3]), axis=0)
-    optimal_cost = obj_1d(X0_opt, x, order, N, dt, notNan, lam)
-    
-    print("\nOptimal value should be: ",optimal_cost)
-    print("Optimal constraint should be: ", LA.norm(np.dot(A, X0_opt),1))
-    print("Initial cost: ", initial_cost)
+    print("Initial cost: ", initial_cost1, initial_cost2)
     print("Initial constraint: ",  LA.norm(np.dot(A, X0),1))
-
-    # 3 methods for constrained optimization
-    # 1. trust-constr
-    # linear_constraint = LinearConstraint(A, -np.zeros(A.shape[0]), np.zeros(A.shape[0]), keep_feasible=True)
-    # minimizer_kwargs = {"method":"trust-constr", "args":(x, order, N, dt, notNan, lam),
-    #                     "constraints":[linear_constraint],'bounds':bounds,'options':{'verbose': 0}}
-    # res = basinhopping(obj_1d, X0, minimizer_kwargs=minimizer_kwargs,niter=niter)
-    # res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam),method='trust-constr',
-    #             constraints=[linear_constraint],
-    #             options={'verbose': 1, 'maxiter': 50}, bounds=bounds)
-    
     
     # 2. SLSQP
     eq_cons = {'type': 'eq', 
@@ -218,14 +212,19 @@ def rectify_1d(df, args):
     lam1_norm = lam*c2max/(c1max-lam*c1max+lam*c2max)
     
     print("lam1_norm:" , lam1_norm)
+    interm_cost1 = obj_1d(X0, x,order, N, dt, notNan, 1)*lam1_norm
+    interm_cost2 = obj_1d(X0, x,order, N, dt, notNan, 0)*(1-lam1_norm)
+    print("Intermediate cost: ", interm_cost1,interm_cost2)
+    print("Intermediate constraint: ", LA.norm(np.dot(A, X0),1))
     
     # SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
     res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam1_norm), method='SLSQP',
                 constraints=[eq_cons], options={'ftol': 1e-9, 'disp': True},
                 bounds=bounds)
-    final_cost = obj_1d(res.x, x,order, N, dt, notNan, lam1_norm)
-    print("Final cost: ", final_cost)
-    print("Final constraint: ", LA.norm(np.dot(A, res.x)),1)
+    final_cost1 = obj_1d(res.x, x,order, N, dt, notNan, 1)*lam1_norm
+    final_cost2 = obj_1d(res.x, x,order, N, dt, notNan, 0)*(1-lam1_norm)
+    print("Final cost: ", final_cost1,final_cost2)
+    print("Final constraint: ", LA.norm(np.dot(A, res.x),1))
     
     # extract results    
     xhat = res.x[:N]
@@ -235,14 +234,35 @@ def rectify_1d(df, args):
     ahat = np.append(ahat, np.ones(2)*np.nan)
     jhat = res.x[3*N-3:]
     jhat = np.append(jhat, np.ones(3)*np.nan)
-    # write to df
-    df.loc[:,'jerk'] = jhat
-    df.loc[:,'acceleration'] = ahat
-    df.loc[:,'speed'] = vhat   
-    df.loc[:,'x'] = xhat           
     
-    return df
+    return xhat, vhat, ahat, jhat
 
+def rectify_2d(df, args):
+    '''
+    rectify on x and y component independently
+    '''
+    xhat, vxhat, axhat, jxhat = rectify_1d(df, args, "x")
+    yhat, vyhat, ayhat, jyhat = rectify_1d(df, args, "y")
+    
+    # calculate steering theta
+    vhat = np.sqrt(vxhat**2 + vyhat**2)
+    thetahat = np.arcsin(vyhat/vhat)
+    
+    # write to df
+    df.loc[:,'x'] = xhat
+    df.loc[:,'jerk_x'] = jxhat
+    df.loc[:,'acceleration_x'] = axhat
+    df.loc[:,'speed_x'] = vxhat   
+     
+    df.loc[:,'y'] = yhat 
+    df.loc[:,'jerk_y'] = jyhat
+    df.loc[:,'acceleration_y'] = ayhat
+    df.loc[:,'speed_y'] = vyhat  
+    
+    df.loc[:,'theta'] = thetahat
+
+    return df           
+    
 # ============================================
 def loss(Yre, Y1, norm='l21'):
     '''
