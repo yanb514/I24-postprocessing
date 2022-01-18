@@ -2,7 +2,7 @@
 """
 Created on Tue Oct  5 15:30:57 2021
 
-@author: wangy79
+@author: wangy79 change
 """
 from bs4 import BeautifulSoup
 from IPython.display import IFrame
@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import utils
 from matplotlib.ticker import FormatStrFormatter
 import math
+from matplotlib import cm
 
 # for visualization
 def insertapikey(fname):
@@ -185,7 +186,7 @@ def plot_track_df(df,length=15,width=1,show=True, ax=None, color='black',title="
     else:
         return ax
     
-from matplotlib import cm
+
 def plot_track_df_camera(df,tform_path,length=15,width=1, camera='varies'):
     camera_list = ['p1c1','p1c2','p1c3','p1c4','p1c5','p1c6']
     color=cm.rainbow(np.linspace(0,1,len(camera_list)))
@@ -298,12 +299,16 @@ def plot_time_space(df, lanes=[1], time="frame", space="x", ax=None, show =True)
 def dashboard(cars, states = None, car_legends=None):
     '''
     cars: list of dfs
-    legends: list of state names to be plotted
+    states: list of state names to be plotted
         if None, plot acceleration/speed/theta/... of each car
+    car_legends: list of names to put as legends
     '''
+    if car_legends:
+        assert len(cars) == len(car_legends)
     n_states = len(states)
     fig, axs = plt.subplots(math.ceil(n_states/3), 3, figsize=(18,10))
     axs = axs.ravel()
+    
     colors = ["blue","orange","green","red","purple"]
     units = {"x": "(m)",
              "speed_x": "(m/s)",
@@ -325,18 +330,18 @@ def dashboard(cars, states = None, car_legends=None):
                 car = utils.calc_dynamics_car(car)
                 print(car_legends[caridx], ' calculate dynamics')
              
-            x = car['Frame #'].values
+            frames = car['Frame #'].values
             c = colors[caridx%len(colors)]
             
-            # time vs. x
-            xx = (car['x'].values+car['x'].values)/2
-            axs[stateidx].scatter(x,xx,color=c,s=2,label="{}".format(car_legends[caridx]))
-            axs[stateidx].plot(x,xx,color=c)
-            axs[stateidx].legend()
+            # time vs. state
+            state_values = car[state].values
+            axs[stateidx].scatter(frames, state_values,color=c,s=2,label="{}".format(car_legends[caridx]))
+            axs[stateidx].plot(frames, state_values,color=c)
             
-            axs[stateidx].set_xlabel('Frame #')
-            # axs[stateidx].set_ylabel(state + " " + units[state])
-            axs[stateidx].set_title(state + " " + units[state])  
+        axs[stateidx].legend()            
+        axs[stateidx].set_xlabel('Frame #')
+        # axs[stateidx].set_ylabel(state + " " + units[state])
+        axs[stateidx].set_title(state + " " + units[state])  
     
     plt.show()
     return
