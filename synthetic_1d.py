@@ -26,21 +26,28 @@ class Experiment():
         
         # create ground truth data
         # Y, x, y, a = opt.generate(self.width, self.length, states["x0"], states["y0"], self.theta, self.speed, outputall=True)
-        x,vx,ax,jx = opt.generate_1d([states["x0"], states["v0_x"], states["a0_x"]], self.jerk_x, self.dt, self.order)
-        y,vy,ay,jy = opt.generate_1d([states["x0"], states["v0_y"], states["a0_y"]], self.jerk_y, self.dt, self.order)
+        # using decomposed x/y axis
+        # x,vx,ax,jx = opt.generate_1d([states["x0"], states["v0_x"], states["a0_x"]], self.jerk_x, self.dt, self.order)
+        # y,vy,ay,jy = opt.generate_1d([states["x0"], states["v0_y"], states["a0_y"]], self.jerk_y, self.dt, self.order)
+        
+        # using simple steering dynamics up to jerk
+        initial_state = [states["x0"], states["y0"], states["v0"], states["a0"]]
+        x,y,theta,v,a,j = opt.generate_2d(initial_state, self.jerk, self.theta, self.dt, self.order)
         
         self.states = {}
         self.states["x"] = x
-        self.states["speed_x"] = vx
-        self.states["acceleration_x"] = ax
-        self.states["jerk_x"] = jx
         self.states["y"] = y
-        self.states["speed_y"] = vy
-        self.states["acceleration_y"] = ay
-        self.states["jerk_y"] = jy
+        self.states["theta"] = theta
+        self.states["speed"] = v
+        self.states["acceleration"] = a
+        self.states["jerk"] = j
         
-        v = np.sqrt(vx**2+vy**2)
-        self.states["theta"] = np.arcsin(vy/v) # preserve the direction
+        # self.states["speed_y"] = vy
+        # self.states["acceleration_y"] = ay
+        # self.states["jerk_y"] = jy
+        
+        # v = np.sqrt(vx**2+vy**2)
+        # self.states["theta"] = np.arcsin(vy/v) # preserve the direction
         
         self.params = params
         
@@ -50,13 +57,13 @@ class Experiment():
         self.gt['Timestamp'] = np.arange(0,N/30,1/30)
         self.gt['Frame #'] = np.arange(0,N)
         self.gt["x"] = x
-        self.gt["speed_x"] = vx
-        self.gt["acceleration_x"] = ax
-        self.gt["jerk_x"] = jx
+        self.gt["speed"] = v
+        self.gt["acceleration"] = a
+        self.gt["jerk"] = j
         self.gt["y"] = y
-        self.gt["speed_y"] = vy
-        self.gt["acceleration_y"] = ay
-        self.gt["jerk_y"] = jy
+        # self.gt["speed_y"] = vy
+        # self.gt["acceleration_y"] = ay
+        # self.gt["jerk_y"] = jy
         
         self.gt['direction'] = np.sign(np.cos(self.states["theta"]))
         self.gt['ID'] = 0
@@ -67,10 +74,13 @@ class Experiment():
     def downgrade(self, missing_rate, noise_std):
         '''
         create synthetically downgraded data based on downgrade parameters
+        missing_rate: float between 0 -1
+        noise_std: [x_noise_std, y_noise_std]
         '''
         meas = self.gt.copy()
         # add noise
-        meas["x"] += np.random.normal(0, noise_std, len(meas))
+        meas["x"] += np.random.normal(0, noise_std[0], len(meas))
+        meas["y"] += np.random.normal(0, noise_std[1], len(meas))
         
         # mask missing
         if missing_rate == 0:
@@ -86,7 +96,7 @@ class Experiment():
                 nans = np.array([False] * len(meas))
                 nans[::step] = True # True is missing
                 missing_idx = [i for i in range(len(nans)) if ~nans[i]]
-        meas.loc[missing_idx,["speed","acceleration","x","jerk"]] = np.nan
+        meas.loc[missing_idx,["x","speed","acceleration","jerk","theta"]] = np.nan
         # vis.plot_track_df(meas)
         return meas
         
@@ -128,7 +138,7 @@ class Experiment():
         create a 2D array to store the accuracy metrics according to missing rate and noise std
         '''
         missing_list = self.params["missing"]
-        noise_list = self.params["noise"]
+        noise_list = [list(l) for l in zip(self.params["noise_x"],self.params["noise_y"])]
         
         grid = np.zeros((len(missing_list), len(noise_list))) # dummy 2D array to store the error of each state
         self.err_grid = {state: grid.copy() for state in self.states} # dict of 2D-array
@@ -145,7 +155,7 @@ class Experiment():
                     rec = opt.rectify_2d(rec, self.params["args"])
                     self.rec = rec
                     state_err = self.evaluate(rec)
-                    vis.dashboard([meas,rec],self.states.keys(),["gt","rectified"])
+                    vis.dashboard([self.gt,meas,rec],self.states.keys(),["gt","meas","rectified"])
 
                     for state in state_err:
                         # grid[i][j] += err
@@ -211,19 +221,20 @@ if __name__ == "__main__":
              "length": 4,
              "x0": 0,
              "y0": 10,
-             "v0_x": 32,
-             "v0_y": 0,
-             "a0_x": 0,
-             "a0_y": 0,
-             "jerk_x": 2*np.sin(np.arange(0,1/10*N,1/10)),
-             "jerk_y": 0.1*np.sin(np.arange(0,1/10*N,1/10)),
-             # "theta": [0] * N, # theta is calculated using vx and vy
+             "v0": 32,
+             # "v0_y": 0,
+             "a0": 0,
+             # "a0_y": 0,
+             "jerk": 1*np.sin(np.arange(0,1/10*N,1/10)),
+             # "jerk_y": 1*np.cos(np.arange(0,1/20*N,1/20)),
+             "theta": 0.1*np.cos(np.arange(0,1/20*N,1/20)), # theta is calculated using vx and vy
              "dt": 1/30,
              "order": 3 # highest order of derivatives in dynamics
              }
     
     params = {"missing": [0], #np.arange(0,0.7,0.1), # missing rate
-              "noise": [0], # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
+              "noise_x": [0.1], # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
+              "noise_y": [0.01], # np.arange(0,0.7,0.1),
               "N": N,
               "epoch": 1, # number of random runs of generate
               "args" : (0.7,0,state["order"]) # lam,niter 

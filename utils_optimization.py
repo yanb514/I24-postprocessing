@@ -9,7 +9,24 @@ from multiprocessing import Pool, cpu_count
 import utils
 import utils_vis as vis
 
-# ==================== FOR 1D DOT TOY EXAMPLE ONLY ===============
+# ==================== FOR debugging ONLY ===============
+def nan_helper(y):
+    """Helper to handle indices and logical indices of NaNs.
+
+    Input:
+        - y, 1d numpy array with possible NaNs
+    Output:
+        - nans, logical indices of NaNs
+        - index, a function, with signature indices= index(logical_indices),
+          to convert logical indices of NaNs to 'equivalent' indices
+    Example:
+        >>> # linear interpolation of NaNs
+        >>> nans, x= nan_helper(y)
+        >>> y[nans]= np.interp(x(nans), x(~nans), y[~nans])
+    """
+
+    return np.isnan(y), lambda z: z.nonzero()[0]
+
 def generate_1d(initial_state, highest_order_dynamics, dt, order):
     '''
     generate vehicle states using 1-st order dynamics
@@ -55,22 +72,76 @@ def generate_1d(initial_state, highest_order_dynamics, dt, order):
 
     return x,v,a,j
 
-def nan_helper(y):
-    """Helper to handle indices and logical indices of NaNs.
+def generate_2d(initial_state, highest_order_dynamics, theta, dt, order):
+    '''
+    generate vehicle states using 1-st order dynamics in 2D
+    Simple steering dynamics:
+    a(k+1) = a(k) + j(k)*dt, k=1,...,N-3
+    v(k+1) = v(k) + a(k)*dt, k=1,...,N-2
+    vx(k) = v(k) sin(theta(k)), k=1,...,N-1
+    vy(k) = v(k) cos(theta(k)), k=1,...,N-1
+    x(k+1) = x(k) + vx(k)dt, k=1,...,N-1
+    y(k+1) = y(k) + vy(k)dt, k=1,...,N-1
+    
+    initial_state: list. [x0, y0, v0, a0] 
+    highest_order_dynamics: Nx1 array
+    theta: Nx1 array
+    dt: float or Nx1 array
+    order: highest order of derivative. 2: acceleration. 3: jerk
+    return: x,y,theta,v,a,j
+    '''
+    N = len(highest_order_dynamics)
+    
+    if order == 3:
+        assert len(initial_state)==4
+        j = highest_order_dynamics
+        a = np.zeros(N)
+        v = np.zeros(N)
+        x = np.zeros(N)
+        y = np.zeros(N)
+        
+        x0, y0, v0, a0 = initial_state
+        a[0] = a0
+        x[0] = x0
+        y[0] = y0
+        v[0] = v0
+        
+        for k in range(0,N-1):
+            a[k+1] = a[k] + j[k]*dt
+            v[k+1] = v[k] + a[k]*dt
+            
+        vx = v * np.cos(theta)
+        vy = v * np.sin(theta)
+        
+        for k in range(0,N-1):
+            x[k+1] = x[k] + vx[k]*dt
+            y[k+1] = y[k] + vy[k]*dt
+        
+    elif order == 2:
+        assert len(initial_state)==3
+        j = np.nan
+        a = highest_order_dynamics
+        v = np.zeros(N)
+        x = np.zeros(N)
+        y = np.zeros(N)
+        
+        x0, y0, v0 = initial_state
+        x[0] = x0
+        y[0] = y0
+        v[0] = v0
+        
+        for k in range(0,N-1):
+            v[k+1] = v[k] + a[k]*dt
+            
+        vx = v * np.cos(theta)
+        vy = v * np.sin(theta)
+        
+        for k in range(0,N-1):
+            x[k+1] = x[k] + vx[k]*dt
+            y[k+1] = y[k] + vy[k]*dt
+            
+    return  x,y,theta,v,a,j
 
-    Input:
-        - y, 1d numpy array with possible NaNs
-    Output:
-        - nans, logical indices of NaNs
-        - index, a function, with signature indices= index(logical_indices),
-          to convert logical indices of NaNs to 'equivalent' indices
-    Example:
-        >>> # linear interpolation of NaNs
-        >>> nans, x= nan_helper(y)
-        >>> y[nans]= np.interp(x(nans), x(~nans), y[~nans])
-    """
-
-    return np.isnan(y), lambda z: z.nonzero()[0]
 
 def obj_1d(X, x, order, N, dt, notNan, lam):
     """ The cost function for 1d
@@ -127,8 +198,7 @@ def const_1d(N, dt, order):
         for i in range(start_row, end_row):
             A[i][i+o] = -1
             A[i][i+o+1] = 1
-            A[i][i+o+step] = -dt
-            
+            A[i][i+o+step] = -dt      
     
     return A
  
@@ -138,29 +208,27 @@ def rectify_1d(df, args, axis):
     solve for the optimization problem for both x and y component independently:
         minimize obj_1d(X, x, N, dt, notNan, lam)
         s.t. A = const_1d(X, dt), AX = 0  
-    args: tuple (lam. niter)
+    args: tuple (lam. niter, order)
     axis: "x" or "y"
     '''  
     # TODO: deal with signs
     # get data
     lam,niter,order = args
+    dt = 1/30
     
     if axis == "x":
-        x = df.x.values
-        v = df.speed_x.values
-        a = df.acceleration_x.values
-        j = df.jerk_x.values
+        x = df.x.values      
     else:
         x = df.y.values
-        v = df.speed_y.values
-        a = df.acceleration_y.values
-        j = df.jerk_y.values
-        
+    v = np.append(np.diff(x)/dt,np.nan)
+    a = np.append(np.diff(v)/dt,np.nan)
+    j = np.append(np.diff(a)/dt,np.nan)
+    
     N = len(x)
     # offset = int((1+order)*order/2)
     # n = (1+order)*N-offset
     
-    dt = 1/30
+    
     # sign = df["direction"].iloc[0]           
     notNan = ~np.isnan(x)
 
@@ -169,8 +237,12 @@ def rectify_1d(df, args, axis):
     
     # Bounds constraints
     lb,ub = [],[]
-    lb_list = [-np.inf, 0, -10, -5] # x0, v0, a0, j0
-    ub_list = [np.inf, 50, 10, 5]
+    # if axis == "x":
+    lb_list = [-np.inf, -np.inf, -np.inf, -np.inf] # x0, v0, a0, j0
+    ub_list = [np.inf, np.inf,np.inf, np.inf]
+    # else:
+    #     lb_list = [0, -3, -1, -0.5] # y0, v0, a0, j0
+    #     ub_list = [50, 3, 1, 0.5]
     for o in range(order+1):
         lb += [lb_list[o]]*(N-o)
         ub += [ub_list[o]]*(N-o)
@@ -185,16 +257,16 @@ def rectify_1d(df, args, axis):
     j[nans]= np.interp(ind(nans), ind(~nans), j[~nans])
     highest_order_dyn = j if order==3 else a
     
-    xhat0,vhat0,ahat0,jhat0 = generate_1d([x[0]+1, v[0],a[0]], highest_order_dyn, dt, order)
+    xhat0,vhat0,ahat0,jhat0 = generate_1d([x[0], v[0],a[0]], highest_order_dyn, dt, order)
     if order == 3:
         X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2],jhat0[:-3]), axis=0)
     elif order == 2:
         X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2]), axis=0)
-    initial_cost1 = obj_1d(X0, x, order,N, dt, notNan, 1)
-    initial_cost2 = obj_1d(X0, x, order,N, dt, notNan, 0)
+    # initial_cost1 = obj_1d(X0, x, order,N, dt, notNan, 1)
+    # initial_cost2 = obj_1d(X0, x, order,N, dt, notNan, 0)
     
-    print("Initial cost: ", initial_cost1, initial_cost2)
-    print("Initial constraint: ",  LA.norm(np.dot(A, X0),1))
+    # print("Initial cost: ", initial_cost1, initial_cost2)
+    # print("Initial constraint: ",  LA.norm(np.dot(A, X0),1))
     
     # 2. SLSQP
     eq_cons = {'type': 'eq', 
@@ -244,20 +316,22 @@ def rectify_2d(df, args):
     xhat, vxhat, axhat, jxhat = rectify_1d(df, args, "x")
     yhat, vyhat, ayhat, jyhat = rectify_1d(df, args, "y")
     
-    # calculate steering theta
-    vhat = np.sqrt(vxhat**2 + vyhat**2)
+    # calculate the states
+    
+    vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed
     thetahat = np.arcsin(vyhat/vhat)
+    ahat = np.append(np.diff(vhat)/(1/30),  np.ones(1)*np.nan)
+    jhat = np.append(np.diff(ahat)/(1/30),  np.ones(1)*np.nan)
+    
+    # TODO: expand to full boxes measurements
     
     # write to df
     df.loc[:,'x'] = xhat
-    df.loc[:,'jerk_x'] = jxhat
-    df.loc[:,'acceleration_x'] = axhat
-    df.loc[:,'speed_x'] = vxhat   
+    df.loc[:,'jerk'] = jhat
+    df.loc[:,'acceleration'] = ahat
+    df.loc[:,'speed'] = vhat   
      
-    df.loc[:,'y'] = yhat 
-    df.loc[:,'jerk_y'] = jyhat
-    df.loc[:,'acceleration_y'] = ayhat
-    df.loc[:,'speed_y'] = vyhat  
+    df.loc[:,'y'] = yhat   
     
     df.loc[:,'theta'] = thetahat
 
@@ -623,7 +697,10 @@ def estimate_dimensions(car):
     Yre, x,y,v,a,theta,omega,w,l = unpack1(res,N,dt)
     return w,l                
                             
-def generate(w,l,x0, y0, theta,v,outputall=False):
+def generate(w,l, x0, y0, theta,v,outputall=False):
+    '''
+    constant velocity dynamics
+    '''
     # extract results
     # unpack variables
     N = len(theta)

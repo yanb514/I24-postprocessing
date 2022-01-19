@@ -306,18 +306,18 @@ def dashboard(cars, states = None, car_legends=None):
     if car_legends:
         assert len(cars) == len(car_legends)
     n_states = len(states)
-    fig, axs = plt.subplots(math.ceil(n_states/3), 3, figsize=(18,10))
+    fig, axs = plt.subplots(math.ceil(n_states/3), 3, figsize=(18,18))
     axs = axs.ravel()
     
     colors = ["blue","orange","green","red","purple"]
     units = {"x": "(m)",
-             "speed_x": "(m/s)",
-             "acceleration_x": "(m/s2)",
-             "jerk_x": "(m/s3)",
+             "speed": "(m/s)",
+             "acceleration": "(m/s2)",
+             "jerk": "(m/s3)",
              "y": "(m)",
-             "speed_y": "(m/s)",
-             "acceleration_y": "(m/s2)",
-             "jerk_y": "(m/s3)",
+             # "speed_y": "(m/s)",
+             # "acceleration_y": "(m/s2)",
+             # "jerk_y": "(m/s3)",
              "theta": "rad"
              }
     
@@ -326,7 +326,7 @@ def dashboard(cars, states = None, car_legends=None):
     for stateidx, state in enumerate(states):
         
         for caridx, car in enumerate(cars):
-            if car_legends[caridx] not in {'rectified','gt'}:
+            if car_legends[caridx] not in {'rectified','gt','meas'}:
                 car = utils.calc_dynamics_car(car)
                 print(car_legends[caridx], ' calculate dynamics')
              
