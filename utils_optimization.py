@@ -159,23 +159,22 @@ def obj_1d(X, x, order, N, dt, notNan, lam):
     """ 
     # nvalid = np.count_nonzero(notNan)
     # unpack decision variables
+
     xhat = X[:N]
     offset1 = int((1+order-1)*(order-1)/2)
 
     highest_order_dynamics = X[order*N-offset1:] # to be regularized
-    
+    rescale = (30)**(order)
     # select valid measurements
     xhat = xhat[notNan]
     x = x[notNan]
     
     # min perturbation
-    c1 = LA.norm(x-xhat,2)**2
-    # print("c1: ",c1)
-    # regularize acceleration # not the real a or j, multiply a constant dt
-    c2 = LA.norm(highest_order_dynamics,2)**2
-    # print("c2: ",c2)
+    c1 = LA.norm(x-xhat,2)**2 * rescale /np.count_nonzero(notNan)
+    c2 = LA.norm(highest_order_dynamics,2)**2 / (N-order)
+
     cost = lam*c1 + (1-lam) * c2
-    # print(cost)
+
     return cost
 
 def const_1d(N, dt, order):
@@ -208,12 +207,12 @@ def rectify_1d(df, args, axis):
     solve for the optimization problem for both x and y component independently:
         minimize obj_1d(X, x, N, dt, notNan, lam)
         s.t. A = const_1d(X, dt), AX = 0  
-    args: tuple (lam. niter, order)
+    args: tuple (lam, order)
     axis: "x" or "y"
+    lam_norm: automatically adjust lambda to scale perturbation and regularization
     '''  
-    # TODO: deal with signs
     # get data
-    lam,niter,order = args
+    lam, order = args
     dt = 1/30
     
     if axis == "x":
@@ -225,9 +224,6 @@ def rectify_1d(df, args, axis):
     j = np.append(np.diff(a)/dt,np.nan)
     
     N = len(x)
-    # offset = int((1+order)*order/2)
-    # n = (1+order)*N-offset
-    
     
     # sign = df["direction"].iloc[0]           
     notNan = ~np.isnan(x)
@@ -262,41 +258,39 @@ def rectify_1d(df, args, axis):
         X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2],jhat0[:-3]), axis=0)
     elif order == 2:
         X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2]), axis=0)
-    # initial_cost1 = obj_1d(X0, x, order,N, dt, notNan, 1)
-    # initial_cost2 = obj_1d(X0, x, order,N, dt, notNan, 0)
-    
-    # print("Initial cost: ", initial_cost1, initial_cost2)
-    # print("Initial constraint: ",  LA.norm(np.dot(A, X0),1))
     
     # 2. SLSQP
     eq_cons = {'type': 'eq', 
             'fun' : lambda x: np.dot(A, x)}
 
-    # normalize lambda for multi-objectives - SOLVE FOR MAX C2 BY SETTING LAM = 1
-    res_noreg = minimize(obj_1d, X0, (x, order,N, dt, notNan, 1), method='SLSQP',
-                constraints=[eq_cons], options={'ftol': 1e-9, 'disp': True},
-                bounds=bounds)
-    # c1max = obj_1d(res_noreg.x, x, order, N, dt, notNan, 1)
-    c2max = obj_1d(res_noreg.x, x, order, N, dt, notNan, 0)
-    c1max = c2max/(30**(order-1))
-    print(c1max, c2max)
-    c2max = max(c2max, 1e-6)
-    lam1_norm = lam*c2max/(c1max-lam*c1max+lam*c2max)
+    # res_lam0 = minimize(obj_1d, X0, (x, order,N, dt, notNan, 0), method='SLSQP',
+    #             constraints=[eq_cons], options={'ftol': 1e-9, 'disp': False},
+    #             bounds=bounds)
+    # print(res_lam0.message)
+    # res_lam1 = minimize(obj_1d, X0, (x, order,N, dt, notNan, 1), method='SLSQP',
+    #             constraints=[eq_cons], options={'ftol': 1e-9, 'disp': False},
+    #             bounds=bounds)
+    # print(res_lam1.message)
+    # c1min = obj_1d(res_lam1.x, x,order, N, dt, notNan, 1)
+    # c2min = obj_1d(res_lam0.x, x,order, N, dt, notNan, 0)
+    # c1max = obj_1d(res_lam0.x, x,order, N, dt, notNan, 1)
+    # c2max = obj_1d(res_lam1.x, x,order, N, dt, notNan, 0)
     
-    print("lam1_norm:" , lam1_norm)
-    interm_cost1 = obj_1d(X0, x,order, N, dt, notNan, 1)*lam1_norm
-    interm_cost2 = obj_1d(X0, x,order, N, dt, notNan, 0)*(1-lam1_norm)
-    print("Intermediate cost: ", interm_cost1,interm_cost2)
-    print("Intermediate constraint: ", LA.norm(np.dot(A, X0),1))
+    # if lam_norm:
+    #     norm_args = (c1min, c2min, c1max, c2max)
+    #     print("axis: ", axis, " ", norm_args)
+    # else:
+    #     norm_args = None
     
     # SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
-    res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam1_norm), method='SLSQP',
-                constraints=[eq_cons], options={'ftol': 1e-9, 'disp': True},
+    res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam), method='SLSQP',
+                constraints=[eq_cons], options={'ftol': 1e-9, 'disp': False},
                 bounds=bounds)
-    final_cost1 = obj_1d(res.x, x,order, N, dt, notNan, 1)*lam1_norm
-    final_cost2 = obj_1d(res.x, x,order, N, dt, notNan, 0)*(1-lam1_norm)
-    print("Final cost: ", final_cost1,final_cost2)
-    print("Final constraint: ", LA.norm(np.dot(A, res.x),1))
+    print(res.message)
+    # final_cost1 = obj_1d(res.x, x,order, N, dt, notNan, 1)
+    # final_cost2 = obj_1d(res.x, x,order, N, dt, notNan, 0)
+    # print("Final cost: ", final_cost1,final_cost2)
+    # print("Final constraint: ", LA.norm(np.dot(A, res.x),1))
     
     # extract results    
     xhat = res.x[:N]
@@ -309,12 +303,13 @@ def rectify_1d(df, args, axis):
     
     return xhat, vhat, ahat, jhat
 
-def rectify_2d(df, args):
+def rectify_2d(df, w,l,args):
     '''
     rectify on x and y component independently
     '''
-    xhat, vxhat, axhat, jxhat = rectify_1d(df, args, "x")
-    yhat, vyhat, ayhat, jyhat = rectify_1d(df, args, "y")
+    lamx, lamy, order = args
+    xhat, vxhat, axhat, jxhat = rectify_1d(df, (lamx,order), "x")
+    yhat, vyhat, ayhat, jyhat = rectify_1d(df, (lamy,order), "y")
     
     # calculate the states
     
@@ -323,20 +318,52 @@ def rectify_2d(df, args):
     ahat = np.append(np.diff(vhat)/(1/30),  np.ones(1)*np.nan)
     jhat = np.append(np.diff(ahat)/(1/30),  np.ones(1)*np.nan)
     
-    # TODO: expand to full boxes measurements
+    # expand to full boxes measurements
+    Y0 = generate_box(w,l, xhat, yhat, thetahat)
     
     # write to df
     df.loc[:,'x'] = xhat
     df.loc[:,'jerk'] = jhat
     df.loc[:,'acceleration'] = ahat
     df.loc[:,'speed'] = vhat   
-     
     df.loc[:,'y'] = yhat   
-    
     df.loc[:,'theta'] = thetahat
-
-    return df           
     
+    # store auxiliary states for debugging
+    df.loc[:,'speed_x'] = vxhat
+    df.loc[:,'jerk_x'] = jxhat
+    df.loc[:,'acceleration_x'] = axhat
+    df.loc[:,'speed_y'] = vyhat
+    df.loc[:,'jerk_y'] = jyhat
+    df.loc[:,'acceleration_y'] = ayhat 
+    
+    pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    df.loc[:, pts] = Y0
+    
+    return df           
+
+def generate_box(w,l, x, y, theta):
+    '''
+    generate 'bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y' from
+    - x: Nx1 array of backcenter x
+    - y: Nx1 array of backcenter y
+    - theta: Nx1 array of angle relative to positive x direction (not steering)
+    - w: width
+    - l: length
+    '''
+    # compute positions
+    xa = x + w/2*sin(theta)
+    ya = y - w/2*cos(theta)
+    xb = xa + l*cos(theta)
+    yb = ya + l*sin(theta)
+    xc = xb - w*sin(theta)
+    yc = yb + w*cos(theta)
+    xd = xa - w*sin(theta)
+    yd = ya + w*cos(theta)
+
+    Y = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
+    return Y
+
 # ============================================
 def loss(Yre, Y1, norm='l21'):
     '''

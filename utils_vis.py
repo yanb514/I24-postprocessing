@@ -163,7 +163,7 @@ def plot_track(x):
     plt.show() 
     return
     
-def plot_track_df(df,length=15,width=1,show=True, ax=None, color='black',title=""):
+def plot_track_df(df,length=15,width=1,legend = "rectified", show=True, ax=None, color='black',title=""):
     carid = df["ID"].iloc[0]
     D = np.array(df[['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']])
     if ax is None:
@@ -174,7 +174,7 @@ def plot_track_df(df,length=15,width=1,show=True, ax=None, color='black',title="
         coord = np.reshape(coord,(-1,2)).tolist()
         coord.append(coord[0]) #repeat the first point to create a 'closed loop'
         xs, ys = zip(*coord) #lon, lat as x, y
-        ax.plot(xs,ys,label=carid if i==0 else '',c=color)
+        ax.plot(xs,ys,label=legend if i==0 else '',c=color)
         ax.scatter(D[i,2],D[i,3],color=color)#,alpha=i/len(D)
     ax.set_xlabel('meter')
     ax.set_ylabel('meter')
@@ -235,9 +235,9 @@ def plot_track_df_camera(df,tform_path,length=15,width=1, camera='varies'):
     
     return
 
-def plot_track_compare(car,carre):
-    ax = plot_track_df(car,show=False, color='red')
-    ax = plot_track_df(carre, show=False, ax=ax, color='blue')
+def plot_track_compare(car,carre, legends=None):
+    ax = plot_track_df(car,legend = legends[0], show=False, color='red')
+    ax = plot_track_df(carre, legend = legends[1], show=False, ax=ax, color='blue')
     return
 
 def plot_lane_distribution(df):
@@ -315,14 +315,11 @@ def dashboard(cars, states = None, car_legends=None):
              "acceleration": "(m/s2)",
              "jerk": "(m/s3)",
              "y": "(m)",
-             # "speed_y": "(m/s)",
-             # "acceleration_y": "(m/s2)",
-             # "jerk_y": "(m/s3)",
              "theta": "rad"
              }
     
-    carid = cars[0]["ID"].iloc[0]
-    
+    # carid = cars[0]["ID"].iloc[0]
+    meas_states = {"x","y"}
     for stateidx, state in enumerate(states):
         
         for caridx, car in enumerate(cars):
@@ -334,6 +331,8 @@ def dashboard(cars, states = None, car_legends=None):
             c = colors[caridx%len(colors)]
             
             # time vs. state
+            if car_legends[caridx]=="meas" and state not in meas_states:
+                continue
             state_values = car[state].values
             axs[stateidx].scatter(frames, state_values,color=c,s=2,label="{}".format(car_legends[caridx]))
             axs[stateidx].plot(frames, state_values,color=c)
@@ -341,8 +340,10 @@ def dashboard(cars, states = None, car_legends=None):
         axs[stateidx].legend()            
         axs[stateidx].set_xlabel('Frame #')
         # axs[stateidx].set_ylabel(state + " " + units[state])
-        axs[stateidx].set_title(state + " " + units[state])  
-    
+        try:
+            axs[stateidx].set_title(state + " " + units[state])  
+        except:
+            axs[stateidx].set_title(state)  
     plt.show()
     return
    
