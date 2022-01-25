@@ -14,6 +14,7 @@ import utils_optimization as opt
 import utils_vis as vis
 from tqdm import tqdm
 import random
+from scipy.signal import savgol_filter
 
 pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
 def smooth(y, box_pts):
@@ -24,6 +25,7 @@ def smooth(y, box_pts):
     y_smooth[-box_pts:] = y_smooth[-box_pts]
     return y_smooth
 
+    
 def plot_time_space(df, lanes=[1], time="Time", space="Distance", ax=None, show =True):
         
     # plot time space diagram (4 lanes +1 direction)
@@ -120,14 +122,16 @@ def resample_single(car):
     newtime = np.arange(time[0], time[-1]+1/30, 1/30)# to 30hz
     d = car.Distance.values 
     dir = np.sign(d[-1]-d[0]) # travel direction
-    v = np.abs(np.diff(d))    # differentiate distance to get speed
-    v = np.hstack([v,v[-1]])  
+    vx = np.diff(d)    # differentiate distance to get speed
+    vx = np.hstack([vx,vx[-1]])  
     y = car.y.values
     vy = np.diff(y)           # y-component speed
     vy = np.hstack([vy, vy[-1]])
-    theta = np.arccos(dir)-np.arcsin(vy/v) # heading angle
-    
+
+    theta = np.arctan2(vy,vx)
+    theta[theta < 0] += 2*np.pi
     thetare = np.interp(newtime, time, theta) # linear interpolate to 30hz
+    v = np.sqrt(vx**2+vy**2)
     vre = np.interp(newtime, time, v)
     
     new_index = pd.Index(newtime, name="Time")
@@ -147,19 +151,50 @@ def generate_meas(car):
     '''
     Generate footprint measurements (bbr_x, bbr_y, etc.) from state information
     '''
+    dt = 1/30
+    order = 3
     w = car.Width.values
     l = car.Length.values
     x0 = car.Distance.values[0]
     y0 = car.y.values[0]
     theta=car.theta.values
-    theta = smooth(theta, 10) # TODO: smoothing window to be testeds
+    # if len(theta)//2>0: win = len(theta)-2
+    # else: win = len(theta)-1
+    try:
+        theta = savgol_filter(theta, len(theta)//2-1, 3) # TODO: smoothing window to be testeds
+        theta = savgol_filter(theta, len(theta)//2-1, 3)
+    except:
+        theta = savgol_filter(theta, len(theta)//2, 3)
+        theta = savgol_filter(theta, len(theta)//2, 3)
+    # theta = savgol_filter(theta, len(theta)//2-1, 3)
     v=car.speed.values
-    Yre,x,y,a = opt.generate(w,l,x0, y0, theta, v, outputall=True)
+    a = np.diff(v)/dt
+    j = np.diff(a)/dt
+    j = np.clip(j,-5,5)
+    
+    # highest_order_dynamics = smooth(highest_order_dynamics, 300)
+    
+    j = np.append(j, np.zeros(2))
+    if len(j)%2 > 0: # odd number
+        win = len(j)-2
+    else:
+        win = len(j)-1
+
+    highest_order_dynamics = savgol_filter(j, win, 3)
+    
+    # Yre,x,y,a = opt.generate(w,l,x0, y0, theta, v, outputall=True)
+
+    initial_state = [x0, y0, v[0], a[0]] 
+    x,y,theta,v,a,j = opt.generate_2d(initial_state, highest_order_dynamics, theta, dt, order)
+    Y = opt.generate_box(w, l, x, y, theta)
     car["x"] = x
     car["y"] = y
+    car["speed"] = v
     car["acceleration"] = a
+    car["jerk"] = j
     car["theta"] = theta
-    car.loc[:,pts] = Yre 
+    car.loc[:,pts] = Y 
+    
     return car
     
 def preprocess(df):
@@ -183,7 +218,7 @@ def preprocess(df):
             'vel_x','vel_y','Generation method',
             'fbrx','fbry','fblx','fbly','bbrx','bbry','bblx','bbly','ftrx','ftry','ftlx','ftly','btrx','btry','btlx','btly',
             'fbr_x','fbr_y','fbl_x','fbl_y','bbr_x','bbr_y','bbl_x','bbl_y',
-            'direction','camera','acceleration','speed','x','y','theta','width','length','height',"lane"]
+            'direction','camera','acceleration','speed','x','y','theta','width','length','height',"lane","jerk"]
     df = df.reindex(columns=col)
 
     df = df.sort_values(by=['Frame #','ID']).reset_index(drop=True)         
@@ -230,9 +265,9 @@ def pollute(df, AVG_CHUNK_LENGTH, OUTLIER_RATIO):
 # %%
 if __name__ == "__main__":
     data_path = r"E:\I24-postprocess\benchmark\TM_trajectory.csv"
-    df = pd.read_csv(data_path, nrows=2000)
-
-    print(len(df))
+    df = pd.read_csv(data_path, nrows=1000)
+    # df = df[df["ID"]==38]
+    # print(len(df))
     df = standardize(df)
     df = calc_state(df)
     df = preprocess(df)
@@ -240,19 +275,19 @@ if __name__ == "__main__":
     # you can select some time-space window such that the trajectory lengths are similar (run plot_time_space to visualize)
     # df = df[df["x"]>1000]
     # df = df[df["Frame #"]>1000]
-    print(df["Frame #"].iloc[-1])
-    print(np.max(df["Frame #"].values))
-    # df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_GT.csv", index=False) # save the ground truth data
+
+    df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_GT.csv", index=False) # save the ground truth data
+    # plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)
     #%%
     df = pollute(df, AVG_CHUNK_LENGTH=30, OUTLIER_RATIO=0.2) # manually perturb (downgrade the data)
-    print(df["Frame #"].iloc[-1])
-    print(np.max(df["Frame #"].values))
-    # df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_pollute.csv", index=False) # save the downgraded data
-    # print("saved.")
+
+    df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_pollute.csv", index=False) # save the downgraded data
+    print("saved.")
     # %% visualize in time-space diagram
     # plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)
     
     # %% examine an individual track by its ID
-    # car = df[df["ID"]==13]
-    # vis.plot_track_df(car[80:180])
+    car = df[df["ID"]==38]
+    vis.dashboard([car],["x","y","speed","acceleration","jerk","theta"],["gt"])
+    vis.plot_track_df(car[0:50])
     

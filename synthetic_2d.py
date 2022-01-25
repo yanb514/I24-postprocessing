@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Toy experiment 1d
+Toy experiment 2d
+- generate GT with nonlinear dynamics
+- manual pollution
+- rectify on x and y independently
+- plot pareto curve for lambda tuning
 
 """
 import utils
@@ -318,7 +322,7 @@ if __name__ == "__main__":
               "noise_y": [0.05], # np.arange(0,0.7,0.1),
               "N": N,
               "epoch": 1, # number of random runs of generate
-              "args" : (0.1, 0.8, state["order"]) # lam,order 
+              "args" : (0.1, 0.1, state["order"]) # lam,order 
         }
     
     ex = Experiment(state, params)

@@ -1076,4 +1076,40 @@ def find(parent, i):
 def compress(parent, groupList):	
 	for i in groupList:
 		find(parent, i)
-	return parent    
+	return parent  
+
+def mark_outliers(car):
+    '''
+    mark outlier by comparing x,y with constant-velocity x and y
+    mark as outlier_xy
+    '''
+    # get data
+    x = car.x.values
+    y = car.y.values
+    frames = car["Frame #"].values
+    
+    # constant velocity
+    notnan = ~np.isnan(x)
+    # x = x[notnan] # remove rows with missing values (dim = mx8)
+    # y = y[notnan]
+    # frames = frames[notnan]
+
+    fitx = np.polyfit(frames[notnan],x[notnan],1)
+    fity = np.polyfit(frames[notnan],y[notnan],1)
+    xhat = np.polyval(fitx, frames)
+    yhat = np.polyval(fity, frames)
+   
+    xdiff = x-xhat
+    ydiff = y-yhat
+    
+    # get 10,90% quantile
+    q1x = np.nanquantile(xdiff, 0.1)
+    q2x = np.nanquantile(xdiff, 0.9)
+    q1y = np.nanquantile(ydiff, 0.1)
+    q2y = np.nanquantile(ydiff, 0.9)
+    
+    # get outlier indices
+    outliers = np.logical_or.reduce((xdiff<q1x, xdiff>q2x, ydiff<q1y, ydiff>q2y))
+    car["Generation method"][outliers]='outlier1'
+    
+    return car

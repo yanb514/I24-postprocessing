@@ -9,7 +9,9 @@ from multiprocessing import Pool, cpu_count
 import utils
 import utils_vis as vis
 
-# ==================== FOR debugging ONLY ===============
+pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+
+# ==================== CVX optimization for 2d dynamics ==================
 def nan_helper(y):
     """Helper to handle indices and logical indices of NaNs.
 
@@ -142,7 +144,38 @@ def generate_2d(initial_state, highest_order_dynamics, theta, dt, order):
             
     return  x,y,theta,v,a,j
 
+def decompose_2d(car, write_to_df = False):
+        '''
+        the opposite of generate_2d
+        given x,y,theta
+        return vx,vy,ax,ay,jx,jy
+        get velocity, acceleration, jerk from the GT box measurements
+        '''
+        dt= 1/30
+        
+        x = (car["bbr_x"].values + car["bbl_x"].values)/2
+        y = (car["bbr_y"].values + car["bbl_y"].values)/2
 
+        vx = np.append(np.diff(x)/dt, np.nan)
+        vy = np.append(np.diff(y)/dt, np.nan)
+        
+        ax = np.append(np.diff(vx)/dt, np.nan)
+        ay = np.append(np.diff(vy)/dt, np.nan)
+        
+        jx = np.append(np.diff(ax)/dt, np.nan)
+        jy = np.append(np.diff(ay)/dt, np.nan)
+       
+        if write_to_df:
+            car.loc[:,"speed_x"] = vx
+            car.loc[:,"speed_y"] = vy
+            car.loc[:,"acceleration_x"] = ax
+            car.loc[:,"acceleration_y"] = ay
+            car.loc[:,"jerk_x"] = jx
+            car.loc[:,"jerk_y"] = jy
+            return car
+        else:
+            return vx,vy,ax,ay,jx,jy
+    
 def obj_1d(X, x, order, N, dt, notNan, lam):
     """ The cost function for 1d
             X: decision variables X = [xhat, vhat, ahat]
@@ -157,9 +190,7 @@ def obj_1d(X, x, order, N, dt, notNan, lam):
             lam: given parameter
         Return: float
     """ 
-    # nvalid = np.count_nonzero(notNan)
     # unpack decision variables
-
     xhat = X[:N]
     offset1 = int((1+order-1)*(order-1)/2)
 
@@ -171,7 +202,7 @@ def obj_1d(X, x, order, N, dt, notNan, lam):
     
     # min perturbation
     c1 = LA.norm(x-xhat,2)**2 * rescale /np.count_nonzero(notNan)
-    c2 = LA.norm(highest_order_dynamics,2)**2 / (N-order)
+    c2 = LA.norm(highest_order_dynamics,2)**2 / len(highest_order_dynamics)
 
     cost = lam*c1 + (1-lam) * c2
 
@@ -248,8 +279,11 @@ def rectify_1d(df, args, axis):
     # Initialize decision variables
     nans, ind = nan_helper(x)
     x[nans]= np.interp(ind(nans), ind(~nans), x[~nans])
+    nans, ind = nan_helper(v)
     v[nans]= np.interp(ind(nans), ind(~nans), v[~nans])
+    nans, ind = nan_helper(a)
     a[nans]= np.interp(ind(nans), ind(~nans), a[~nans])
+    nans, ind = nan_helper(j)
     j[nans]= np.interp(ind(nans), ind(~nans), j[~nans])
     highest_order_dyn = j if order==3 else a
     
@@ -262,62 +296,42 @@ def rectify_1d(df, args, axis):
     # 2. SLSQP
     eq_cons = {'type': 'eq', 
             'fun' : lambda x: np.dot(A, x)}
-
-    # res_lam0 = minimize(obj_1d, X0, (x, order,N, dt, notNan, 0), method='SLSQP',
-    #             constraints=[eq_cons], options={'ftol': 1e-9, 'disp': False},
-    #             bounds=bounds)
-    # print(res_lam0.message)
-    # res_lam1 = minimize(obj_1d, X0, (x, order,N, dt, notNan, 1), method='SLSQP',
-    #             constraints=[eq_cons], options={'ftol': 1e-9, 'disp': False},
-    #             bounds=bounds)
-    # print(res_lam1.message)
-    # c1min = obj_1d(res_lam1.x, x,order, N, dt, notNan, 1)
-    # c2min = obj_1d(res_lam0.x, x,order, N, dt, notNan, 0)
-    # c1max = obj_1d(res_lam0.x, x,order, N, dt, notNan, 1)
-    # c2max = obj_1d(res_lam1.x, x,order, N, dt, notNan, 0)
-    
-    # if lam_norm:
-    #     norm_args = (c1min, c2min, c1max, c2max)
-    #     print("axis: ", axis, " ", norm_args)
-    # else:
-    #     norm_args = None
     
     # SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
     res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam), method='SLSQP',
                 constraints=[eq_cons], options={'ftol': 1e-9, 'disp': False},
                 bounds=bounds)
     print(res.message)
-    # final_cost1 = obj_1d(res.x, x,order, N, dt, notNan, 1)
-    # final_cost2 = obj_1d(res.x, x,order, N, dt, notNan, 0)
-    # print("Final cost: ", final_cost1,final_cost2)
-    # print("Final constraint: ", LA.norm(np.dot(A, res.x),1))
     
-    # extract results    
-    xhat = res.x[:N]
-    vhat = res.x[N:2*N-1]
-    vhat = np.append(vhat,np.nan)
-    ahat = res.x[2*N-1:3*N-3]
-    ahat = np.append(ahat, np.ones(2)*np.nan)
+    # unpack decision varibles
     jhat = res.x[3*N-3:]
-    jhat = np.append(jhat, np.ones(3)*np.nan)
+    jhat = np.append(jhat, np.zeros(3)) # add 0 jerks to fill up the nans
+    xhat, vhat, ahat, jhat = generate_1d(res.x[[0,N,2*N-1]], jhat, dt, order)
     
     return xhat, vhat, ahat, jhat
+
 
 def rectify_2d(df, w,l,args):
     '''
     rectify on x and y component independently
     '''
     lamx, lamy, order = args
+    df.loc[:,'y'] = (df["bbr_y"].values + df["bbl_y"].values)/2
+    df.loc[:,'x'] = (df["bbr_x"].values + df["bbl_x"].values)/2
+    
     xhat, vxhat, axhat, jxhat = rectify_1d(df, (lamx,order), "x")
     yhat, vyhat, ayhat, jyhat = rectify_1d(df, (lamy,order), "y")
     
     # calculate the states
-    
     vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed
-    thetahat = np.arcsin(vyhat/vhat)
-    ahat = np.append(np.diff(vhat)/(1/30),  np.ones(1)*np.nan)
-    jhat = np.append(np.diff(ahat)/(1/30),  np.ones(1)*np.nan)
+    thetahat = np.arctan2(vyhat,vxhat)
+    thetahat[thetahat < 0] += 2*np.pi
+    ahat = np.diff(vhat)/(1/30)
+    ahat = np.append(ahat,  ahat[-1])
     
+    # add constant jerk in the end
+    jhat = np.diff(ahat)/(1/30)
+    jhat = np.append(jhat, 0)
     # expand to full boxes measurements
     Y0 = generate_box(w,l, xhat, yhat, thetahat)
     
@@ -337,7 +351,7 @@ def rectify_2d(df, w,l,args):
     df.loc[:,'jerk_y'] = jyhat
     df.loc[:,'acceleration_y'] = ayhat 
     
-    pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    # pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
     df.loc[:, pts] = Y0
     
     return df           
@@ -364,7 +378,121 @@ def generate_box(w,l, x, y, theta):
     Y = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
     return Y
 
-# ============================================
+def box_fitting(car, width, length):
+    '''
+    fit to measurements with the given width length
+    output x,y -> best fit back center coordinates
+    convert the problem into 2D point movement
+    
+    car: df that has raw boxes measuarement
+    return car with best-fit x and y
+
+    TODO: test with missing data
+    TODO: consider direction
+    '''
+    # Decision variables 8N x 1
+    print("in box_fitting")
+    pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    Y = np.array(car[pts])  
+    N = len(Y)
+    notNan = ~np.isnan(np.sum(Y,axis=-1))
+    dir = car.direction.values[0]
+    
+    # Objective function - ||X-Xdata||_2^2
+    def sos2(x,x_data):
+        # x: 4 x 1, x_data: 8x1
+        fbr_x, fbr_y, bbl_x, bbl_y = x
+        x = np.array([bbl_x, fbr_y, fbr_x, fbr_y, fbr_x, bbl_y, bbl_x, bbl_y])
+        return LA.norm(x-x_data,2)**2
+    
+    # only consider diagonal points
+    A = np.array([[1,0,-1,0],
+                  [0,1,0,-1]])
+    b = np.array([length, -width]).T
+    b = np.sign(dir) * b
+    
+    eq_cons = {'type': 'eq', 
+            'fun' : lambda x: np.dot(A, x) - b}
+    
+    # Solve boxes are fixed-dimension rectangles, steering = 0
+    x_opt = np.ones(N)*np.nan
+    y_opt = np.ones(N)*np.nan
+    Yre = np.ones(Y.shape) * np.nan
+    
+    for i, X_data in enumerate(Y):
+        X = X_data [[2,3,6,7]] # fbr_x, fbr_y, bbl_x, bbl_y
+        if ~np.isnan(np.sum(X)):
+            res = minimize(sos2, X, (X_data), method='SLSQP',
+                    constraints=[eq_cons], options={'disp': False})
+            fbr_x, fbr_y, bbl_x, bbl_y = res.x
+            x_opt[i] = bbl_x #(res.x[0]+res.x[6])/2
+            y_opt[i] = (fbr_y + bbl_y)/2#(res.x[1]+res.x[7])/2
+            Yre[i] = np.array([bbl_x, fbr_y, fbr_x, fbr_y, fbr_x, bbl_y, bbl_x, bbl_y])
+       
+    # newcar = car.copy()
+    # newcar.loc[:,"x"] = x_opt
+    # newcar.loc[:,"y"] = y_opt
+    # newcar.loc[:,pts] = Yre
+    car.loc[:,"x"] = x_opt
+    car.loc[:,"y"] = y_opt
+    car.loc[:,pts] = Yre
+    return car
+
+def rectify_single_car(car, args):
+    '''
+    to replace rectify_single_camera
+    1. get the medium width and length
+    2. find the best-fit x and y without considering the dynamics
+    3. run rectify_2d
+    4. run generate_box to get full box rectified measurement
+    '''
+    width_array = np.abs(car["bbr_y"].values - car["bbl_y"].values)
+    length_array = np.abs(car["bbr_x"].values - car["fbr_x"].values)
+    
+    width = np.nanmedian(width_array)
+    length = np.nanmedian(length_array)
+    
+    # car = box_fitting(car, width, length) # modify x and y
+    car = utils.mark_outliers(car)
+    # print(pts)
+    car.loc[car["Generation method"]=="outlier1",pts] = np.nan
+    # print("outlier ratio: {}/{}".format( np.count_nonzero(~np.isnan(car.bbr_y.values)),len(car)))
+    # car = decompose_2d(car, write_to_df=True)
+
+    # short tracks
+    if np.count_nonzero(~np.isnan(car.bbr_y.values)) < 4:
+        print("Short track ", car.ID.values[0])
+        return car
+    car = rectify_2d(car, width, length,args) # modify x, y, speed, acceleration, jerk, boxes coords
+    return car
+
+def rectify_sequential(df, args):
+    
+    df = df.groupby('ID').apply(rectify_single_car, args=args).reset_index(drop=True)
+    return df
+
+# =================== RECEDING HORIZON RECTIFICATION =========================
+def receding_horizon_1d(car, args):
+    '''
+    car: df
+    args: (lam, PH, IH)
+        PH: prediction horizon
+        IH: implementation horizon
+    
+    '''
+    return
+
+
+
+
+
+
+
+
+
+
+
+
 def loss(Yre, Y1, norm='l21'):
     '''
     different ways to compute the diff matrix
@@ -467,7 +595,7 @@ def rectify_single_camera(df, args):
     sign = df["direction"].iloc[0]
     
     # get bottom 4 points coordinates
-    pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    
     Y1 = np.array(df[pts])    
 
     N = len(Y1)                
