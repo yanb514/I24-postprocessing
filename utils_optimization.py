@@ -7,9 +7,12 @@ from tqdm import tqdm
 from functools import partial
 from multiprocessing import Pool, cpu_count
 import utils
-import utils_vis as vis
-
+import time
+from cvxopt import matrix, solvers
+# import utils_vis as vis
+solvers.options['show_progress'] = False
 pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+dt = 1/30
 
 # ==================== CVX optimization for 2d dynamics ==================
 def nan_helper(y):
@@ -232,7 +235,48 @@ def const_1d(N, dt, order):
     
     return A
  
-   
+def constr_qp(x, lam, order, notNan):
+    '''
+    for cvxopt.solver_qp
+    '''
+    N = len(x)
+    offset = int((1+order)*order/2)
+    m = order*N-offset
+    n = (order+1)*N-offset
+    Q = np.zeros((n,n))
+    # x
+    for i in range(N):
+        Q[i][i] = 2 * lam
+        
+    # highest order
+    offset1 = int((order)*(order-1)/2)
+    for i in range(order*N-offset1, n):
+         Q[i][i] = 2 * (1-lam)
+    
+    p = np.append(-2*lam*x, np.zeros(n-N))
+    nan_idx = np.argwhere(~notNan)
+    
+    Q[nan_idx, :] = 0 # set the corresponding rows to 0
+    p[nan_idx] = 0
+    # r = LA.norm(x,2)**2
+    b = np.zeros(m)
+        
+    # Bounds constraints
+    lb,ub = [],[]
+    # if axis == "x":
+    lb_list = [-0, -50, -5, -3] # x0, v0, a0, j0
+    ub_list = [1e4, 50, 5, 3]
+    # else:
+    #     lb_list = [0, -3, -1, -0.5] # y0, v0, a0, j0
+    #     ub_list = [50, 3, 1, 0.5]
+    for o in range(order+1):
+        lb += [lb_list[o]]*(N-o)
+        ub += [ub_list[o]]*(N-o)
+    G = np.vstack((np.diag(np.ones(n)), np.diag(-np.ones(n))))
+    h = np.append(np.array(ub),-np.array(lb))
+    return Q,p,b,G,h
+    
+    
 def rectify_1d(df, args, axis):
     '''                        
     solve for the optimization problem for both x and y component independently:
@@ -262,51 +306,70 @@ def rectify_1d(df, args, axis):
     # Define constraints
     A = const_1d(N, dt, order) 
     
-    # Bounds constraints
-    lb,ub = [],[]
-    # if axis == "x":
-    lb_list = [-np.inf, -np.inf, -np.inf, -np.inf] # x0, v0, a0, j0
-    ub_list = [np.inf, np.inf,np.inf, np.inf]
-    # else:
-    #     lb_list = [0, -3, -1, -0.5] # y0, v0, a0, j0
-    #     ub_list = [50, 3, 1, 0.5]
-    for o in range(order+1):
-        lb += [lb_list[o]]*(N-o)
-        ub += [ub_list[o]]*(N-o)
+    # # # Bounds constraints
+    # lb,ub = [],[]
+    # # if axis == "x":
+    # lb_list = [-np.inf, -np.inf, -np.inf, -np.inf] # x0, v0, a0, j0
+    # ub_list = [np.inf, np.inf,np.inf, np.inf]
+    # # else:
+    # #     lb_list = [0, -3, -1, -0.5] # y0, v0, a0, j0
+    # #     ub_list = [50, 3, 1, 0.5]
+    # for o in range(order+1):
+    #     lb += [lb_list[o]]*(N-o)
+    #     ub += [ub_list[o]]*(N-o)
 
-    bounds = Bounds(lb,ub)
+    # bounds = Bounds(lb,ub)
     
-    # Initialize decision variables
-    nans, ind = nan_helper(x)
-    x[nans]= np.interp(ind(nans), ind(~nans), x[~nans])
-    nans, ind = nan_helper(v)
-    v[nans]= np.interp(ind(nans), ind(~nans), v[~nans])
-    nans, ind = nan_helper(a)
-    a[nans]= np.interp(ind(nans), ind(~nans), a[~nans])
-    nans, ind = nan_helper(j)
-    j[nans]= np.interp(ind(nans), ind(~nans), j[~nans])
-    highest_order_dyn = j if order==3 else a
+    # # Initialize decision variables
+    # nans, ind = nan_helper(x)
+    # x[nans]= np.interp(ind(nans), ind(~nans), x[~nans])
+    # nans, ind = nan_helper(v)
+    # v[nans]= np.interp(ind(nans), ind(~nans), v[~nans])
+    # # nans, ind = nan_helper(a)
+    # # a[nans]= np.interp(ind(nans), ind(~nans), a[~nans])
+    # a[np.isnan(a)] = 0
+    # # nans, ind = nan_helper(j)
+    # # j[nans]= np.interp(ind(nans), ind(~nans), j[~nans])
+    # j[np.isnan(j)] = 0
+    # highest_order_dyn = j if order==3 else a
     
-    xhat0,vhat0,ahat0,jhat0 = generate_1d([x[0], v[0],a[0]], highest_order_dyn, dt, order)
-    if order == 3:
-        X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2],jhat0[:-3]), axis=0)
-    elif order == 2:
-        X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2]), axis=0)
+    # xhat0,vhat0,ahat0,jhat0 = generate_1d([x[0], v[0],a[0]], highest_order_dyn, dt, order)
+
+    
+    # if order == 3:
+    #     X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2],jhat0[:-3]), axis=0)
+    # elif order == 2:
+    #     X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2]), axis=0)
+    
+
+    # 1. Trust-const
+    # linear_constraint = LinearConstraint(A, np.zeros(A.shape[0]), np.zeros(A.shape[0]))
+    # res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam), method='trust-constr',
+    #             constraints=[linear_constraint], options={'disp': False},
+    #             bounds=bounds)
+    # print(res.message)
     
     # 2. SLSQP
-    eq_cons = {'type': 'eq', 
-            'fun' : lambda x: np.dot(A, x)}
+    # eq_cons = {'type': 'eq', 
+    #         'fun' : lambda x: np.dot(A, x)}
     
-    # SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
-    res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam), method='SLSQP',
-                constraints=[eq_cons], options={'ftol': 1e-9, 'disp': False},
-                bounds=bounds)
-    print(res.message)
+    # # # SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
+    # res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam), method='SLSQP',
+    #             constraints=[eq_cons], options={'disp': False})
+    # print(res.message)
+    
+    # CVXOPT 1/2 x^T Q x + p^T x + r, s.t.  AX = 0
+    P, q,b,G,h = constr_qp(x,lam,order,notNan) 
+    P, q,A,b,G,h = matrix(P, tc="d"), matrix(q, tc="d"), matrix(A, tc="d"), matrix(b, tc="d"),matrix(G, tc="d"),matrix(h, tc="d")
+    
+    sol=solvers.qp(P=P, q=q ,G=G, h=h, A=A, b=b)
+    res = np.array(sol["x"])
+    # print(sol["status"])
     
     # unpack decision varibles
-    jhat = res.x[3*N-3:]
+    jhat = res[3*N-3:]
     jhat = np.append(jhat, np.zeros(3)) # add 0 jerks to fill up the nans
-    xhat, vhat, ahat, jhat = generate_1d(res.x[[0,N,2*N-1]], jhat, dt, order)
+    xhat, vhat, ahat, jhat = generate_1d(res[[0,N,2*N-1]], jhat, dt, order)
     
     return xhat, vhat, ahat, jhat
 
@@ -453,16 +516,16 @@ def rectify_single_car(car, args):
     length = np.nanmedian(length_array)
     
     # car = box_fitting(car, width, length) # modify x and y
-    car = utils.mark_outliers(car)
+    # car = utils.mark_outliers(car)
     # print(pts)
-    car.loc[car["Generation method"]=="outlier1",pts] = np.nan
+    # car.loc[car["Generation method"]=="outlier1",pts] = np.nan
     # print("outlier ratio: {}/{}".format( np.count_nonzero(~np.isnan(car.bbr_y.values)),len(car)))
     # car = decompose_2d(car, write_to_df=True)
 
     # short tracks
-    if np.count_nonzero(~np.isnan(car.bbr_y.values)) < 4:
-        print("Short track ", car.ID.values[0])
-        return car
+    # if np.count_nonzero(~np.isnan(car.bbr_y.values)) < 4:
+    #     print("Short track ", car.ID.values[0])
+    #     return car
     car = rectify_2d(car, width, length,args) # modify x, y, speed, acceleration, jerk, boxes coords
     return car
 
@@ -472,15 +535,108 @@ def rectify_sequential(df, args):
     return df
 
 # =================== RECEDING HORIZON RECTIFICATION =========================
-def receding_horizon_1d(car, args):
+def receding_horizon_1d(df, args):
     '''
+    rolling horizon version of rectify_1d
     car: df
-    args: (lam, PH, IH)
+    args: (lam, order, axis, PH, IH)
         PH: prediction horizon
         IH: implementation horizon
     
     '''
-    return
+    # get data
+    lam, order, axis, PH, IH = args
+    
+    if axis == "x":
+        x = df.x.values      
+    else:
+        x = df.y.values
+    
+    n_total = len(x)          
+    notNan = ~np.isnan(x)
+
+    # Define constraints
+    A = const_1d(PH, dt, order) 
+    P, q,b,G,h = constr_qp(x[:PH],lam,order,np.array([True]*PH))
+    
+    # additional equality constraint: state continuity
+    A2 = np.zeros((4, A.shape[1]))
+    A2[[0,1,2,3], [0,1,2,3]] = 1
+    AA = np.vstack((A, A2))
+    AA,G,h = matrix(AA, tc="d") ,matrix(G, tc="d"),matrix(h, tc="d")
+    
+    # save final answers
+    xfinal = np.zeros(n_total)
+    vfinal = np.zeros(n_total)
+    afinal = np.zeros(n_total)
+    jfinal = np.zeros(n_total)
+    
+    last = False
+    for i in range(0,n_total-IH,IH):
+        print(i,'/',n_total, flush=True)
+        if i+PH >= n_total: # last block
+            last = True
+            xx = x[i:]
+            nn = len(xx)  
+            notNan = ~np.isnan(xx)
+            nan_idx = np.argwhere(~notNan)
+        
+            # redefine matrices
+            A = const_1d(nn, dt, order) 
+            PP, qq,b,G,h = constr_qp(xx,lam,order,notNan)
+            
+            # additional equality constraint: state continuity
+            A2 = np.zeros((4, A.shape[1]))
+            A2[[0,1,2,3], [0,1,2,3]] = 1
+            AA = np.vstack((A, A2))
+            AA,G,h = matrix(AA, tc="d") ,matrix(G, tc="d"),matrix(h, tc="d")
+            
+        else:
+            xx = x[i: i+PH]
+            nn = len(xx)  
+            notNan = ~np.isnan(xx)
+            nan_idx = np.argwhere(~notNan)
+            # update matrices based on nans          
+            PP,qq = P.copy(), q.copy()
+            PP[nan_idx, :] = 0 # set the corresponding rows to 0
+            qq[nan_idx] = 0 
+        
+        if i==0:
+            PP, qq, b, A = matrix(PP, tc="d"), matrix(qq, tc="d"), matrix(b, tc="d"), matrix(A, tc="d")
+            sol=solvers.qp(P=PP, q=qq ,G=G, h=h, A=A, b=b)
+            print(sol["status"])
+        else:
+            # additional constraint AA X = bb
+            bb = np.append(b, x_prev)
+            PP, qq, bb = matrix(PP, tc="d"), matrix(qq, tc="d"), matrix(bb, tc="d")
+            sol=solvers.qp(P=PP, q=qq ,G=G, h=h, A=AA, b=bb)
+            print(sol["status"])
+            
+        res = np.array(sol["x"])[:,0]
+        # print(sol["status"])
+         
+        # unpack decision varibles
+        xhat = res[:nn]
+        vhat = res[nn:2*nn-1]
+        ahat = res[2*nn-1:3*nn-3]
+        jhat = res[3*nn-3:]
+        
+        if last:
+            xfinal[i:i+nn] = xhat
+            vfinal[i:i+nn-1] = vhat
+            afinal[i:i+nn-2] = ahat
+            jfinal[i:i+nn-3] = jhat
+        else:
+            xfinal[i:i+IH] = xhat[:IH]
+            vfinal[i:i+IH] = vhat[:IH]
+            afinal[i:i+IH] = ahat[:IH]
+            jfinal[i:i+IH] = jhat[:IH]
+            
+        # save for the next loop
+        x_prev = res[IH:IH+4]
+        del PP, qq
+    
+    return xfinal, vfinal,  afinal, jfinal
 
 
 

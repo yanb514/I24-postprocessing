@@ -56,12 +56,14 @@ if __name__ == '__main__':
     # set up rectify arguments
     file_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
     test = get_test_data(file_path)
-    rec_args = (0.1, 0.1, 3) # lamx, lamy, order
+    rec_args = (0.9, 0.9, 3) # lamx, lamy, order
     args = (test, rec_args)
     
     mp.set_start_method('spawn')
-    avg_time = []
+    avg_time = [] # total of all processes/n_processes
+    max_time = []
     for n_processes in n_processes_list:
+        start_time = time.time()
         q = mp.Queue()
         process_list = []
         for id in range(n_processes):
@@ -70,7 +72,10 @@ if __name__ == '__main__':
             process_list.append(p)
         for p in process_list:    
             p.join()
-    
+        
+        end_time = time.time()
+        max_time.append(end_time-start_time)
+        print("{} processes - max time: {}s".format(n_processes, end_time-start_time))
         # at the end, read results off of queue
         total_time = 0
         times = []
@@ -84,8 +89,10 @@ if __name__ == '__main__':
         print("{} processes - average time: {}s".format(n_processes, total_time/n_processes))
         avg_time.append(total_time/n_processes)
         
-    # plot 
+    #%% plot 
     fig, ax = plt.subplots()
-    ax.plot(n_processes_list, avg_time, color = "blue")
+    ax.plot(n_processes_list, avg_time, color = "blue", label='avg run time/test')
+    ax.plot(n_processes_list, max_time, color = "red", label='n_processes runtime')
     ax.set_xlabel("No. of parallel processes")
-    ax.set_ylabel("Avg run time / test")
+    ax.legend()
+    # ax.set_ylabel("Avg run time / test")

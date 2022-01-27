@@ -33,7 +33,7 @@ class Experiment():
         specify GT
         downgrade to meas
         '''
-        
+        self.params = params
         # select GT from csv
         df = pd.read_csv(file_path, nrows=params["nrows"])
         # find a lane-change vehicle
@@ -42,10 +42,11 @@ class Experiment():
         #     if car.lane.nunique()>1:
         #         print(carid)
         self.gt = df[df["ID"]==params["carid"]]
+        self.gt = self.gt.reset_index(drop=True)
         if isinstance(params["N"],list): # if N is a list, trigger run time analysis
             self.N = [x for x in params["N"] if x < len(self.gt)]
         else:
-            self.N = 50# as default length for evaluate_single
+            self.N = params["N"] # as default length for evaluate_single
         self.pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
         vx,vy,ax,ay,jx,jy = opt.decompose_2d(self.gt)
         self.gt.loc[:,"speed_x"] = vx
@@ -55,15 +56,14 @@ class Experiment():
         self.gt.loc[:,"jerk_x"] = jx
         self.gt.loc[:,"jerk_y"] = jy
         self.meas = self.gt.copy()
-        self.meas = self.pollute_car(self.meas, params["AVG_CHUNK_LENGTH"], params["OUTLIER_RATIO"])
-        self.params = params
+        self.meas = self.pollute_car(self.meas)
         
         # states to be plotted
         self.states = ["x","y","speed","speed_x","speed_y","acceleration_x","acceleration_y","jerk_x","jerk_y","theta","acceleration","jerk"]
         
      
     
-    def pollute_car(self, car,AVG_CHUNK_LENGTH, OUTLIER_RATIO):
+    def pollute_car(self, car):
         '''
         AVG_CHUNK_LENGTH: Avg length (in # frames) of missing chunk mask
         OUTLIER_RATIO: ratio of bbox in each trajectory are outliers (noisy measurements)
@@ -72,8 +72,11 @@ class Experiment():
             This is assign a unique ID to each fragments.
             
         '''
+        car = self.downgrade(car, self.params["missing"],[self.params["noise_x"],self.params["noise_y"]])
+        AVG_CHUNK_LENGTH,OUTLIER_RATIO = self.params["AVG_CHUNK_LENGTH"],self.params["OUTLIER_RATIO"]
+        
         if AVG_CHUNK_LENGTH ==0 and OUTLIER_RATIO==0: # no pollution
-            return self.gt
+            return car
         
         car=car.reset_index(drop=True)
         l = car["length"].iloc[0]
@@ -107,13 +110,14 @@ class Experiment():
         car.loc[:,columns_to_delete] = ""
         return car
     
-    def downgrade(self, missing_rate, noise_std):
+    def downgrade(self, meas, missing_rate, noise_std):
         '''
         create synthetically downgraded data based on downgrade parameters
         missing_rate: float between 0 -1
         noise_std: [x_noise_std, y_noise_std]
         '''
-        meas = self.gt.copy()
+        meas=meas.reset_index(drop=True)
+        # meas = self.gt.copy()
         # add noise
         meas["x"] += np.random.normal(0, noise_std[0], len(meas))
         meas["y"] += np.random.normal(0, noise_std[1], len(meas))
@@ -132,9 +136,9 @@ class Experiment():
                 nans = np.array([False] * len(meas))
                 nans[::step] = True # True is missing
                 missing_idx = [i for i in range(len(nans)) if ~nans[i]]
-        meas.loc[missing_idx,["x","speed","acceleration","jerk","theta"]] = np.nan
+        meas.loc[missing_idx,["x","y","speed","acceleration","jerk","theta"]] = np.nan
         
-        Y0 = opt.generate_box(self.width, self.length, meas.x.values, meas.y.values, meas.theta.values)
+        Y0 = opt.generate_box(meas.width.values[0], meas.length.values[0], meas.x.values, meas.y.values, meas.theta.values)
         pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
         meas.loc[:, pts] = Y0
         
@@ -179,33 +183,44 @@ class Experiment():
             return
         self.gt = self.gt[:self.N]
         self.meas = self.meas[:self.N]
-        newmeas = self.meas.copy()
+        # newmeas = self.meas.copy()
         
         # modify meas first with box fitting
-        width_array = np.abs(newmeas["bbr_y"].values - newmeas["bbl_y"].values)
-        length_array = np.abs(newmeas["bbr_x"].values - newmeas["fbr_x"].values)
+        width_array = np.abs(self.meas["bbr_y"].values - self.meas["bbl_y"].values)
+        length_array = np.abs(self.meas["bbr_x"].values - self.meas["fbr_x"].values)
         
         width = np.nanmedian(width_array)
         length = np.nanmedian(length_array)
 
         # newmeas = opt.box_fitting(newmeas, width, length) # modify x and y
-        newmeas = utils.mark_outliers(newmeas)
-        newmeas.loc[newmeas["Generation method"]=="outlier1",self.pts+["x","y"]] = np.nan
-        newmeas = opt.decompose_2d(newmeas, write_to_df=True)
-
-        self.newmeas = newmeas
+        # newmeas = utils.mark_outliers(newmeas)
+        # newmeas.loc[newmeas["Generation method"]=="outlier1",self.pts+["x","y"]] = np.nan
+        self.meas = opt.decompose_2d(self.meas, write_to_df=True)
         
-        rec = newmeas.copy()
+        rec = self.meas.copy()
         # rec = opt.rectify_single_car(rec, self.params["args"])
         rec = opt.rectify_2d(rec, width, length, self.params["args"])
         self.rec = rec
-        # state_err = self.evaluate(rec)
-        vis.dashboard([self.gt,self.newmeas,rec],self.states,["gt","meas","rectified"])
-        vis.plot_track_compare(self.gt, rec, legends=["gt","rec"])
-        vis.plot_track_compare(self.newmeas, rec, legends=["meas_no_outlier","rec"])
-        vis.plot_track_compare(self.meas, rec, legends=["meas","rec"])
+
+        vis.dashboard([self.gt,self.meas,rec],self.states,["gt","meas","rectified"])
+        # vis.plot_track_compare(self.gt, rec, legends=["gt","rec"])
+        # vis.plot_track_compare(self.newmeas, rec, legends=["meas_no_outlier","rec"])
+        # vis.plot_track_compare(self.meas, rec, legends=["meas","rec"])
         return
-                    
+        
+    def receding_horizon_rectify_1d(self, axis="x"):
+        rec = self.meas.copy()[:self.N]
+        lamx,lamy,order  = self.params["args"]
+        lam = lamx if axis=="x" else lamy
+        args = (lam, order, axis, self.params["PH"], self.params["IH"]) #lam, order, axis, PH, IH
+        
+        xfinal, vfinal, afinal, jfinal = opt.receding_horizon_1d(rec,args)
+        rec.loc[:,[axis,"speed_"+axis,"acceleration_"+axis,"jerk_"+axis]] = np.array([xfinal, vfinal, afinal, jfinal]).T
+        
+        vis.dashboard([self.gt[:self.N],self.meas[:self.N],rec],[axis,"speed_"+axis,"acceleration_"+axis,"jerk_"+axis],["gt","meas","rectified"])
+        self.rec = rec
+        return
+            
     def grid_evaluate(self):
         '''
         create a 2D array to store the accuracy metrics according to missing rate and noise std
@@ -262,9 +277,11 @@ class Experiment():
         N = len(meas)
         
         lam_x, lam_y, order = self.params["args"]
-        lambdas = np.arange(0, 1.1, 0.1)
+        delta = 0.05
+        lambdas = np.arange(0, 1+delta, delta)
         # lambdas = [1]
         for lam in lambdas:
+            print(lam)
             xhat, vxhat, axhat, jxhat = opt.rectify_1d(meas, (lam,order), axis)
 
             X_opt = np.concatenate((xhat,vxhat[:-1],axhat[:-2],jxhat[:-3]), axis=0)
@@ -289,9 +306,9 @@ class Experiment():
         ax.plot(pert, reg, linewidth = 0.2, color = "blue", label="rectified")
 
         for i in range(len(lambdas)):
-            ax.scatter(pert[i], reg[i], s = 20, color =colors[i], marker = "x",label="lam={:.1f}".format(lambdas[i]) if i%2==0 else "")
+            ax.scatter(pert[i], reg[i], s = 20, color =colors[i], marker = "x",label="lam={:.1f}".format(lambdas[i]) if i%10==0 else "")
         
-        ax.scatter(gt_pert, gt_reg, s = 20, color = "red", marker = "o", label="GT")
+        ax.scatter(gt_pert, gt_reg, s = 30, color = "black", marker = "o", label="GT")
         # ax.scatter(m_pert, m_reg, s = 20, color = "blue", marker = "o", label="meas")
 
         ax.set_xlabel("Perturbation f1")
@@ -302,10 +319,10 @@ class Experiment():
         fig, ax = plt.subplots()
         ax.plot(pert[1:-1], reg[1:-1], linewidth = 0.2, color = "blue", label="rectified")
 
-        for i in range(1,len(lambdas)):
-            ax.scatter(pert[i], reg[i], s = 20, color =colors[i], marker = "x",label="lam={:.1f}".format(lambdas[i]) if i%2==0 else "")
+        for i in range(1,len(lambdas)-1):
+            ax.scatter(pert[i], reg[i], s = 20, color =colors[i], marker = "x",label="lam={:.1f}".format(lambdas[i]) if i%10==0 else "")
         
-        ax.scatter(gt_pert, gt_reg, s = 20, color = "red", marker = "o", label="GT")
+        ax.scatter(gt_pert, gt_reg, s = 30, color = "black", marker = "o", label="GT")
         # ax.scatter(m_pert, m_reg, s = 20, color = "blue", marker = "o", label="meas")
 
         ax.set_xlabel("Perturbation f1")
@@ -374,24 +391,28 @@ class Experiment():
     
 if __name__ == "__main__":
     # N = list(np.arange(10,300, 30)) # number of frames
-    N = 50
+    N = 30
     file_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
     
-    params = {"missing": [0], #np.arange(0,0.7,0.1), # missing rate
-              # "noise_x": [0.2], # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
-              # "noise_y": [0.05], # np.arange(0,0.7,0.1),
+    params = {"missing": 0, #np.arange(0,0.7,0.1), # missing rate
+               "noise_x": 0, # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
+               "noise_y": 0, # np.arange(0,0.7,0.1),
               "N": N,
               "epoch": 1, # number of random runs of generate
-              "args" : (.1,.1, 3), # lamx,lamy,order 
-              "carid": 38, # 16, 38, for lane change
+              "args" : (0.9,0.9, 3), # lamx,lamy,order 
+              "carid": 16, # 16, 38, for lane change
               "nrows": 20000,
               "AVG_CHUNK_LENGTH": 0,
-              "OUTLIER_RATIO": 0.1
+              "OUTLIER_RATIO": 0,
+              "PH": 10,
+              "IH": 5
         }
     
     ex = Experiment(file_path, params)
-    ex.evaluate_single()
-    ex.pareto_curve(axis="x")
+    # ex.evaluate_single()
+    # ex.pareto_curve(axis="x")
+    # ex.pareto_curve(axis="y")
+    ex.receding_horizon_rectify_1d(axis="x")
     if isinstance(N,list): # trigger run time analysis
         ex.runtime_analysis()
         # %%
