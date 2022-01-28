@@ -22,7 +22,7 @@ def get_test_data(file_path):
     make n_copies of cars, each polluted with Gaussian noises
     concatenate to a df
     '''
-    df = pd.read_csv(file_path, nrows=1000)
+    df = pd.read_csv(file_path, nrows=500)
     print("Number of trajectories: ",df.ID.nunique())
     n_frames = []
     for id, car in df.groupby("ID"):
@@ -51,7 +51,7 @@ def wrapper(q,id,args):
     q.put([id,run_time])
 
 if __name__ == '__main__':
-    n_processes_list = [1, 2, 4, 8, 16, 32, 48] # number of parallel processes
+    n_processes_list = [1, 2, 4] # number of parallel processes
 
     # set up rectify arguments
     file_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
@@ -95,4 +95,6 @@ if __name__ == '__main__':
     ax.plot(n_processes_list, max_time, color = "red", label='n_processes runtime')
     ax.set_xlabel("No. of parallel processes")
     ax.legend()
+    fig.savefig('foo.png')
+    plt.close(fig)
     # ax.set_ylabel("Avg run time / test")
