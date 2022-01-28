@@ -1399,3 +1399,56 @@ ax2.set_ylabel('c1')
 ax3.plot(lam_arr, c_arr,'o-')
 ax3.set_xlabel('lam4')
 ax3.set_ylabel('c4')
+
+
+ # # # Bounds constraints
+    # lb,ub = [],[]
+    # # if axis == "x":
+    # lb_list = [-np.inf, -np.inf, -np.inf, -np.inf] # x0, v0, a0, j0
+    # ub_list = [np.inf, np.inf,np.inf, np.inf]
+    # # else:
+    # #     lb_list = [0, -3, -1, -0.5] # y0, v0, a0, j0
+    # #     ub_list = [50, 3, 1, 0.5]
+    # for o in range(order+1):
+    #     lb += [lb_list[o]]*(N-o)
+    #     ub += [ub_list[o]]*(N-o)
+
+    # bounds = Bounds(lb,ub)
+    
+    # # Initialize decision variables
+    # nans, ind = nan_helper(x)
+    # x[nans]= np.interp(ind(nans), ind(~nans), x[~nans])
+    # nans, ind = nan_helper(v)
+    # v[nans]= np.interp(ind(nans), ind(~nans), v[~nans])
+    # # nans, ind = nan_helper(a)
+    # # a[nans]= np.interp(ind(nans), ind(~nans), a[~nans])
+    # a[np.isnan(a)] = 0
+    # # nans, ind = nan_helper(j)
+    # # j[nans]= np.interp(ind(nans), ind(~nans), j[~nans])
+    # j[np.isnan(j)] = 0
+    # highest_order_dyn = j if order==3 else a
+    
+    # xhat0,vhat0,ahat0,jhat0 = generate_1d([x[0], v[0],a[0]], highest_order_dyn, dt, order)
+
+    
+    # if order == 3:
+    #     X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2],jhat0[:-3]), axis=0)
+    # elif order == 2:
+    #     X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2]), axis=0)
+    
+
+    # 1. Trust-const
+    # linear_constraint = LinearConstraint(A, np.zeros(A.shape[0]), np.zeros(A.shape[0]))
+    # res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam), method='trust-constr',
+    #             constraints=[linear_constraint], options={'disp': False},
+    #             bounds=bounds)
+    # print(res.message)
+    
+    # 2. SLSQP
+    # eq_cons = {'type': 'eq', 
+    #         'fun' : lambda x: np.dot(A, x)}
+    
+    # # # SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
+    # res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam), method='SLSQP',
+    #             constraints=[eq_cons], options={'disp': False})
+    # print(res.message)

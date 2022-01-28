@@ -95,7 +95,7 @@ class Experiment():
         # add outliers (noise)
         outlier_idx = random.sample(range(0,len(car)),int(OUTLIER_RATIO*len(car))) # randomly select 0.01N bbox for each trajectory to be outliers
         for idx in outlier_idx:
-            noise = np.random.multivariate_normal([0,0,0,0,0,0,0,0], np.diag([0.3*l, 0.3*w]*4)) # add noises to each outlier box
+            noise = np.random.multivariate_normal([0,0,0,0,0,0,0,0], np.diag([0.3*l, 0.1*w]*4)) # add noises to each outlier box
             car.loc[idx, self.pts] += noise
         car.loc[outlier_idx, ["Generation method"]] = "outlier"
         
@@ -199,7 +199,9 @@ class Experiment():
         
         rec = self.meas.copy()
         # rec = opt.rectify_single_car(rec, self.params["args"])
+        start = time.time()
         rec = opt.rectify_2d(rec, width, length, self.params["args"])
+        print("Rectify_2d: ", time.time()-start)
         self.rec = rec
 
         vis.dashboard([self.gt,self.meas,rec],self.states,["gt","meas","rectified"])
@@ -208,16 +210,25 @@ class Experiment():
         # vis.plot_track_compare(self.meas, rec, legends=["meas","rec"])
         return
         
-    def receding_horizon_rectify_1d(self, axis="x"):
-        rec = self.meas.copy()[:self.N]
+    def receding_horizon_rectify(self):
+        self.meas = self.meas[:self.N]
+        
+        width_array = np.abs(self.meas["bbr_y"].values - self.meas["bbl_y"].values)
+        length_array = np.abs(self.meas["bbr_x"].values - self.meas["fbr_x"].values)
+        
+        width = np.nanmedian(width_array)
+        length = np.nanmedian(length_array)
+        
         lamx,lamy,order  = self.params["args"]
-        lam = lamx if axis=="x" else lamy
-        args = (lam, order, axis, self.params["PH"], self.params["IH"]) #lam, order, axis, PH, IH
+        args = (lamx, lamy, order, self.params["PH"], self.params["IH"]) #lam, order, PH, IH
         
-        xfinal, vfinal, afinal, jfinal = opt.receding_horizon_1d(rec,args)
-        rec.loc[:,[axis,"speed_"+axis,"acceleration_"+axis,"jerk_"+axis]] = np.array([xfinal, vfinal, afinal, jfinal]).T
+        rec = self.meas.copy()
+        start = time.time()
+        rec = opt.receding_horizon_2d(rec,width, length, args)
+        print("Receding horizon 2d: ", time.time()-start)
+        # rec.loc[:,[axis,"speed_"+axis,"acceleration_"+axis,"jerk_"+axis]] = np.array([xfinal, vfinal, afinal, jfinal]).T
         
-        vis.dashboard([self.gt[:self.N],self.meas[:self.N],rec],[axis,"speed_"+axis,"acceleration_"+axis,"jerk_"+axis],["gt","meas","rectified"])
+        vis.dashboard([self.gt[:self.N],self.meas[:self.N],rec],self.states,["gt","meas","rectified"])
         self.rec = rec
         return
             
@@ -391,28 +402,28 @@ class Experiment():
     
 if __name__ == "__main__":
     # N = list(np.arange(10,300, 30)) # number of frames
-    N = 30
+    N = 500
     file_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
     
     params = {"missing": 0, #np.arange(0,0.7,0.1), # missing rate
-               "noise_x": 0, # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
-               "noise_y": 0, # np.arange(0,0.7,0.1),
+               "noise_x": 0.1, # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
+               "noise_y": 0.02, # np.arange(0,0.7,0.1),
               "N": N,
               "epoch": 1, # number of random runs of generate
               "args" : (0.9,0.9, 3), # lamx,lamy,order 
-              "carid": 16, # 16, 38, for lane change
+              "carid": 38, # 16, 38, for lane change
               "nrows": 20000,
               "AVG_CHUNK_LENGTH": 0,
               "OUTLIER_RATIO": 0,
-              "PH": 10,
-              "IH": 5
+              "PH": 200,
+              "IH": 100
         }
     
     ex = Experiment(file_path, params)
-    # ex.evaluate_single()
+    ex.evaluate_single()
     # ex.pareto_curve(axis="x")
     # ex.pareto_curve(axis="y")
-    ex.receding_horizon_rectify_1d(axis="x")
+    # ex.receding_horizon_rectify()
     if isinstance(N,list): # trigger run time analysis
         ex.runtime_analysis()
         # %%

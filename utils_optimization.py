@@ -154,11 +154,12 @@ def decompose_2d(car, write_to_df = False):
         return vx,vy,ax,ay,jx,jy
         get velocity, acceleration, jerk from the GT box measurements
         '''
-        dt= 1/30
-        
-        x = (car["bbr_x"].values + car["bbl_x"].values)/2
-        y = (car["bbr_y"].values + car["bbl_y"].values)/2
-
+        try:
+            x = (car["bbr_x"].values + car["bbl_x"].values)/2
+            y = (car["bbr_y"].values + car["bbl_y"].values)/2
+        except:
+            x = car.x.values
+            y = car.y.values
         vx = np.append(np.diff(x)/dt, np.nan)
         vy = np.append(np.diff(y)/dt, np.nan)
         
@@ -299,70 +300,17 @@ def rectify_1d(df, args, axis):
     j = np.append(np.diff(a)/dt,np.nan)
     
     N = len(x)
-    
-    # sign = df["direction"].iloc[0]           
+              
     notNan = ~np.isnan(x)
 
     # Define constraints
     A = const_1d(N, dt, order) 
     
-    # # # Bounds constraints
-    # lb,ub = [],[]
-    # # if axis == "x":
-    # lb_list = [-np.inf, -np.inf, -np.inf, -np.inf] # x0, v0, a0, j0
-    # ub_list = [np.inf, np.inf,np.inf, np.inf]
-    # # else:
-    # #     lb_list = [0, -3, -1, -0.5] # y0, v0, a0, j0
-    # #     ub_list = [50, 3, 1, 0.5]
-    # for o in range(order+1):
-    #     lb += [lb_list[o]]*(N-o)
-    #     ub += [ub_list[o]]*(N-o)
-
-    # bounds = Bounds(lb,ub)
-    
-    # # Initialize decision variables
-    # nans, ind = nan_helper(x)
-    # x[nans]= np.interp(ind(nans), ind(~nans), x[~nans])
-    # nans, ind = nan_helper(v)
-    # v[nans]= np.interp(ind(nans), ind(~nans), v[~nans])
-    # # nans, ind = nan_helper(a)
-    # # a[nans]= np.interp(ind(nans), ind(~nans), a[~nans])
-    # a[np.isnan(a)] = 0
-    # # nans, ind = nan_helper(j)
-    # # j[nans]= np.interp(ind(nans), ind(~nans), j[~nans])
-    # j[np.isnan(j)] = 0
-    # highest_order_dyn = j if order==3 else a
-    
-    # xhat0,vhat0,ahat0,jhat0 = generate_1d([x[0], v[0],a[0]], highest_order_dyn, dt, order)
-
-    
-    # if order == 3:
-    #     X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2],jhat0[:-3]), axis=0)
-    # elif order == 2:
-    #     X0 = np.concatenate((xhat0,vhat0[:-1],ahat0[:-2]), axis=0)
-    
-
-    # 1. Trust-const
-    # linear_constraint = LinearConstraint(A, np.zeros(A.shape[0]), np.zeros(A.shape[0]))
-    # res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam), method='trust-constr',
-    #             constraints=[linear_constraint], options={'disp': False},
-    #             bounds=bounds)
-    # print(res.message)
-    
-    # 2. SLSQP
-    # eq_cons = {'type': 'eq', 
-    #         'fun' : lambda x: np.dot(A, x)}
-    
-    # # # SOLVE AGAIN - WITH NORMALIZED OBJECTIVES
-    # res = minimize(obj_1d, X0, (x, order,N, dt, notNan, lam), method='SLSQP',
-    #             constraints=[eq_cons], options={'disp': False})
-    # print(res.message)
-    
     # CVXOPT 1/2 x^T Q x + p^T x + r, s.t.  AX = 0
     P, q,b,G,h = constr_qp(x,lam,order,notNan) 
     P, q,A,b,G,h = matrix(P, tc="d"), matrix(q, tc="d"), matrix(A, tc="d"), matrix(b, tc="d"),matrix(G, tc="d"),matrix(h, tc="d")
     
-    sol=solvers.qp(P=P, q=q ,G=G, h=h, A=A, b=b)
+    sol=solvers.qp(P=P, q=q , A=A, b=b)
     res = np.array(sol["x"])
     # print(sol["status"])
     
@@ -535,7 +483,7 @@ def rectify_sequential(df, args):
     return df
 
 # =================== RECEDING HORIZON RECTIFICATION =========================
-def receding_horizon_1d(df, args):
+def receding_horizon_1d(df, args, axis="x"):
     '''
     rolling horizon version of rectify_1d
     car: df
@@ -545,19 +493,16 @@ def receding_horizon_1d(df, args):
     
     '''
     # get data
-    lam, order, axis, PH, IH = args
+    lam, order, PH, IH = args
     
-    if axis == "x":
-        x = df.x.values      
-    else:
-        x = df.y.values
+    x = df[axis].values
     
     n_total = len(x)          
     notNan = ~np.isnan(x)
 
     # Define constraints
     A = const_1d(PH, dt, order) 
-    P, q,b,G,h = constr_qp(x[:PH],lam,order,np.array([True]*PH))
+    P, q,b,G,h = constr_qp(np.ones(PH),lam,order,np.array([True]*PH))
     
     # additional equality constraint: state continuity
     A2 = np.zeros((4, A.shape[1]))
@@ -566,13 +511,13 @@ def receding_horizon_1d(df, args):
     AA,G,h = matrix(AA, tc="d") ,matrix(G, tc="d"),matrix(h, tc="d")
     
     # save final answers
-    xfinal = np.zeros(n_total)
-    vfinal = np.zeros(n_total)
-    afinal = np.zeros(n_total)
-    jfinal = np.zeros(n_total)
+    xfinal = np.ones(n_total) * np.nan
+    vfinal = np.ones(n_total) * np.nan
+    afinal = np.ones(n_total) * np.nan
+    jfinal = np.ones(n_total) * np.nan
     
     last = False
-    for i in range(0,n_total-IH,IH):
+    for i in range(0,n_total-PH+IH,IH):
         print(i,'/',n_total, flush=True)
         if i+PH >= n_total: # last block
             last = True
@@ -589,7 +534,7 @@ def receding_horizon_1d(df, args):
             A2 = np.zeros((4, A.shape[1]))
             A2[[0,1,2,3], [0,1,2,3]] = 1
             AA = np.vstack((A, A2))
-            AA,G,h = matrix(AA, tc="d") ,matrix(G, tc="d"),matrix(h, tc="d")
+            AA = matrix(AA, tc="d") 
             
         else:
             xx = x[i: i+PH]
@@ -599,18 +544,19 @@ def receding_horizon_1d(df, args):
             # update matrices based on nans          
             PP,qq = P.copy(), q.copy()
             PP[nan_idx, :] = 0 # set the corresponding rows to 0
+            qq[:PH]*=xx
             qq[nan_idx] = 0 
         
         if i==0:
             PP, qq, b, A = matrix(PP, tc="d"), matrix(qq, tc="d"), matrix(b, tc="d"), matrix(A, tc="d")
-            sol=solvers.qp(P=PP, q=qq ,G=G, h=h, A=A, b=b)
-            print(sol["status"])
+            sol=solvers.qp(P=PP, q=qq ,A=A, b=b)
+            # print(sol["status"])
         else:
             # additional constraint AA X = bb
             bb = np.append(b, x_prev)
             PP, qq, bb = matrix(PP, tc="d"), matrix(qq, tc="d"), matrix(bb, tc="d")
-            sol=solvers.qp(P=PP, q=qq ,G=G, h=h, A=AA, b=bb)
-            print(sol["status"])
+            sol=solvers.qp(P=PP, q=qq ,A=AA, b=bb)
+            # print(sol["status"])
             
         res = np.array(sol["x"])[:,0]
         # print(sol["status"])
@@ -638,6 +584,51 @@ def receding_horizon_1d(df, args):
     
     return xfinal, vfinal,  afinal, jfinal
 
+def receding_horizon_2d(df, w,l,args):
+    '''
+    '''
+    # get data
+    lamx, lamy, order, PH, IH = args
+    df.loc[:,'y'] = (df["bbr_y"].values + df["bbl_y"].values)/2
+    df.loc[:,'x'] = (df["bbr_x"].values + df["bbl_x"].values)/2
+    
+    xhat,vxhat,axhat,jxhat = receding_horizon_1d(df, (lamx, order, PH, IH), "x")
+    yhat,vyhat,ayhat,jyhat = receding_horizon_1d(df, (lamy, order, PH, IH), "y")
+    
+    # calculate the states
+    vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed
+    thetahat = np.arctan2(vyhat,vxhat)
+    thetahat[thetahat < 0] += 2*np.pi
+    ahat = np.diff(vhat)/dt
+    ahat = np.append(ahat,  ahat[-1])
+    
+    # add constant jerk in the end
+    jhat = np.diff(ahat)/dt
+    jhat = np.append(jhat, 0)
+    # expand to full boxes measurements
+    Y0 = generate_box(w,l, xhat, yhat, thetahat)
+    
+    # write to df
+    df.loc[:,'x'] = xhat
+    df.loc[:,'jerk'] = jhat
+    df.loc[:,'acceleration'] = ahat
+    df.loc[:,'speed'] = vhat   
+    df.loc[:,'y'] = yhat   
+    df.loc[:,'theta'] = thetahat
+    
+    # store auxiliary states for debugging
+    df.loc[:,'speed_x'] = vxhat
+    df.loc[:,'jerk_x'] = jxhat
+    df.loc[:,'acceleration_x'] = axhat
+    df.loc[:,'speed_y'] = vyhat
+    df.loc[:,'jerk_y'] = jyhat
+    df.loc[:,'acceleration_y'] = ayhat 
+    
+    # pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    df.loc[:, pts] = Y0
+    
+    
+    return df
 
 
 
