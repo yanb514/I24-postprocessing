@@ -4,141 +4,141 @@ Created on Tue Oct  5 15:30:57 2021
 
 @author: wangy79 change
 """
-from bs4 import BeautifulSoup
-from IPython.display import IFrame
+# from bs4 import BeautifulSoup
+# from IPython.display import IFrame
 import numpy as np
-import gmplot 
+# import gmplot 
 import matplotlib.pyplot as plt
 import utils
 from matplotlib.ticker import FormatStrFormatter
 import math
 from matplotlib import cm
 
-# for visualization
-def insertapikey(fname):
-    apikey = 'AIzaSyDBo88RY_39Evn87johzUvFw5x_Yg6cfkI'
-#      """put the google api key in a html file"""
-    print('\n###############################')
-    print('\n Beginning Key Insertion ...')
+# # for visualization
+# def insertapikey(fname):
+#     apikey = 'AIzaSyDBo88RY_39Evn87johzUvFw5x_Yg6cfkI'
+# #      """put the google api key in a html file"""
+#     print('\n###############################')
+#     print('\n Beginning Key Insertion ...')
 
-    def putkey(htmltxt, apikey, apistring=None):
-#          """put the apikey in the htmltxt and return soup"""
-        if not apistring:
-            apistring = "https://maps.googleapis.com/maps/api/js?key=%s&callback=initialize&libraries=visualization&sensor=true_or_false"
-        soup = BeautifulSoup(htmltxt, 'html.parser')
-        soup.script.decompose() #remove the existing script tag
-        body = soup.body
-        src = apistring % (apikey, )
-        tscript = soup.new_tag("script", src=src) #, async="defer"
-        body.insert(-1, tscript)
-        return soup
+#     def putkey(htmltxt, apikey, apistring=None):
+# #          """put the apikey in the htmltxt and return soup"""
+#         if not apistring:
+#             apistring = "https://maps.googleapis.com/maps/api/js?key=%s&callback=initialize&libraries=visualization&sensor=true_or_false"
+#         soup = BeautifulSoup(htmltxt, 'html.parser')
+#         soup.script.decompose() #remove the existing script tag
+#         body = soup.body
+#         src = apistring % (apikey, )
+#         tscript = soup.new_tag("script", src=src) #, async="defer"
+#         body.insert(-1, tscript)
+#         return soup
 
-    htmltxt = open(fname, 'r').read()
-    # htmltxt = open(fname,'r+').read()
-    soup = putkey(htmltxt, apikey)
-    newtxt = soup.prettify()
-    open(fname, 'w').write(newtxt)
-    print('\nKey Insertion Completed!!')
+#     htmltxt = open(fname, 'r').read()
+#     # htmltxt = open(fname,'r+').read()
+#     soup = putkey(htmltxt, apikey)
+#     newtxt = soup.prettify()
+#     open(fname, 'w').write(newtxt)
+#     print('\nKey Insertion Completed!!')
 
 
-def jupyter_display(gmplot_filename):
-    google_api_key = 'AIzaSyDBo88RY_39Evn87johzUvFw5x_Yg6cfkI'
+# def jupyter_display(gmplot_filename):
+#     google_api_key = 'AIzaSyDBo88RY_39Evn87johzUvFw5x_Yg6cfkI'
     
-#      """Hack to display a gmplot map in Jupyter"""
-    with open(gmplot_filename, "r+b") as f:
-        f_string = f.read()
-        url_pattern = "https://maps.googleapis.com/maps/api/js?libraries=visualization&sensor=true_or_false"
-        newstring = url_pattern + "&key=%s" % google_api_key
-        f_string = f_string.replace(url_pattern.encode(), newstring.encode())
-        f.write(f_string)
-    return IFrame(gmplot_filename, width=900, height=600)
+# #      """Hack to display a gmplot map in Jupyter"""
+#     with open(gmplot_filename, "r+b") as f:
+#         f_string = f.read()
+#         url_pattern = "https://maps.googleapis.com/maps/api/js?libraries=visualization&sensor=true_or_false"
+#         newstring = url_pattern + "&key=%s" % google_api_key
+#         f_string = f_string.replace(url_pattern.encode(), newstring.encode())
+#         f.write(f_string)
+#     return IFrame(gmplot_filename, width=900, height=600)
 
-def draw_map_scatter(x,y):
+# def draw_map_scatter(x,y):
     
-    map_name = "test.html"
-    gmap = gmplot.GoogleMapPlotter(x[0], y[0], 100) 
+#     map_name = "test.html"
+#     gmap = gmplot.GoogleMapPlotter(x[0], y[0], 100) 
 
-    gmap.scatter(x, y, s=.9, alpha=.8, c='red',marker = False)
-    gmap.draw(map_name)
+#     gmap.scatter(x, y, s=.9, alpha=.8, c='red',marker = False)
+#     gmap.draw(map_name)
     
-    insertapikey(map_name)
-    return jupyter_display(map_name)
+#     insertapikey(map_name)
+#     return jupyter_display(map_name)
     
-def draw_map(df, latcenter, loncenter, nO):
+# def draw_map(df, latcenter, loncenter, nO):
     
-    map_name = "test.html"
-    gmap = gmplot.GoogleMapPlotter(latcenter, loncenter, 100) 
+#     map_name = "test.html"
+#     gmap = gmplot.GoogleMapPlotter(latcenter, loncenter, 100) 
 
-    groups = df.groupby('ID')
-    groupList = list(groups.groups)
+#     groups = df.groupby('ID')
+#     groupList = list(groups.groups)
 
-    for i in groupList[:nO]:   
-        group = groups.get_group(i)
-        gmap.scatter(group.lat, group.lon, s=.5, alpha=.8, label=group.loc[group.index[0],'ID'],marker = False)
-    gmap.draw(map_name)
+#     for i in groupList[:nO]:   
+#         group = groups.get_group(i)
+#         gmap.scatter(group.lat, group.lon, s=.5, alpha=.8, label=group.loc[group.index[0],'ID'],marker = False)
+#     gmap.draw(map_name)
     
-    insertapikey(map_name)
-    return jupyter_display(map_name)
+#     insertapikey(map_name)
+#     return jupyter_display(map_name)
 
-# draw rectangles from 3D box on map
-def draw_map_box(Y, nO, lats, lngs):
+# # draw rectangles from 3D box on map
+# def draw_map_box(Y, nO, lats, lngs):
     
-    map_name = "test.html"
-    notNan = ~np.isnan(np.sum(Y,axis=-1))
-    Y = Y[notNan,:]
-    gmap = gmplot.GoogleMapPlotter(Y[0,0], Y[0,1], nO) 
+#     map_name = "test.html"
+#     notNan = ~np.isnan(np.sum(Y,axis=-1))
+#     Y = Y[notNan,:]
+#     gmap = gmplot.GoogleMapPlotter(Y[0,0], Y[0,1], nO) 
 
-    # get the bottom 4 points gps coords
-    # Y = np.array(df[['bbrlat','bbrlon','fbrlat','fbrlon','fbllat','fbllon','bbllat','bbllon']])
+#     # get the bottom 4 points gps coords
+#     # Y = np.array(df[['bbrlat','bbrlon','fbrlat','fbrlon','fbllat','fbllon','bbllat','bbllon']])
     
 
-    for i in range(len(Y)):
-        coord = Y[i,:]
-        coord = np.reshape(coord,(-1,2)).tolist()
-        coord.append(coord[0]) #repeat the first point to create a 'closed loop'
-        coord_tuple = [tuple(pt) for pt in coord]
-        rectangle = zip(*coord_tuple) #create lists of x and y values
-        gmap.polygon(*rectangle)    
-    lats = lats[~np.isnan(lats)]
-    lngs = lngs[~np.isnan(lngs)]
-    gmap.scatter(lats, lngs, color='red', size=1, marker=True)
-    gmap.scatter(Y[:,2], Y[:,3],color='red', size=0.1, marker=False)
+#     for i in range(len(Y)):
+#         coord = Y[i,:]
+#         coord = np.reshape(coord,(-1,2)).tolist()
+#         coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+#         coord_tuple = [tuple(pt) for pt in coord]
+#         rectangle = zip(*coord_tuple) #create lists of x and y values
+#         gmap.polygon(*rectangle)    
+#     lats = lats[~np.isnan(lats)]
+#     lngs = lngs[~np.isnan(lngs)]
+#     gmap.scatter(lats, lngs, color='red', size=1, marker=True)
+#     gmap.scatter(Y[:,2], Y[:,3],color='red', size=0.1, marker=False)
 
-    gmap.draw(map_name)
+#     gmap.draw(map_name)
 
-    insertapikey(map_name)
-    return jupyter_display(map_name)
+#     insertapikey(map_name)
+#     return jupyter_display(map_name)
     
-def plot_frame(x, y, x_id, y_id, xmin, xmax, frame_id = 0, length=15,width=4):
-    fig, ax = plt.subplots(figsize=(length,width))
+# def plot_frame(x, y, x_id, y_id, xmin, xmax, frame_id = 0, length=15,width=4):
+#     fig, ax = plt.subplots(figsize=(length,width))
 
-    for i in range(len(x)):
-        coord = x[i,:]
-        coord = np.reshape(coord,(-1,2)).tolist()
-        coord.append(coord[0]) #repeat the first point to create a 'closed loop'
-        xs, ys = zip(*coord) #lon, lat as x, y
-        plt.plot(xs,ys, c='r', label='pred' if i==0 else '')#alpha=i/len(D)
-        plt.text(xs[0], ys[0], str(x_id[i]), fontsize=8)
-        plt.scatter(x[i,2],x[i,3],color='r') # 
+#     for i in range(len(x)):
+#         coord = x[i,:]
+#         coord = np.reshape(coord,(-1,2)).tolist()
+#         coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+#         xs, ys = zip(*coord) #lon, lat as x, y
+#         plt.plot(xs,ys, c='r', label='pred' if i==0 else '')#alpha=i/len(D)
+#         plt.text(xs[0], ys[0], str(x_id[i]), fontsize=8)
+#         plt.scatter(x[i,2],x[i,3],color='r') # 
 
-    for i in range(len(y)):
-        coord = y[i,:]
-        coord = np.reshape(coord,(-1,2)).tolist()
-        coord.append(coord[0]) #repeat the first point to create a 'closed loop'
-        xs, ys = zip(*coord) #lon, lat as x, y
-        plt.plot(xs,ys, c='b', label='meas' if i==0 else '')#alpha=i/len(D)
-        plt.text(xs[0], ys[0], str(y_id[i]), fontsize=8)
-        plt.scatter(y[i,2],y[i,3],color='b') # 
+#     for i in range(len(y)):
+#         coord = y[i,:]
+#         coord = np.reshape(coord,(-1,2)).tolist()
+#         coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+#         xs, ys = zip(*coord) #lon, lat as x, y
+#         plt.plot(xs,ys, c='b', label='meas' if i==0 else '')#alpha=i/len(D)
+#         plt.text(xs[0], ys[0], str(y_id[i]), fontsize=8)
+#         plt.scatter(y[i,2],y[i,3],color='b') # 
         
-    plt.xlabel('meter')
-    plt.ylabel('meter')
+#     plt.xlabel('meter')
+#     plt.ylabel('meter')
     
-    plt.xlim([xmin,xmax])
-    plt.ylim([0,45])
-    plt.title(frame_id)
-    plt.legend()
-    plt.show() 
-    return
+#     plt.xlim([xmin,xmax])
+#     plt.ylim([0,45])
+#     plt.title(frame_id)
+#     plt.legend()
+#     plt.show() 
+#     return
 
 def plot_track(x):
     fig, ax = plt.subplots(figsize=(15,1))
