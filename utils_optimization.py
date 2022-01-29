@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import numpy.linalg as LA
 from numpy import sin,cos
-from scipy.optimize import minimize, basinhopping, LinearConstraint,Bounds
+# from scipy.optimize import minimize, basinhopping, LinearConstraint,Bounds
 from tqdm import tqdm
 from functools import partial
 from multiprocessing import Pool, cpu_count

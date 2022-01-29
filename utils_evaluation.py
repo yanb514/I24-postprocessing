@@ -7,8 +7,8 @@ This utils file contains functions that compute
 
 """
 import numpy as np
-from shapely.geometry import Polygon
-from scipy.stats import variation
+# from shapely.geometry import Polygon
+# from scipy.stats import variation
 import numpy.linalg as LA
 
 def iou_ts(a,b):

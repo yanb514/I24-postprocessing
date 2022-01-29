@@ -22,7 +22,7 @@ def get_test_data(file_path):
     make n_copies of cars, each polluted with Gaussian noises
     concatenate to a df
     '''
-    df = pd.read_csv(file_path, nrows=500)
+    df = pd.read_csv(file_path, nrows=10000)
     print("Number of trajectories: ",df.ID.nunique())
     n_frames = []
     for id, car in df.groupby("ID"):
@@ -51,10 +51,11 @@ def wrapper(q,id,args):
     q.put([id,run_time])
 
 if __name__ == '__main__':
-    n_processes_list = [1, 2, 4] # number of parallel processes
+    n_processes_list = [1, 2, 4,8,16,32,68,100,120,140,180] # number of parallel processes
 
     # set up rectify arguments
-    file_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
+#     file_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
+    file_path = "../data/TM_1000_GT.csv"
     test = get_test_data(file_path)
     rec_args = (0.9, 0.9, 3) # lamx, lamy, order
     args = (test, rec_args)
@@ -92,9 +93,23 @@ if __name__ == '__main__':
     #%% plot 
     fig, ax = plt.subplots()
     ax.plot(n_processes_list, avg_time, color = "blue", label='avg run time/test')
-    ax.plot(n_processes_list, max_time, color = "red", label='n_processes runtime')
+#     ax.plot(n_processes_list, max_time, color = "red", label='n_processes runtime')
     ax.set_xlabel("No. of parallel processes")
     ax.legend()
-    fig.savefig('foo.png')
+    fig.savefig('fig_avg.png')
+    plt.close(fig)
+    
+    fig, ax = plt.subplots()
+    ax.plot(n_processes_list, max_time, color = "red", label='max runtime')
+    ax.set_xlabel("No. of parallel processes")
+    ax.legend()
+    fig.savefig('fig_max.png')
+    plt.close(fig)
+    
+    fig, ax = plt.subplots()
+    ax.plot(n_processes_list, total_time, color = "blue", label='total time')
+    ax.set_xlabel("No. of parallel processes")
+    ax.legend()
+    fig.savefig('fig_total.png')
     plt.close(fig)
     # ax.set_ylabel("Avg run time / test")
