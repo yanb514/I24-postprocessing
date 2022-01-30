@@ -6,10 +6,10 @@ from numpy import sin,cos
 from tqdm import tqdm
 from functools import partial
 from multiprocessing import Pool, cpu_count
-import utils
-import time
 from cvxopt import matrix, solvers, sparse,spdiag,spmatrix
 import cvxopt.lapack as cla
+from scipy.interpolate import InterpolatedUnivariateSpline  
+
 # import utils_vis as vis
 solvers.options['show_progress'] = False
 pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
@@ -181,102 +181,7 @@ def decompose_2d(car, write_to_df = False):
         else:
             return vx,vy,ax,ay,jx,jy
     
-def obj_1d(X, x, order, N, dt, notNan, lam):
-    """ The cost function for 1d
-            X: decision variables X = [xhat, vhat, ahat]
-                xhat: rectified positions (N x 1) 0:N
-                vhat: N:2N-1
-                ahat: 2N-1: 3N-3 rectified acceleration (N-2 x 1)
-                jhat: 3N-3: 4N-6
-            x: position measurements (N x 1), could have NaN
-            N: int number of measurements
-            dt: float delta T 
-            notNan: bool array indicating timestamps that have measurements
-            lam: given parameter
-        Return: float
-    """ 
-    # unpack decision variables
-    xhat = X[:N]
-    offset1 = int((1+order-1)*(order-1)/2)
 
-    highest_order_dynamics = X[order*N-offset1:] # to be regularized
-    rescale = (30)**(order)
-    # select valid measurements
-    xhat = xhat[notNan]
-    x = x[notNan]
-    
-    # min perturbation
-    c1 = LA.norm(x-xhat,2)**2 * rescale /np.count_nonzero(notNan)
-    c2 = LA.norm(highest_order_dynamics,2)**2 / len(highest_order_dynamics)
-
-    cost = lam*c1 + (1-lam) * c2
-
-    return cost
-
-def const_1d(N, dt, order):
-    """ The constraint representing linear dynamics
-        N: number of timesteps for xhat, n=3N-3
-        Return: matrix A (2N-3 x 3N-3), such that A dot X = [0]_(nx1)
-        for scipy.optimize.LinearConstraint: lb<= A.dot(X) <= ub 'trust-constr'
-    """ 
-    offset = int((1+order)*order/2)
-    n = (order+1)*N-offset
-    m = order*N-offset
-    A = np.zeros((m,n))
-    
-    for o in range(order):
-        offset_pre = int((1+o)*o/2)
-        offset_post = int((2+o)*(o+1)/2)
-        start_row = o*N-offset_pre
-        end_row = (o+1)*N-offset_post
-        step = N-o
-        for i in range(start_row, end_row):
-            A[i][i+o] = -1
-            A[i][i+o+1] = 1
-            A[i][i+o+step] = -dt      
-    
-    return A
- 
-def constr_qp(x, lam, order, notNan):
-    '''
-    for cvxopt.solver_qp
-    '''
-    N = len(x)
-    offset = int((1+order)*order/2)
-    m = order*N-offset
-    n = (order+1)*N-offset
-    Q = np.zeros((n,n))
-    # x
-    for i in range(N):
-        Q[i][i] = 2 * lam
-        
-    # highest order
-    offset1 = int((order)*(order-1)/2)
-    for i in range(order*N-offset1, n):
-         Q[i][i] = 2 * (1-lam)
-    
-    p = np.append(-2*lam*x, np.zeros(n-N))
-    nan_idx = np.argwhere(~notNan)
-    
-    Q[nan_idx, :] = 0 # set the corresponding rows to 0
-    p[nan_idx] = 0
-    # r = LA.norm(x,2)**2
-    b = np.zeros(m)
-        
-    # Bounds constraints
-    lb,ub = [],[]
-    # if axis == "x":
-    lb_list = [-0, -50, -5, -3] # x0, v0, a0, j0
-    ub_list = [1e4, 50, 5, 3]
-    # else:
-    #     lb_list = [0, -3, -1, -0.5] # y0, v0, a0, j0
-    #     ub_list = [50, 3, 1, 0.5]
-    for o in range(order+1):
-        lb += [lb_list[o]]*(N-o)
-        ub += [ub_list[o]]*(N-o)
-    G = np.vstack((np.diag(np.ones(n)), np.diag(-np.ones(n))))
-    h = np.append(np.array(ub),-np.array(lb))
-    return Q,p,b,G,h
     
 def _blocdiag(X, n):
     """
@@ -296,7 +201,7 @@ def _blocdiag(X, n):
             mat.append(row)
         return sparse(mat)
 
-from scipy.interpolate import InterpolatedUnivariateSpline    
+  
 def rectify_1d(df, args, axis):
     '''                        
     solve for the optimization problem for both x and y component independently:
@@ -308,42 +213,19 @@ def rectify_1d(df, args, axis):
     '''  
     # get data
     lam, order = args
-    dt = 1/30
     
     if axis == "x":
         x = df.x.values      
     else:
         x = df.y.values
     N = len(x)            
-    notnan_idx = np.argwhere(~np.isnan(x)).flatten()
-    notnan_idx = [i.item() for i in notnan_idx]
-    # H = spmatrix(1.0, range(N), range(N))
-    # H = H[notnan_idx, :] # observation matrix y = Hx
+    idx = np.argwhere(np.isnan(x)).flatten()
+    idx = [i.item() for i in idx]
 
-    # linear interpretion to fill nan
-    # nans, ind= nan_helper(x)
-    # x[nans]= np.interp(ind(nans), ind(~nans), x[~nans])
-    t = df["Frame #"].values
-    spl = InterpolatedUnivariateSpline(t[notnan_idx],x[notnan_idx])
-    x = spl(t)
-    
-    # # CVXOPT 1/2 x^T Q x + p^T x + r, s.t.  AX = 0
-    # # Define constraints
-    # A = const_1d(N, dt, order) 
-    
-    # P, q,b,G,h = constr_qp(x,lam,order,notNan) 
-    # P, q,A,b,G,h = matrix(P, tc="d"), matrix(q, tc="d"), matrix(A, tc="d"), matrix(b, tc="d"),matrix(G, tc="d"),matrix(h, tc="d")
-    
-    # sol=solvers.qp(P=P, q=q , A=A, b=b)
-    # res = np.array(sol["x"])
-    # # print(sol["status"])
-    
-    # # unpack decision varibles
-    # jhat = res[3*N-3:]
-    # jhat = np.append(jhat, np.zeros(3)) # add 0 jerks to fill up the nans
-    # xhat, vhat, ahat, jhat = generate_1d(res[[0,N,2*N-1]], jhat, dt, order)
-    
-    # analytical solution
+    # t = df["Frame #"].values
+    # spl = InterpolatedUnivariateSpline(t[notnan_idx],x[notnan_idx])
+    # x = spl(t)
+
     # differentiation operator
     D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
     D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
@@ -352,24 +234,87 @@ def rectify_1d(df, args, axis):
     # sol: xhat = (I+delta D'D)^(-1)x
     I = spmatrix(1.0, range(N), range(N))
     delta = (1-lam)/lam
-    # A = H.trans() * H + delta*D3.trans() * D3
-    A = I + delta*D3.trans() * D3
-     
-    # pseduo-inverse xhat=A^+ b
-    # xhat = np.linalg.pinv(matrix(A)) * matrix(x) # long running time
-    # xhat = matrix(xhat)
-    xhat = +matrix(x)
-    cla.gesv(matrix(A), xhat) # solve AX=B, change b in-place
+    DD = delta*D3.trans() * D3
+    
+    # analytical solution
+    # A = I + DD
+    # xhat = +matrix(x)
+    # cla.gesv(+matrix(A), xhat) # solve AX=B, change b in-place
+    
+    # QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
+    I[idx,:] = 0
+    Q = 2*(I+DD)
+    p = -2*matrix(x)
+    p[idx,:] = 0
+    sol=solvers.qp(P=Q, q=p)
+    print(sol["status"])
+    
+    # extract result
+    xhat = sol["x"][:N]
     jhat = D3 * xhat
-    # jhat = matrix([D3 * xhat,matrix([0,0,0])])
     ahat = D2 * xhat
-    # ahat = matrix([ahat, ahat[-2:]])
     vhat = D1 * xhat
-    # vhat = matrix([vhat, vhat[-1]+dt*ahat[-1]])
-    
-    
     return xhat, vhat, ahat, jhat
 
+def rectify_1d_l1(df, args, axis):
+    '''                        
+    solve for ||y-x-e||_2^2 + \delta ||Dx||_2^2 + \lambda||e||_1
+    convert to quadratic programming with linear inequlity constraints
+    handle sparse outliers in data
+    '''  
+    # get data
+    lam, delta = args
+    if axis == "x":
+        x = df.x.values      
+    else:
+        x = df.y.values
+    N = len(x)
+
+    # impute missing data            
+    idx = np.argwhere(np.isnan(x)).flatten()
+    idx = [i.item() for i in idx]
+    idx1 = [i+N for i in idx]
+    idx2 = [i+2*N for i in idx]
+    # t = df["Frame #"].values
+    # spl = InterpolatedUnivariateSpline(t[notnan_idx],x[notnan_idx])
+    # x = spl(t)
+    
+    # differentiation operator
+    D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
+    D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
+    D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), N) * (1/dt**3)
+    
+    # define matices
+    I = spmatrix(1.0, range(N), range(N))
+    O = spmatrix([], [], [], (N,N))
+    Q1 = sparse([[I,I,O], [I,I,O], [O,O,O]]) # ||y-x-e||_2^2
+    Q1[idx,:] = 0 # ignore missing
+    Q1[idx1,:] = 0 # ignore missing
+    DD = lam * D3.trans() * D3
+    Q2 = sparse([[DD,O,O], [O,O,O], [O,O,O]]) #||Dx||_x^2
+    Q = 2* (Q1+Q2)
+    
+    p1 = -2 * matrix(x)
+    p3 = matrix(delta, (N,1))
+    p = matrix([p1, p1, p3])
+    p[idx] = 0 # ignore missing
+    p[idx1] = 0 # ignore missing
+    p[idx2] = 0 # ignore missing
+    G = sparse([[O,O],[I,-I],[I,I]])
+    h = matrix(0.0, (2*N,1))
+    sol=solvers.qp(P=Q, q=p , G=G, h=h)
+    
+    # extract result
+    xhat = sol["x"][:N]
+    e = sol["x"][N:2*N]
+    t = sol["x"][2*N:]
+    print(sol["status"])
+
+    jhat = D3 * xhat
+    ahat = D2 * xhat
+    vhat = D1 * xhat
+    
+    return xhat, vhat, ahat, jhat
 
 def rectify_2d(df, w,l,args):
     '''
@@ -379,8 +324,8 @@ def rectify_2d(df, w,l,args):
     df.loc[:,'y'] = (df["bbr_y"].values + df["bbl_y"].values)/2
     df.loc[:,'x'] = (df["bbr_x"].values + df["bbl_x"].values)/2
     
-    xhat, vxhat, axhat, jxhat = rectify_1d(df, (lamx,order), "x")
-    yhat, vyhat, ayhat, jyhat = rectify_1d(df, (lamy,order), "y")
+    xhat, vxhat, axhat, jxhat = rectify_1d_l1(df, (lamx,order), "x")
+    yhat, vyhat, ayhat, jyhat = rectify_1d_l1(df, (lamy,order), "y")
     
     # calculate the states
     vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed (N-1)
@@ -690,6 +635,63 @@ def receding_horizon_2d(df, w,l,args):
 
 
 
+
+
+def obj_1d(X, x, order, N, dt, notNan, lam):
+    """ The cost function for 1d
+            X: decision variables X = [xhat, vhat, ahat]
+                xhat: rectified positions (N x 1) 0:N
+                vhat: N:2N-1
+                ahat: 2N-1: 3N-3 rectified acceleration (N-2 x 1)
+                jhat: 3N-3: 4N-6
+            x: position measurements (N x 1), could have NaN
+            N: int number of measurements
+            dt: float delta T 
+            notNan: bool array indicating timestamps that have measurements
+            lam: given parameter
+        Return: float
+    """ 
+    # unpack decision variables
+    xhat = X[:N]
+    offset1 = int((1+order-1)*(order-1)/2)
+
+    highest_order_dynamics = X[order*N-offset1:] # to be regularized
+    rescale = (30)**(order)
+    # select valid measurements
+    xhat = xhat[notNan]
+    x = x[notNan]
+    
+    # min perturbation
+    c1 = LA.norm(x-xhat,2)**2 * rescale /np.count_nonzero(notNan)
+    c2 = LA.norm(highest_order_dynamics,2)**2 / len(highest_order_dynamics)
+
+    cost = lam*c1 + (1-lam) * c2
+
+    return cost
+
+def const_1d(N, dt, order):
+    """ The constraint representing linear dynamics
+        N: number of timesteps for xhat, n=3N-3
+        Return: matrix A (2N-3 x 3N-3), such that A dot X = [0]_(nx1)
+        for scipy.optimize.LinearConstraint: lb<= A.dot(X) <= ub 'trust-constr'
+    """ 
+    offset = int((1+order)*order/2)
+    n = (order+1)*N-offset
+    m = order*N-offset
+    A = np.zeros((m,n))
+    
+    for o in range(order):
+        offset_pre = int((1+o)*o/2)
+        offset_post = int((2+o)*(o+1)/2)
+        start_row = o*N-offset_pre
+        end_row = (o+1)*N-offset_post
+        step = N-o
+        for i in range(start_row, end_row):
+            A[i][i+o] = -1
+            A[i][i+o+1] = 1
+            A[i][i+o+step] = -dt      
+    
+    return A
 def loss(Yre, Y1, norm='l21'):
     '''
     different ways to compute the diff matrix

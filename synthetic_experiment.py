@@ -84,20 +84,22 @@ class Experiment():
         id = car["ID"].iloc[0] # original ID
         
         # mask chunks
-        n_chunks = int(len(car)*0.01)
-        for index in sorted(random.sample(range(0,len(car)),n_chunks)):
-            to_idx = max(index, index+AVG_CHUNK_LENGTH+np.random.normal(0,20)) # The length of missing chunks follow Gaussian distribution N(AVG_CHUNK_LENGTH, 20)
-            car.loc[index:to_idx, self.pts] = np.nan # Mask the chunks as nan to indicate missing detections
-            # if id>=1000: id+=1 # assign unique IDs to fragments
-            # else: id*=1000
-            # car.loc[to_idx:, ["ID"]] = id
+        if AVG_CHUNK_LENGTH > 0:
+            n_chunks = int(len(car)*0.01)
+            for index in sorted(random.sample(range(0,len(car)),n_chunks)):
+                to_idx = max(index, index+AVG_CHUNK_LENGTH+np.random.normal(0,20)) # The length of missing chunks follow Gaussian distribution N(AVG_CHUNK_LENGTH, 20)
+                car.loc[index:to_idx, self.pts] = np.nan # Mask the chunks as nan to indicate missing detections
+                # if id>=1000: id+=1 # assign unique IDs to fragments
+                # else: id*=1000
+                # car.loc[to_idx:, ["ID"]] = id
             
         # add outliers (noise)
-        outlier_idx = random.sample(range(0,len(car)),int(OUTLIER_RATIO*len(car))) # randomly select 0.01N bbox for each trajectory to be outliers
-        for idx in outlier_idx:
-            noise = np.random.multivariate_normal([0,0,0,0,0,0,0,0], np.diag([0.3*l, 0.1*w]*4)) # add noises to each outlier box
-            car.loc[idx, self.pts] += noise
-        car.loc[outlier_idx, ["Generation method"]] = "outlier"
+        if OUTLIER_RATIO > 0:
+            outlier_idx = random.sample(range(0,len(car)),int(OUTLIER_RATIO*len(car))) # randomly select 0.01N bbox for each trajectory to be outliers
+            for idx in outlier_idx:
+                noise = np.random.multivariate_normal([0,0,0,0,0,0,0,0], np.diag([0.3*l, 0.1*w]*4)) # add noises to each outlier box
+                car.loc[idx, self.pts] += noise
+            car.loc[outlier_idx, ["Generation method"]] = "outlier"
         
         # update x and y
         x = (car["bbr_x"].values + car["bbl_x"].values)/2
@@ -405,16 +407,17 @@ if __name__ == "__main__":
     N = 500
     file_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
     
-    params = {"missing": 0, #np.arange(0,0.7,0.1), # missing rate
-               "noise_x": 0, # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
-               "noise_y": 0, # np.arange(0,0.7,0.1),
+    params = {"missing": 0.2, #np.arange(0,0.7,0.1), # missing rate
+               "noise_x": 0.2, # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
+               "noise_y": 0.02, # np.arange(0,0.7,0.1),
               "N": N,
               "epoch": 1, # number of random runs of generate
-              "args" : (1,1, 3), # lamx,lamy,order 
+               # "args" : (0.9, 0.9,3), # lamx,lamy,order - no outlier
+               "args" : (0.00000001,0.0000001, 0), # deltax, deltay, lam - for l1 reg (delta=0 for no outliers)
               "carid": 16, # 16, 38, for lane change
               "nrows": 20000,
               "AVG_CHUNK_LENGTH": 0,
-              "OUTLIER_RATIO": 0,
+              "OUTLIER_RATIO": 0.1,
               "PH": 200,
               "IH": 100
         }
