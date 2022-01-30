@@ -202,6 +202,9 @@ def generate_meas(car):
     x,vx,ax,jx = opt.generate_1d([x[0],vx[0],ax[0]], jx, dt, order)
     y,vy,ay,jy = opt.generate_1d([y[0],vy[0],ay[0]], jy, dt, order)
     
+    theta = np.arctan2(vy,vx)
+    theta[theta < 0] += 2*np.pi
+    
     v = np.sqrt(vx**2, vy**2)
     a = np.diff(v)/dt
     a = np.append(a,a[-1])

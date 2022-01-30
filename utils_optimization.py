@@ -8,7 +8,8 @@ from functools import partial
 from multiprocessing import Pool, cpu_count
 import utils
 import time
-from cvxopt import matrix, solvers
+from cvxopt import matrix, solvers, sparse,spdiag,spmatrix
+import cvxopt.lapack as cla
 # import utils_vis as vis
 solvers.options['show_progress'] = False
 pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
@@ -277,7 +278,25 @@ def constr_qp(x, lam, order, notNan):
     h = np.append(np.array(ub),-np.array(lb))
     return Q,p,b,G,h
     
-    
+def _blocdiag(X, n):
+    """
+    makes diagonal blocs of X, for indices in [sub1,sub2[
+    n indicates the total number of blocks (horizontally)
+    """
+    if not isinstance(X, spmatrix):
+        X = sparse(X)
+    a,b = X.size
+    if n==b:
+        return X
+    else:
+        mat = []
+        for i in range(n-b+1):
+            row = spmatrix([],[],[],(1,n))
+            row[i:i+b]=matrix(X,(b,1))
+            mat.append(row)
+        return sparse(mat)
+
+from scipy.interpolate import InterpolatedUnivariateSpline    
 def rectify_1d(df, args, axis):
     '''                        
     solve for the optimization problem for both x and y component independently:
@@ -295,29 +314,59 @@ def rectify_1d(df, args, axis):
         x = df.x.values      
     else:
         x = df.y.values
-    v = np.append(np.diff(x)/dt,np.nan)
-    a = np.append(np.diff(v)/dt,np.nan)
-    j = np.append(np.diff(a)/dt,np.nan)
-    
-    N = len(x)
-              
-    notNan = ~np.isnan(x)
+    N = len(x)            
+    notnan_idx = np.argwhere(~np.isnan(x)).flatten()
+    notnan_idx = [i.item() for i in notnan_idx]
+    # H = spmatrix(1.0, range(N), range(N))
+    # H = H[notnan_idx, :] # observation matrix y = Hx
 
-    # Define constraints
-    A = const_1d(N, dt, order) 
+    # linear interpretion to fill nan
+    # nans, ind= nan_helper(x)
+    # x[nans]= np.interp(ind(nans), ind(~nans), x[~nans])
+    t = df["Frame #"].values
+    spl = InterpolatedUnivariateSpline(t[notnan_idx],x[notnan_idx])
+    x = spl(t)
     
-    # CVXOPT 1/2 x^T Q x + p^T x + r, s.t.  AX = 0
-    P, q,b,G,h = constr_qp(x,lam,order,notNan) 
-    P, q,A,b,G,h = matrix(P, tc="d"), matrix(q, tc="d"), matrix(A, tc="d"), matrix(b, tc="d"),matrix(G, tc="d"),matrix(h, tc="d")
+    # # CVXOPT 1/2 x^T Q x + p^T x + r, s.t.  AX = 0
+    # # Define constraints
+    # A = const_1d(N, dt, order) 
     
-    sol=solvers.qp(P=P, q=q , A=A, b=b)
-    res = np.array(sol["x"])
-    # print(sol["status"])
+    # P, q,b,G,h = constr_qp(x,lam,order,notNan) 
+    # P, q,A,b,G,h = matrix(P, tc="d"), matrix(q, tc="d"), matrix(A, tc="d"), matrix(b, tc="d"),matrix(G, tc="d"),matrix(h, tc="d")
     
-    # unpack decision varibles
-    jhat = res[3*N-3:]
-    jhat = np.append(jhat, np.zeros(3)) # add 0 jerks to fill up the nans
-    xhat, vhat, ahat, jhat = generate_1d(res[[0,N,2*N-1]], jhat, dt, order)
+    # sol=solvers.qp(P=P, q=q , A=A, b=b)
+    # res = np.array(sol["x"])
+    # # print(sol["status"])
+    
+    # # unpack decision varibles
+    # jhat = res[3*N-3:]
+    # jhat = np.append(jhat, np.zeros(3)) # add 0 jerks to fill up the nans
+    # xhat, vhat, ahat, jhat = generate_1d(res[[0,N,2*N-1]], jhat, dt, order)
+    
+    # analytical solution
+    # differentiation operator
+    D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
+    D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
+    D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), N) * (1/dt**3)
+    
+    # sol: xhat = (I+delta D'D)^(-1)x
+    I = spmatrix(1.0, range(N), range(N))
+    delta = (1-lam)/lam
+    # A = H.trans() * H + delta*D3.trans() * D3
+    A = I + delta*D3.trans() * D3
+     
+    # pseduo-inverse xhat=A^+ b
+    # xhat = np.linalg.pinv(matrix(A)) * matrix(x) # long running time
+    # xhat = matrix(xhat)
+    xhat = +matrix(x)
+    cla.gesv(matrix(A), xhat) # solve AX=B, change b in-place
+    jhat = D3 * xhat
+    # jhat = matrix([D3 * xhat,matrix([0,0,0])])
+    ahat = D2 * xhat
+    # ahat = matrix([ahat, ahat[-2:]])
+    vhat = D1 * xhat
+    # vhat = matrix([vhat, vhat[-1]+dt*ahat[-1]])
+    
     
     return xhat, vhat, ahat, jhat
 
@@ -334,33 +383,34 @@ def rectify_2d(df, w,l,args):
     yhat, vyhat, ayhat, jyhat = rectify_1d(df, (lamy,order), "y")
     
     # calculate the states
-    vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed
+    vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed (N-1)
     thetahat = np.arctan2(vyhat,vxhat)
     thetahat[thetahat < 0] += 2*np.pi
-    ahat = np.diff(vhat)/(1/30)
-    ahat = np.append(ahat,  ahat[-1])
+    D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), len(xhat)) * (1/dt)
+    ahat = D1[:-1,:-1] * matrix(vhat)
+    # ahat = np.append(ahat, ahat[-1])
     
     # add constant jerk in the end
-    jhat = np.diff(ahat)/(1/30)
-    jhat = np.append(jhat, 0)
+    jhat = D1[:-2,:-2] * matrix(ahat)
+    # jhat =  np.append(jhat, 0)
     # expand to full boxes measurements
-    Y0 = generate_box(w,l, xhat, yhat, thetahat)
+    Y0 = generate_box(w,l, np.reshape(xhat,-1), np.reshape(yhat,-1), np.reshape(np.append(thetahat, thetahat[-1]),-1))
     
     # write to df
     df.loc[:,'x'] = xhat
-    df.loc[:,'jerk'] = jhat
-    df.loc[:,'acceleration'] = ahat
-    df.loc[:,'speed'] = vhat   
+    df.loc[:,'jerk'] = matrix([jhat,matrix(3*[np.nan])])
+    df.loc[:,'acceleration'] = matrix([ahat,matrix(2*[np.nan])])
+    df.loc[:,'speed'] = matrix([matrix(vhat),matrix([np.nan])])   
     df.loc[:,'y'] = yhat   
-    df.loc[:,'theta'] = thetahat
+    df.loc[:,'theta'] = matrix([matrix(thetahat),matrix([np.nan])])
     
     # store auxiliary states for debugging
-    df.loc[:,'speed_x'] = vxhat
-    df.loc[:,'jerk_x'] = jxhat
-    df.loc[:,'acceleration_x'] = axhat
-    df.loc[:,'speed_y'] = vyhat
-    df.loc[:,'jerk_y'] = jyhat
-    df.loc[:,'acceleration_y'] = ayhat 
+    df.loc[:,'speed_x'] = matrix([vxhat,matrix([np.nan])])  
+    df.loc[:,'jerk_x'] = matrix([jxhat,matrix(3*[np.nan])])
+    df.loc[:,'acceleration_x'] = matrix([axhat,matrix(2*[np.nan])])
+    df.loc[:,'speed_y'] = matrix([vyhat,matrix([np.nan])])  
+    df.loc[:,'jerk_y'] = matrix([jyhat,matrix(3*[np.nan])])
+    df.loc[:,'acceleration_y'] = matrix([ayhat,matrix(2*[np.nan])]) 
     
     # pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
     df.loc[:, pts] = Y0

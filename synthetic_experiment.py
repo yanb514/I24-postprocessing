@@ -406,12 +406,12 @@ if __name__ == "__main__":
     file_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
     
     params = {"missing": 0, #np.arange(0,0.7,0.1), # missing rate
-               "noise_x": 4, # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
-               "noise_y": 0.2, # np.arange(0,0.7,0.1),
+               "noise_x": 0, # np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
+               "noise_y": 0, # np.arange(0,0.7,0.1),
               "N": N,
               "epoch": 1, # number of random runs of generate
-              "args" : (0.9,0.9, 3), # lamx,lamy,order 
-              "carid": 38, # 16, 38, for lane change
+              "args" : (1,1, 3), # lamx,lamy,order 
+              "carid": 16, # 16, 38, for lane change
               "nrows": 20000,
               "AVG_CHUNK_LENGTH": 0,
               "OUTLIER_RATIO": 0,
