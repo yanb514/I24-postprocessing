@@ -16,6 +16,7 @@ from tqdm import tqdm
 import random
 from scipy.signal import savgol_filter
 
+dt = 1/100
 pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
 def smooth(y, box_pts):
     box = np.ones(box_pts)/box_pts
@@ -119,7 +120,7 @@ def resample_single(car):
     if len(car)<3: # ignore short trajectories
         return None
     time = car.Time.values
-    newtime = np.arange(time[0], time[-1]+1/30, 1/30)# to 30hz
+    newtime = np.arange(time[0], time[-1]+dt, dt)# to 30hz
     d = car.Distance.values 
     dir = np.sign(d[-1]-d[0]) # travel direction
     vx = np.diff(d)    # differentiate distance to get speed
@@ -151,7 +152,6 @@ def generate_meas(car):
     '''
     Generate footprint measurements (bbr_x, bbr_y, etc.) from state information
     '''
-    dt = 1/30
     order = 3
     w = car.Width.values
     l = car.Length.values
@@ -244,7 +244,7 @@ def preprocess(df):
     
     # standardize for csv reader
     df = df.rename(columns={"Time":"Timestamp", "Class": "Object class", "Width":"width", "Length":"length"})
-    df['Frame #'] = np.round(df["Timestamp"].values*30).astype(int)
+    df['Frame #'] = np.round(df["Timestamp"].values*(1/dt)).astype(int)
     col = ['Frame #', 'Timestamp', 'ID', 'Object class', 'BBox xmin','BBox ymin','BBox xmax','BBox ymax',
             'vel_x','vel_y','Generation method',
             'fbrx','fbry','fblx','fbly','bbrx','bbry','bblx','bbly','ftrx','ftry','ftlx','ftly','btrx','btry','btlx','btly',
@@ -307,12 +307,12 @@ if __name__ == "__main__":
     # df = df[df["x"]>1000]
     # df = df[df["Frame #"]>1000]
 
-    df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_GT.csv", index=False) # save the ground truth data
+    df.to_csv(r"E:\I24-postprocess\benchmark\TM_2000_GT.csv", index=False) # save the ground truth data
     # plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)
     #%%
     df = pollute(df, AVG_CHUNK_LENGTH=30, OUTLIER_RATIO=0.2) # manually perturb (downgrade the data)
 
-    df.to_csv(r"E:\I24-postprocess\benchmark\TM_1000_pollute.csv", index=False) # save the downgraded data
+    df.to_csv(r"E:\I24-postprocess\benchmark\TM_2000_pollute.csv", index=False) # save the downgraded data
     print("saved.")
     # %% visualize in time-space diagram
     # plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)

@@ -204,20 +204,12 @@ def _blocdiag(X, n):
   
 def rectify_1d(df, args, axis):
     '''                        
-    solve for the optimization problem for both x and y component independently:
-        minimize obj_1d(X, x, N, dt, notNan, lam)
-        s.t. A = const_1d(X, dt), AX = 0  
-    args: tuple (lam, order)
+    solve solve for ||y-x||_2^2 + \lam ||Dx||_2^2
     axis: "x" or "y"
-    lam_norm: automatically adjust lambda to scale perturbation and regularization
     '''  
     # get data
-    lam, order = args
-    
-    if axis == "x":
-        x = df.x.values      
-    else:
-        x = df.y.values
+    lam = args
+    x = df[axis].values
     N = len(x)            
     idx = np.argwhere(np.isnan(x)).flatten()
     idx = [i.item() for i in idx]
@@ -230,11 +222,12 @@ def rectify_1d(df, args, axis):
     D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
     D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
     D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), N) * (1/dt**3)
+    # D4 = _blocdiag(matrix([1,-4,6,-4,1],(1,5), tc="d"), N) * (1/dt**4)
     
     # sol: xhat = (I+delta D'D)^(-1)x
     I = spmatrix(1.0, range(N), range(N))
-    delta = (1-lam)/lam
-    DD = delta*D3.trans() * D3
+    # delta = (1-lam)/lam
+    DD = lam*D3.trans() * D3
     
     # analytical solution
     # A = I + DD
@@ -247,7 +240,7 @@ def rectify_1d(df, args, axis):
     p = -2*matrix(x)
     p[idx,:] = 0
     sol=solvers.qp(P=Q, q=p)
-    print(sol["status"])
+    # print(sol["status"])
     
     # extract result
     xhat = sol["x"][:N]
@@ -258,16 +251,13 @@ def rectify_1d(df, args, axis):
 
 def rectify_1d_l1(df, args, axis):
     '''                        
-    solve for ||y-x-e||_2^2 + \delta ||Dx||_2^2 + \lambda||e||_1
+    solve for ||y-x-e||_2^2 + \lam ||Dx||_2^2 + \delta||e||_1
     convert to quadratic programming with linear inequlity constraints
     handle sparse outliers in data
     '''  
     # get data
     lam, delta = args
-    if axis == "x":
-        x = df.x.values      
-    else:
-        x = df.y.values
+    x = df[axis].values
     N = len(x)
 
     # impute missing data            
@@ -300,7 +290,7 @@ def rectify_1d_l1(df, args, axis):
     p[idx] = 0 # ignore missing
     p[idx1] = 0 # ignore missing
     p[idx2] = 0 # ignore missing
-    G = sparse([[O,O],[I,-I],[I,I]])
+    G = sparse([[O,O],[I,-I],[-I,-I]])
     h = matrix(0.0, (2*N,1))
     sol=solvers.qp(P=Q, q=p , G=G, h=h)
     
@@ -320,13 +310,19 @@ def rectify_2d(df, w,l,args):
     '''
     rectify on x and y component independently
     '''
-    lamx, lamy, order = args
+    try:
+        lamx, lamy = args
+    except: lamx, lamy, delta = args
     df.loc[:,'y'] = (df["bbr_y"].values + df["bbl_y"].values)/2
     df.loc[:,'x'] = (df["bbr_x"].values + df["bbl_x"].values)/2
     
-    xhat, vxhat, axhat, jxhat = rectify_1d_l1(df, (lamx,order), "x")
-    yhat, vyhat, ayhat, jyhat = rectify_1d_l1(df, (lamy,order), "y")
-    
+    if len(args) == 2:
+        xhat, vxhat, axhat, jxhat = rectify_1d(df, lamx, "x")
+        yhat, vyhat, ayhat, jyhat = rectify_1d(df, lamy, "y")
+    elif len(args) == 3:
+        xhat, vxhat, axhat, jxhat = rectify_1d_l1(df, (lamx, delta), "x")
+        yhat, vyhat, ayhat, jyhat = rectify_1d_l1(df, (lamy, delta), "y")
+        
     # calculate the states
     vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed (N-1)
     thetahat = np.arctan2(vyhat,vxhat)
