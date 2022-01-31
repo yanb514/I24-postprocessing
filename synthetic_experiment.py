@@ -66,7 +66,13 @@ class Experiment():
         # states to be plotted
         # self.states = ["x","y","speed","speed_x","speed_y","acceleration_x","acceleration_y","jerk_x","jerk_y","theta","acceleration","jerk"]
         self.states = ["x","y","speed","acceleration","jerk","theta"]
-     
+        self.units = {
+                  **dict.fromkeys(['x', 'y'], "m"), 
+                  **dict.fromkeys(['speed', 'speed_x', 'speed_y'], 'm/s'),
+                  **dict.fromkeys(['acceleration', 'acceleration_x', 'acceleration_y'], 'm/s2'),
+                  **dict.fromkeys(['jerk', 'jerk_x', 'jerk_y'], 'm/s3'),
+                  **dict.fromkeys(['theta'], 'rad'),
+                }
     
     def pollute_car(self, car):
         '''
@@ -169,7 +175,7 @@ class Experiment():
         state_err = {}
         for state in self.states:
             try:
-                error = self.mae(self.gt[state].values, rec[state].values, max=True)
+                error = self.mae(self.gt[state].values, rec[state].values, max=False)
             except:
                 error = -1
             # state_err.append(error)
@@ -298,7 +304,8 @@ class Experiment():
         if axis == "x":
             lambdas = np.logspace(-1,1.5, num=20)
         else:
-            lambdas = np.arange(1e-3,5,0.2)
+            lambdas = np.logspace(-3,1, num=20)
+            # lambdas = np.arange(1e-3,5,0.2)
         # lambdas = [1]
         for lam in lambdas:
             xhat, vxhat, axhat, jxhat = opt.rectify_1d(meas, lam, axis)
@@ -379,15 +386,15 @@ class Experiment():
             # fig.subplots_adjust(hspace = .5, wspace=.001)
             
             axs = axs.ravel()
-            fs = 16 # fontsize
+            fs = 12 # fontsize
             for i, state in enumerate(self.states):
                 im = axs[i].imshow(self.err_grid[state], cmap='hot', interpolation='nearest')
-                axs[i].set_title(state+" error",fontsize=fs)
+                axs[i].set_title(state+"("+self.units[state]+")",fontsize=fs)
                 if i>=3:
-                    axs[i].set_xlabel("noise", fontsize=fs)
+                    axs[i].set_xlabel("noise std x/y", fontsize=fs)
                 axs[i].set_xticks(list(np.arange(len(self.params["noise_x"])))[::2])
-                xlabel = ["{:.1f}".format(x) for x in self.params["noise_x"]]
-                axs[i].set_xticklabels(xlabel[::2],fontsize=fs)
+                xlabel = ["{:.1f}/{:.2f}".format(self.params["noise_x"][i],self.params["noise_y"][i]) for i in range(len(self.params["noise_x"]))]
+                axs[i].set_xticklabels(xlabel[::2],fontsize=fs, rotation=45)
                 if i%3 == 0:
                     axs[i].set_ylabel("missing rate", fontsize=fs)
                 axs[i].set_yticks(list(np.arange(len(self.params["missing"])))) 
@@ -399,18 +406,18 @@ class Experiment():
         
     
 if __name__ == "__main__":
-    N = list(np.arange(10,1400, 50)) # number of frames
-    # N = 500
-    file_path = r"E:\I24-postprocess\benchmark\TM_2000_GT.csv"
+    # N = list(np.arange(10,1400, 50)) # number of frames
+    N = 500
+    file_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
     
-    params = {"missing": 0.2, #np.arange(0,0.7,0.1), # missing rate
-               "noise_x": 0.2,  #np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
-               "noise_y": 0.02, #.1*np.arange(0,0.7,0.1),
+    params = {"missing": np.arange(0,0.7,0.1), # missing rate
+               "noise_x": np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
+               "noise_y": .1*np.arange(0,0.7,0.1),
               "N": N,
               "epoch": 1, # number of random runs of generate
-               "args" : (7,0.1), # lamx,lamy - no l1 reg
-              # "args" : (3,1, 0.1), # deltax, deltay, lam - for l1 reg (delta=0 for no outliers)
-              "carid": 1, # 16, 38, for lane change
+                "args" : (7,1e-1), # lamx,lamy - no l1 reg
+              # "args" : (7,7, 1), # deltax, deltay, lam - for l1 reg (delta=0 for no outliers)
+              "carid": 16, # 16, 38, for lane change
               "nrows": 20000,
               "AVG_CHUNK_LENGTH": 0,
               "OUTLIER_RATIO": 0,
@@ -420,12 +427,12 @@ if __name__ == "__main__":
     
     ex = Experiment(file_path, params)
     # ex.evaluate_single()
-    # ex.grid_evaluate()
-    # ex.pareto_curve(axis="x")
+    ex.grid_evaluate()
+    # ex.pareto_curve(axis="y")
     # ex.receding_horizon_rectify()
     if isinstance(N,list): # trigger run time analysis
         ex.runtime_analysis()
     #     # %%
-    # ex.visualize()
+    ex.visualize()
 
     

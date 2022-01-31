@@ -210,13 +210,10 @@ def rectify_1d(df, args, axis):
     # get data
     lam = args
     x = df[axis].values
-    N = len(x)            
-    idx = np.argwhere(np.isnan(x)).flatten()
-    idx = [i.item() for i in idx]
-
-    # t = df["Frame #"].values
-    # spl = InterpolatedUnivariateSpline(t[notnan_idx],x[notnan_idx])
-    # x = spl(t)
+    N = len(x)
+          
+    idx = [i.item() for i in np.argwhere(~np.isnan(x)).flatten()]
+    x = x[idx]
 
     # differentiation operator
     D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
@@ -226,8 +223,9 @@ def rectify_1d(df, args, axis):
     
     # sol: xhat = (I+delta D'D)^(-1)x
     I = spmatrix(1.0, range(N), range(N))
-    # delta = (1-lam)/lam
+    H = I[idx,:]
     DD = lam*D3.trans() * D3
+    HH = H.trans() * H
     
     # analytical solution
     # A = I + DD
@@ -235,10 +233,8 @@ def rectify_1d(df, args, axis):
     # cla.gesv(+matrix(A), xhat) # solve AX=B, change b in-place
     
     # QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
-    I[idx,:] = 0
-    Q = 2*(I+DD)
-    p = -2*matrix(x)
-    p[idx,:] = 0
+    Q = 2*(HH+DD)
+    p = -2*H.trans() * matrix(x)
     sol=solvers.qp(P=Q, q=p)
     # print(sol["status"])
     
@@ -260,11 +256,15 @@ def rectify_1d_l1(df, args, axis):
     x = df[axis].values
     N = len(x)
 
-    # impute missing data            
-    idx = np.argwhere(np.isnan(x)).flatten()
-    idx = [i.item() for i in idx]
-    idx1 = [i+N for i in idx]
-    idx2 = [i+2*N for i in idx]
+    # impute missing data 
+    idx = [i.item() for i in np.argwhere(~np.isnan(x)).flatten()]
+    x = x[idx]
+    M = len(x)
+           
+    # idx = np.argwhere(np.isnan(x)).flatten()
+    # idx = [i.item() for i in idx]
+    # idx1 = [i+N for i in idx]
+    # idx2 = [i+2*N for i in idx]
     # t = df["Frame #"].values
     # spl = InterpolatedUnivariateSpline(t[notnan_idx],x[notnan_idx])
     # x = spl(t)
@@ -273,31 +273,30 @@ def rectify_1d_l1(df, args, axis):
     D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
     D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
     D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), N) * (1/dt**3)
+    DD = lam * D3.trans() * D3
     
     # define matices
     I = spmatrix(1.0, range(N), range(N))
+    IM = spmatrix(1.0, range(M), range(M))
     O = spmatrix([], [], [], (N,N))
-    Q1 = sparse([[I,I,O], [I,I,O], [O,O,O]]) # ||y-x-e||_2^2
-    Q1[idx,:] = 0 # ignore missing
-    Q1[idx1,:] = 0 # ignore missing
-    DD = lam * D3.trans() * D3
-    Q2 = sparse([[DD,O,O], [O,O,O], [O,O,O]]) #||Dx||_x^2
-    Q = 2* (Q1+Q2)
+    OM = spmatrix([], [], [], (M,M))
+
+    H = I[idx,:]
+    HH = H.trans()*H
+    Q = 2*sparse([[HH+DD,H*I,spmatrix([], [], [], (M,N))], 
+                [I*H.trans(),IM,OM], 
+                [spmatrix([], [], [], (N,M)),OM,OM]]) 
     
-    p1 = -2 * matrix(x)
-    p3 = matrix(delta, (N,1))
-    p = matrix([p1, p1, p3])
-    p[idx] = 0 # ignore missing
-    p[idx1] = 0 # ignore missing
-    p[idx2] = 0 # ignore missing
-    G = sparse([[O,O],[I,-I],[-I,-I]])
-    h = matrix(0.0, (2*N,1))
-    sol=solvers.qp(P=Q, q=p , G=G, h=h)
+    p = sparse([-2*H.trans()*matrix(x), -2*matrix(x), matrix(delta, (M,1))])
+
+    G = sparse([[H*O,H*O],[IM,-IM],[-IM,-IM]])
+    h = spmatrix([], [], [], (2*M,1))
+    sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
     
     # extract result
     xhat = sol["x"][:N]
-    e = sol["x"][N:2*N]
-    t = sol["x"][2*N:]
+    e = sol["x"][N:N+M]
+    t = sol["x"][N+M:]
     print(sol["status"])
 
     jhat = D3 * xhat
