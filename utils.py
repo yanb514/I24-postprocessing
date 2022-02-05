@@ -9,7 +9,7 @@ import re
 import glob
 from tqdm import tqdm
 import utils_optimization as opt
-import data_association as da
+# import data_association as da
 from functools import partial
 import itertools
 import os

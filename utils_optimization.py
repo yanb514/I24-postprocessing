@@ -205,6 +205,7 @@ def _blocdiag(X, n):
 def rectify_1d(df, args, axis):
     '''                        
     solve solve for ||y-x||_2^2 + \lam ||Dx||_2^2
+    args: lam
     axis: "x" or "y"
     '''  
     # get data
@@ -334,7 +335,7 @@ def rectify_2d(df, w,l,args):
     jhat = D1[:-2,:-2] * matrix(ahat)
     # jhat =  np.append(jhat, 0)
     # expand to full boxes measurements
-    Y0 = generate_box(w,l, np.reshape(xhat,-1), np.reshape(yhat,-1), np.reshape(np.append(thetahat, thetahat[-1]),-1))
+    Y0 = generate_box(w,l, np.reshape(xhat,-1), np.reshape(yhat,-1), np.reshape(np.append(thetahat, np.nan),-1))
     
     # write to df
     df.loc[:,'x'] = xhat
@@ -477,100 +478,101 @@ def receding_horizon_1d(df, args, axis="x"):
     '''
     rolling horizon version of rectify_1d
     car: df
-    args: (lam, order, axis, PH, IH)
+    args: (lam, axis, PH, IH)
         PH: prediction horizon
         IH: implementation horizon
-    
+    QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
     '''
     # get data
-    lam, order, PH, IH = args
+    lam, PH, IH = args
     
     x = df[axis].values
-    
     n_total = len(x)          
-    notNan = ~np.isnan(x)
 
-    # Define constraints
-    A = const_1d(PH, dt, order) 
-    P, q,b,G,h = constr_qp(np.ones(PH),lam,order,np.array([True]*PH))
+    # Define constraints for the first PH
+    idx = [i.item() for i in np.argwhere(~np.isnan(x[:PH])).flatten()]
+    xx = x[:PH]
+    xx = xx[idx]
+
+    # differentiation operator
+    D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), PH) * (1/dt)
+    D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), PH) * (1/dt**2)
+    D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), PH) * (1/dt**3)
+    D4 = _blocdiag(matrix([1,-4,6,-4,1],(1,5), tc="d"), PH) * (1/dt**4)
+    
+    # sol: xhat = (I+delta D'D)^(-1)x
+    I = spmatrix(1.0, range(PH), range(PH))
+    H = I[idx,:]
+    DD = lam*D4.trans() * D4
+    HH = H.trans() * H
+    
+    # QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
+    Q = 2*(HH+DD)
+    p = -2*H.trans() * matrix(xx)
+    sol=solvers.qp(P=Q, q=p)
     
     # additional equality constraint: state continuity
-    A2 = np.zeros((4, A.shape[1]))
-    A2[[0,1,2,3], [0,1,2,3]] = 1
-    AA = np.vstack((A, A2))
-    AA,G,h = matrix(AA, tc="d") ,matrix(G, tc="d"),matrix(h, tc="d")
+    A = sparse([[spmatrix(1.0, range(4), range(4))], [spmatrix([], [], [], (4,PH-4))]])
+    A = matrix(A, tc="d")
     
     # save final answers
-    xfinal = np.ones(n_total) * np.nan
-    vfinal = np.ones(n_total) * np.nan
-    afinal = np.ones(n_total) * np.nan
-    jfinal = np.ones(n_total) * np.nan
+    xfinal = matrix([])
+    vfinal = matrix([])
+    afinal = matrix([])
+    jfinal = matrix([])
     
+    n_win = (n_total-PH+IH)//IH
     last = False
-    for i in range(0,n_total-PH+IH,IH):
-        print(i,'/',n_total, flush=True)
-        if i+PH >= n_total: # last block
+    
+    cs = 4 # new constraint steps
+    for i in range(n_win+1):
+        # print(i,'/',n_total, flush=True)
+        if i == n_win: # last
+            xx =x[i*IH:]
             last = True
-            xx = x[i:]
-            nn = len(xx)  
-            notNan = ~np.isnan(xx)
-            nan_idx = np.argwhere(~notNan)
-        
-            # redefine matrices
-            A = const_1d(nn, dt, order) 
-            PP, qq,b,G,h = constr_qp(xx,lam,order,notNan)
-            
-            # additional equality constraint: state continuity
-            A2 = np.zeros((4, A.shape[1]))
-            A2[[0,1,2,3], [0,1,2,3]] = 1
-            AA = np.vstack((A, A2))
-            AA = matrix(AA, tc="d") 
-            
         else:
-            xx = x[i: i+PH]
-            nn = len(xx)  
-            notNan = ~np.isnan(xx)
-            nan_idx = np.argwhere(~notNan)
-            # update matrices based on nans          
-            PP,qq = P.copy(), q.copy()
-            PP[nan_idx, :] = 0 # set the corresponding rows to 0
-            qq[:PH]*=xx
-            qq[nan_idx] = 0 
+            xx = x[i*IH: i*IH+PH]
+        nn = len(xx)
+        idx = [i.item() for i in np.argwhere(~np.isnan(xx)).flatten()]
+        xx = xx[idx]
+        I = I[:nn, :nn]
+        H = I[idx,:]
+        D1 = D1[:nn-1 ,:nn]
+        D2 = D2[:nn-2 ,:nn]
+        D3 = D3[:nn-3 ,:nn]
+        D4 = D4[:nn-4 ,:nn]
+        DD = lam*D4.trans() * D4
+        HH = H.trans() * H
+
+        Q = 2*(HH+DD)
+        p = -2*H.trans() * matrix(xx)
         
-        if i==0:
-            PP, qq, b, A = matrix(PP, tc="d"), matrix(qq, tc="d"), matrix(b, tc="d"), matrix(A, tc="d")
-            sol=solvers.qp(P=PP, q=qq ,A=A, b=b)
-            # print(sol["status"])
-        else:
-            # additional constraint AA X = bb
-            bb = np.append(b, x_prev)
-            PP, qq, bb = matrix(PP, tc="d"), matrix(qq, tc="d"), matrix(bb, tc="d")
-            sol=solvers.qp(P=PP, q=qq ,A=AA, b=bb)
-            # print(sol["status"])
+        if i == 0:
+            sol=solvers.qp(P=Q, q=p)          
+        else: # if x_prev exists - not first window
+            A = sparse([[spmatrix(1.0, range(cs), range(cs))], [spmatrix([], [], [], (cs,nn-cs))]])
+            A = matrix(A, tc="d")
+            b = matrix(x_prev)
+            sol=solvers.qp(P=Q, q=p, A = A, b=b)          
             
-        res = np.array(sol["x"])[:,0]
-        # print(sol["status"])
-         
-        # unpack decision varibles
-        xhat = res[:nn]
-        vhat = res[nn:2*nn-1]
-        ahat = res[2*nn-1:3*nn-3]
-        jhat = res[3*nn-3:]
-        
+        xhat = sol["x"]
+        vhat = D1*xhat
+        ahat = D2*xhat
+        jhat = D3*xhat
         if last:
-            xfinal[i:i+nn] = xhat
-            vfinal[i:i+nn-1] = vhat
-            afinal[i:i+nn-2] = ahat
-            jfinal[i:i+nn-3] = jhat
+            xfinal = matrix([xfinal, xhat])
+            vfinal = matrix([vfinal, vhat, np.nan])
+            afinal = matrix([afinal, ahat, matrix([np.nan, np.nan])])
+            jfinal = matrix([jfinal, jhat, matrix([np.nan, np.nan, np.nan])])
         else:
-            xfinal[i:i+IH] = xhat[:IH]
-            vfinal[i:i+IH] = vhat[:IH]
-            afinal[i:i+IH] = ahat[:IH]
-            jfinal[i:i+IH] = jhat[:IH]
+            xfinal = matrix([xfinal, xhat[:IH]])
+            vfinal = matrix([vfinal, vhat[:IH]])
+            afinal = matrix([afinal, ahat[:IH]])
+            jfinal = matrix([jfinal, jhat[:IH]])
+
             
         # save for the next loop
-        x_prev = res[IH:IH+4]
-        del PP, qq
+        x_prev = xhat[IH:IH+cs]
     
     return xfinal, vfinal,  afinal, jfinal
 
@@ -578,16 +580,18 @@ def receding_horizon_2d(df, w,l,args):
     '''
     '''
     # get data
-    lamx, lamy, order, PH, IH = args
+    lamx, lamy, PH, IH = args
     df.loc[:,'y'] = (df["bbr_y"].values + df["bbl_y"].values)/2
     df.loc[:,'x'] = (df["bbr_x"].values + df["bbl_x"].values)/2
     
-    xhat,vxhat,axhat,jxhat = receding_horizon_1d(df, (lamx, order, PH, IH), "x")
-    yhat,vyhat,ayhat,jyhat = receding_horizon_1d(df, (lamy, order, PH, IH), "y")
+    xhat,vxhat,axhat,jxhat = receding_horizon_1d(df, (lamx, PH, IH), "x")
+    yhat,vyhat,ayhat,jyhat = receding_horizon_1d(df, (lamy, PH, IH), "y")
     
     # calculate the states
     vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed
     thetahat = np.arctan2(vyhat,vxhat)
+    vhat = np.reshape(vhat, -1)
+    thetahat = np.reshape(thetahat, -1)
     thetahat[thetahat < 0] += 2*np.pi
     ahat = np.diff(vhat)/dt
     ahat = np.append(ahat,  ahat[-1])
@@ -596,7 +600,7 @@ def receding_horizon_2d(df, w,l,args):
     jhat = np.diff(ahat)/dt
     jhat = np.append(jhat, 0)
     # expand to full boxes measurements
-    Y0 = generate_box(w,l, xhat, yhat, thetahat)
+    Y0 = generate_box(w,l, np.reshape(xhat,-1), np.reshape(yhat,-1), thetahat)
     
     # write to df
     df.loc[:,'x'] = xhat

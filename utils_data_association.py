@@ -7,6 +7,9 @@ import collections
 import utils_vis as vis
 import scipy
 import matplotlib.pyplot as plt
+import torch
+from collections import defaultdict, deque
+import heapq
 
 def dist_score(B, B_data, DIST_MEAS='xyw', DIRECTION=True):
     '''
@@ -114,10 +117,7 @@ def iou(a,b,DIRECTION=True,AREA=False):
         iou = intersection/union
         if AREA==True:
             return iou,area_a,area_b
-        else: return iou
-    
-
-            
+        else: return iou        
 
 def predict_tracks_df(tracks):
     '''
@@ -788,5 +788,528 @@ def time_space_matching(df, THRESHOLD_X = 9, THRESHOLD_Y = 0.5):
     
     return df, groupList,DX,DY
     
+def stitch_objects_tsmn(self, THRESHOLD_1=0.3, THRESHOLD_2=0.03):
+        '''
+        try to match tracks that are "close" to each other in time-space dimension
+        for each track define a "cone" based on the tolerable acceleration
+        match tracks that fall into the cone of other tracks in both x and y
+        
+        THRESHOLD_1: allowable acceleration/deceleration (m/s2)
+        THRESHOLD_2: allowable steering angle (rad)
+        '''
+        groups = self.df.groupby("ID")
+        groupList = list(groups.groups)
+        pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+       
+        n_car = len(groupList)
+        CX = np.zeros((n_car, n_car)) # cone of X
+        CY = np.zeros((n_car, n_car)) # 
+        track_len = []
+        for i,c1 in enumerate(groupList):
+            print("\rTracklet {}/{}".format(i,n_car),end = "\r",flush = True)
+            # get the fitted line for c1
+            track1 = groups.get_group(c1)
+            track_len.append(len(track1))
+            if len(track1)<2:
+                fit = None
+            else:
+                t1 = track1["Frame #"].values
+                ct1 = np.nanmean(t1)
+                track1 = np.array(track1[pts])
+                x1 = (track1[:,0] + track1[:,2])/2
+                y1 = (track1[:,1] + track1[:,7])/2
+                cx1, cy1 = np.nanmean(x1), np.nanmean(y1)
+         
+                # fit time vs. x
+                fit = np.polyfit(t1,x1,1)
+                vx = fit[0]
+                bp = cx1-(vx+THRESHOLD_1)*ct1 # recalculate y-intercept
+                bpp = cx1-(vx-THRESHOLD_1)*ct1
+                
+                # fit time vs. y
+                fit = np.polyfit(t1,y1,1)
+                vy = fit[0]
+                cp = cy1-(vy+THRESHOLD_2)*ct1 # recalculate y-intercept
+                cpp = cy1-(vy-THRESHOLD_2)*ct1
+            
+            for j in range(n_car):
+                if (i == j) or (fit is None):
+                    continue
+                track2 = groups.get_group(groupList[j])
+                if len(track2)<2:
+                    continue
+                else:
+                    t2 = track2["Frame #"].values
+                    track2 = np.array(track2[pts])
+                    x2 = (track2[:,0] + track2[:,2])/2
+                    y2 = (track2[:,1] + track2[:,7])/2
     
+                    if (all(x2 < t2*(vx+THRESHOLD_1)+bp) and all(x2 > t2*(vx-THRESHOLD_1)+bpp)) or (all(x2 > t2*(vx+THRESHOLD_1)+bp) and all(x2 < t2*(vx-THRESHOLD_1)+bpp)):
+                        CX[i,j] = 1
+                    if (all(y2 < t2*(vy+THRESHOLD_2)+cp) and all(y2 > t2*(vy-THRESHOLD_2)+cpp)) or (all(y2 > t2*(vy+THRESHOLD_2)+cp) and all(y2 < t2*(vy-THRESHOLD_2)+cpp)):
+                        CY[i,j] = 1
+                    # CY[i,j] = max(np.abs(y1[[0,-1, 0, -1]]-y2[[0,-1, -1, 0]])/np.abs(x1[[0,-1, 0 ,-1]]-x2[[0,-1,-1,0]]) ) # tan\theta
+            
+        CX = CX == 1
+        CY = CY == 1
+        for i in range(len(CX)): # make CX CY symmetrical
+            CX[i,:] = np.logical_and(CX[i,:], CX[:,i])
+            CY[i,:] = np.logical_and(CY[i,:], CY[:,i])
+            
+        match = np.logical_and(CX,CY) # symmetrical
     
+        # assign matches: note this this is NP-complete (see cliques subgraph problem)
+        # 1: not consider conflicts
+        # for i in range(n_car-1,-1,-1):
+        #     idx = np.where(match[:,i])[0]
+        #     if len(idx)>0:
+        #         newid = groupList[idx[0]] # assigned to the first ID appeared in scene
+        #         parent = {groupList[i]: newid for i in list(idx)+[i]}
+        #         self.df['ID'] = self.df['ID'].apply(lambda x: parent[x] if x in parent else x)
+        
+        # 2: sort by length of tracks descending
+        sort_len = sorted(range(len(track_len)), key=lambda k: track_len[k])[::-1]
+        matched = set()
+        for i in sort_len:
+            idx = np.where(match[:,i])[0]
+            if len(idx)>0:
+                parent = {groupList[ii]: groupList[i] for ii in idx if (ii not in matched) and (i not in matched)}
+                self.df['ID'] = self.df['ID'].apply(lambda x: parent[x] if x in parent else x)
+            matched = matched.union(set(idx))
+        print("Before DA: {} unique IDs".format(len(groupList))) 
+        print("After DA: {} unique IDs".format(self.df.groupby("ID").ngroups))
+      
+        return
+    
+def iou_ts(self,a,b):
+    """
+    Description
+    -----------
+    Calculates intersection over union for track a and b in time-space diagram
+
+    Parameters
+    ----------
+    a : 1x8
+    b : 1x8
+    Returns
+    -------
+    iou - float between [0,1] 
+    """
+    a,b = np.reshape(a,(1,-1)), np.reshape(b,(1,-1))
+
+    p = Polygon([(a[0,2*i],a[0,2*i+1]) for i in range(4)])
+    q = Polygon([(b[0,2*i],b[0,2*i+1]) for i in range(4)])
+
+    intersection_area = p.intersection(q).area
+    union_area = min(p.area, q.area)
+    iou = float(intersection_area/union_area)
+            
+    return iou 
+
+def log_likelihood(self, input, target, var):
+    '''
+    https://pytorch.org/docs/stable/generated/torch.nn.GaussianNLLLoss.html
+    input: N x 1
+    target: N x 1
+    var: variance
+    '''
+    N = len(target)
+    var = np.maximum(1e-6*np.ones(var.shape),var)
+    return 1/(2*N)*np.sum(np.log(var)+(input-target)**2/var)
+
+def stitch_objects_tsmn_ll(o, THRESHOLD_C=50, VARX=0.03, VARY=0.03, time_out = 500):
+        '''
+        similar to stitch_objects_tsmn
+        instead of binary fit, calculate a loss (log likelihood)
+        max missing frames T to go above threshold: 0.5 log(VARX T) + 0.5 log(VARY T) = THRESHOLD_C
+            -> T = np.exp(THRESHOLD_C) / np.sqrt(VARX*VARY)
+        '''
+        df = o.df
+        groups = {k: v for k, v in df.groupby("ID")}
+        groupList = list(groups.keys())
+        # groupList = list(groups.groups)
+        pts = ['bbr_x','bbr_y','fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+       
+        n_car = len(groupList)
+        CX = np.ones((n_car, n_car)) * 999 # cone of X
+
+        loss = torch.nn.GaussianNLLLoss()
+        empty_id = set()
+        
+        
+        for i,c1 in enumerate(groupList):
+            print("\rTracklet {}/{}".format(i,n_car),end = "\r",flush = True)
+            # get the fitted line for c1
+            # track1 = groups.get_group(c1)
+            track1 = groups[c1]
+
+            t1 = track1["Frame #"].values
+            ct1 = np.nanmean(t1)
+            track1 = np.array(track1[pts])
+            x1 = (track1[:,0] + track1[:,2])/2
+            y1 = (track1[:,1] + track1[:,7])/2
+            notnan = ~np.isnan(x1)
+            t1 = t1[notnan]
+            x1 = x1[notnan]
+            y1 = y1[notnan]
+            
+            if len(t1)<1 or (c1 in empty_id):
+                empty_id.add(c1)
+                continue
+            
+            elif len(t1)<2:
+                v = np.sign(track1[0,2]-track1[0,0]) # assume 1/-1 m/frame = 30m/s
+                b = x1-v*ct1 # recalculate y-intercept
+                fitx = np.array([v,b[0]])
+                fity = np.array([0,y1[0]])
+            else:
+                X = np.vstack([t1,np.ones(len(t1))]).T # N x 2
+                fitx = np.linalg.lstsq(X, x1, rcond=None)[0]
+                fity = np.linalg.lstsq(X, y1, rcond=None)[0]
+                
+                    
+            for j in range(i+1,n_car):
+                # track2 = groups.get_group(groupList[j])
+                track2 = groups[groupList[j]]
+                
+                t2 = track2["Frame #"].values
+                track2 = np.array(track2[pts])
+                x2 = (track2[:,0] + track2[:,2])/2
+                y2 = (track2[:,1] + track2[:,7])/2
+
+                notnan = ~np.isnan(x2)
+                if sum(notnan)==0 or (groupList[j] in empty_id): # if all data is nan (missing)
+                    empty_id.add(groupList[j])
+                    continue
+                t2 = t2[notnan]
+                x2 = x2[notnan]
+                y2 = y2[notnan]
+                ct2 = np.mean(t2)
+            
+                if len(t2)<2:
+                    v = np.sign(track2[0,2]-track2[0,0])
+                    b = x2-v*ct2 # recalculate y-intercept
+                    fit2x = np.array([v,b[0]])
+                    fit2y = np.array([0,y2[0]])
+                else:
+                    # OLS faster
+                    X = np.vstack([t2,np.ones(len(t2))]).T
+                    fit2x = np.linalg.lstsq(X, x2, rcond=None)[0]
+                    fit2y = np.linalg.lstsq(X, y2, rcond=None)[0] 
+                
+                nll = 999
+                if all(t2-t1[-1]>=0): # t1 comes first
+                    if t2[0] - t1[-1] > time_out:
+                        # print("time out {} and {}".format(c1, groupList[j]))
+                        continue
+                    # 1. project t1 forward to t2's time
+                    # targetx = np.polyval(fitx, t2)
+                    # targety = np.polyval(fity, t2)
+                    targetx = np.matmul(X, fitx)
+                    targety = np.matmul(X, fity)
+                    pt1 = t1[-1]
+                    varx = (t2-pt1) * VARX 
+                    vary = (t2-pt1) * VARY
+                    input = torch.transpose(torch.tensor([x2,y2]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
+                    # 2. project t2 backward to t1's time
+                    targetx = np.polyval(fit2x, t1)
+                    targety = np.polyval(fit2y, t1)
+                    pt2 = t2[0]
+                    varx = (pt2-t1) * VARX 
+                    vary = (pt2-t1) * VARY
+                    input = torch.transpose(torch.tensor([x1,y1]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
+                    
+                elif all(t1-t2[-1]>=0): # t2 comes first:
+                    if t1[0] - t2[-1] > time_out:
+                        continue
+                    # 3. project t1 backward to t2's time
+                    targetx = np.polyval(fitx, t2)
+                    targety = np.polyval(fity, t2)
+                    pt1 = t1[0]
+                    varx = (pt1-t2) * VARX 
+                    vary = (pt1-t2) * VARY
+                    input = torch.transpose(torch.tensor([x2,y2]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
+                    
+                    # 4. project t2 forward to t1's time
+                    targetx = np.polyval(fit2x, t1)
+                    targety = np.polyval(fit2y, t1)
+                    pt2 = t2[-1]
+                    varx = (t1-pt2) * VARX 
+                    vary = (t1-pt2) * VARY
+                    input = torch.transpose(torch.tensor([x1,y1]),0,1)
+                    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+                    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+                    nll = min(nll, loss(input,target,var))
+                    # print("{} and {}: {}".format(c1, groupList[j],nll))
+
+                CX[i,j] = nll
+                
+        # for debugging only
+        o.CX = CX
+        o.groupList = groupList
+        o.empty_id = empty_id
+        
+        BX = CX < THRESHOLD_C
+        
+        for i in range(len(CX)): # make CX CY symmetrical
+            BX[i,:] = np.logical_or(BX[i,:], BX[:,i])
+            
+        # 4. start by sorting CX
+        a,b = np.unravel_index(np.argsort(CX, axis=None), CX.shape)
+
+        path = {idx: {idx} for idx in range(n_car)} # disjoint set
+        for i in range(len(a)):
+            if CX[a[i],b[i]] > THRESHOLD_C:
+                break
+            else: 
+                path_a, path_b = list(path[a[i]]),list(path[b[i]])
+                if np.all(BX[np.ix_(path_a, path_b)]): # if no conflict with any path
+                    path[a[i]] = path[a[i]].union(path[b[i]])
+                    for aa in path[a[i]]:
+                        path[aa] = path[a[i]].copy()
+        
+        o.path = path          
+        # delete IDs that are empty
+        df = df.groupby("ID").filter(lambda x: (x["ID"].iloc[0] not in empty_id))
+        path = path.copy()
+        # modify ID
+        while path:
+            key = list(path.keys())[0]
+            reid = {groupList[old]: groupList[key] for old in path[key]} # change id=groupList[v] to groupList[key]
+            df = df.replace({'ID': reid})
+            for v in list(path[key]) + [key]:
+                try:
+                    path.pop(v)
+                except KeyError:
+                    pass
+
+        df = df.sort_values(by=['Frame #','ID']).reset_index(drop=True)         
+        print("\n")
+        print("Before DA: {} unique IDs".format(len(groupList))) 
+        print("After DA: {} unique IDs".format(df.groupby("ID").ngroups))
+        print("True: {} unique IDs".format(len([id for id in groupList if id<1000])))
+      
+        return o
+    
+class Node(object):
+    '''
+    implementation for data association
+    store the assignment based on matching
+    '''
+    def __init__(self, id):
+        '''
+        track: dict with key: id, t, x, y
+            {"id": 20,
+             "t": [frame1, frame2,...],
+             "x":[x1,x2,...], 
+             "y":[y1,y2...]}
+        '''
+        self.id = id
+        self.root = self
+        
+    def _union(self, node):
+        """
+        change the root of node to root of self
+        """
+        node.root = self.root
+        
+    def _find(self):
+        return self.root.id
+    
+    # def add_child(self, obj):
+    #     self.children.append(obj)
+      
+    
+loss = torch.nn.GaussianNLLLoss()   
+def stitch_objects_tsmn_online(o, THRESHOLD_C=50, VARX=0.03, VARY=0.03, time_out = 500):
+        '''
+        online version of stitch_objects_tsmn_ll
+        track: dict with key: id, t, x, y
+            {"id": 20,
+             "t": [frame1, frame2,...],
+             "x":[x1,x2,...], 
+             "y":[y1,y2...],
+             "fitx": [vx, bx], least square fit
+             "fity": [vy, by]}
+        tracks come incrementally as soon as they end
+        '''
+        df = o.df
+        # sort tracks by end time - not for real deployment
+        groups = {k: v for k, v in df.groupby("ID")}
+        ids = list(groups.keys())
+        end_time = [max(car["Frame #"].values) for _,car in groups.items()]
+        order = np.argsort(end_time)
+        ordered_ids = [ids[i] for i in order]
+        ordered_tracks = [] # list of dictionaries
+        empty_id = set()
+        for id in ordered_ids:
+            car = groups[id]
+            t = car["Frame #"].values
+            x = (car.bbr_x.values + car.bbl_x.values)/2
+            y = (car.bbr_y.values + car.bbl_y.values)/2
+            track = {"id":id, "t": t, "x": x, "y": y} 
+            ordered_tracks.append(track)
+       
+        # Initialize
+        X = defaultdict(set) # exclusion graph
+        def _addEdge(graph,u,v):
+            # add undirected edge
+            graph[u].add(v)
+            graph[v].add(u)
+
+        curr = deque() # tracks in view. track ids. should be sorted by end_time
+        path = {} # oldid: newid. to store matching assignment
+        S = [] # min heap. {cost: (id1, id2)} cost to match start of id1 to end of id2
+        # E = [] # min heap. {cost: (id1, id2)} cost to match end of id2 to start of id1
+        ready = set() # set of ids indicate end of track ready to be matched
+        processed = set() # set of ids whose tails are matched
+        matched = 0 # count matched pairs
+        # define cost
+        def _getCost(track1, track2):
+            '''
+            track1 always ends before track2 ends
+            999: mark as conflict
+            -1: invalid
+            '''
+            if track1['id']==track2['id']:
+                return -1
+            if (track1['id'] in empty_id) or (track1['id'] in empty_id):
+                return -1
+            if track2["t"][0] < track1['t'][-1]: # if track2 starts before track1 ends
+                return 999
+            if track2['t'][0] - track1['t'][-1] > time_out: # if track2 starts TIMEOUT after track1 ends
+                return -1
+            
+            xx = np.vstack([track2['t'],np.ones(len(track2['t']))]).T # N x 2
+            targetx = np.matmul(xx, track1['fitx'])
+            targety = np.matmul(xx, track1['fity'])
+            pt1 = track1['t'][-1]
+            varx = (track2['t']-pt1) * VARX 
+            vary = (track2['t']-pt1) * VARY
+            input = torch.transpose(torch.tensor([track2['x'],track2['y']]),0,1)
+            target = torch.transpose(torch.tensor([targetx, targety]),0,1)
+            var = torch.transpose(torch.tensor([varx,vary]),0,1)
+            nll = loss(input,target,var)
+            return nll.item()
+                    
+        for track in ordered_tracks:
+            
+            path[track['id']] = track['id']
+        
+            # compute track statistics
+            t,x,y = track['t'],track['x'],track['y']
+            ct = np.nanmean(t)
+            notnan = ~np.isnan(x)
+            t,x,y = t[notnan], x[notnan],y[notnan]
+
+            if len(t)<1: 
+                empty_id.add(track['id'])
+                continue
+            
+            elif len(t)<2:
+                v = np.sign(x[-1]-x[0]) # assume 1/-1 m/frame = 30m/s
+                b = x-v*ct # recalculate y-intercept
+                fitx = np.array([v,b[0]])
+                fity = np.array([0,y[0]])
+            else:
+                xx = np.vstack([t,np.ones(len(t))]).T # N x 2
+                fitx = np.linalg.lstsq(xx,x, rcond=None)[0]
+                fity = np.linalg.lstsq(xx,y, rcond=None)[0]
+            track['t'] = t
+            track['x'] = x
+            track['y'] = y
+            track['fitx'] = fitx
+            track['fity'] = fity
+            
+            window_end = track['t'][-1]
+            window_start = window_end - time_out
+            
+            # update curr, remove out of sight tracks
+            curr.append(track)
+
+            while curr[0]['t'][-1] < window_start:           
+                ready.add(curr.popleft()['id'])
+            
+            # compute score from every track in curr to track, update S
+            for curr_track in curr:
+                if curr_track['id']==track['id']: continue
+                cost = _getCost(curr_track, track)
+                if cost > THRESHOLD_C:
+                    _addEdge(X, curr_track['id'], track['id'])
+                elif cost > 0:
+                    if curr_track['id'] == 2 and track['id']==2000:
+                        print(2)
+                    heapq.heappush(S, (cost, (curr_track['id'], track['id'])))
+                # if curr_track['t'][-1] < window_start:
+                #     ready.add(curr_track['id'])
+            
+            # start matching
+            while True:
+                if len(S) == 0:
+                    break
+                id1, id2 = S[0][1] # min cost pair
+                if id1 in ready: # if the former track is ready to be matched
+                    # if path[id2]._find() == path[id1]._find(): 
+                    if path[id2] == path[id1]: # already matched
+                        heapq.heappop(S) # remove from current pool
+                    elif id2 not in X[id1]: # match if no exlusion
+                        # print("match", id1, id2)
+                        # path[id1]._union(path[id2]) # update id2's root to id1's
+                        path[id2] = path[id1]
+                        matched += 1
+                        # update X: make id1's neighbors(conflicts) also id2's neighbors
+                        conflicts1 = X[id1].copy()
+                        conflicts2 = X[id2].copy()
+                        for conf in conflicts1:
+                            _addEdge(X, id2, conf)
+                        for conf in conflicts2:
+                            _addEdge(X, id1, conf)
+                        # update S: 
+                        heapq.heappop(S)
+                    else: # id1 is matched to all possible tails
+                        processed.add(id1)
+                        break
+                else: # keep waiting for new tracks
+                    break # break while loop, but stay in for loop
+        
+            
+        # delete IDs that are empty
+        print("\n")
+        print("{} Ready: ".format(len(ready)))
+        print("{} Processsed: ".format(len(processed)))
+        print("{} pairs matched".format(matched))
+        print("Deleting {} empty tracks".format(len(empty_id)))
+        df = df.groupby("ID").filter(lambda x: (x["ID"].iloc[0] not in empty_id))
+        
+        # for debugging only
+        o.path = path
+        o.S = S
+        o.X = X
+        o.groupList = ids
+        o.empty_id = empty_id
+        o.ready = ready
+        
+        # replace IDs
+        newids = [v for _,v in path.items()]
+        m = dict(zip(path.keys(), newids))
+        df = df.replace({'ID': m})
+        df = df.sort_values(by=['Frame #','ID']).reset_index(drop=True)         
+        
+        print("Before DA: {} unique IDs".format(len(ids))) 
+        print("After DA: {} unique IDs".format(df.groupby("ID").ngroups))
+        print("True: {} unique IDs".format(len([id for id in ids if id<1000])))
+      
+        o.df = df
+        return o
