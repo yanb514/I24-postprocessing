@@ -8,7 +8,7 @@ import utils_vis as vis
 import scipy
 import matplotlib.pyplot as plt
 import torch
-from collections import defaultdict, deque
+from collections import defaultdict, deque, OrderedDict
 import heapq
 
 def dist_score(B, B_data, DIST_MEAS='xyw', DIRECTION=True):
@@ -1133,7 +1133,7 @@ class Node(object):
       
     
 loss = torch.nn.GaussianNLLLoss()   
-def stitch_objects_tsmn_online(o, THRESHOLD_C=50, VARX=0.03, VARY=0.03, time_out = 500):
+def stitch_objects_tsmn_online(o, THRESHOLD_C=3, VARX=0.03, VARY=0.03, time_out = 500):
         '''
         online version of stitch_objects_tsmn_ll
         track: dict with key: id, t, x, y
@@ -1145,37 +1145,6 @@ def stitch_objects_tsmn_online(o, THRESHOLD_C=50, VARX=0.03, VARY=0.03, time_out
              "fity": [vy, by]}
         tracks come incrementally as soon as they end
         '''
-        df = o.df
-        # sort tracks by end time - not for real deployment
-        groups = {k: v for k, v in df.groupby("ID")}
-        ids = list(groups.keys())
-        end_time = [max(car["Frame #"].values) for _,car in groups.items()]
-        order = np.argsort(end_time)
-        ordered_ids = [ids[i] for i in order]
-        ordered_tracks = [] # list of dictionaries
-        empty_id = set()
-        for id in ordered_ids:
-            car = groups[id]
-            t = car["Frame #"].values
-            x = (car.bbr_x.values + car.bbl_x.values)/2
-            y = (car.bbr_y.values + car.bbl_y.values)/2
-            track = {"id":id, "t": t, "x": x, "y": y} 
-            ordered_tracks.append(track)
-       
-        # Initialize
-        X = defaultdict(set) # exclusion graph
-        def _addEdge(graph,u,v):
-            # add undirected edge
-            graph[u].add(v)
-            graph[v].add(u)
-
-        curr = deque() # tracks in view. track ids. should be sorted by end_time
-        path = {} # oldid: newid. to store matching assignment
-        S = [] # min heap. {cost: (id1, id2)} cost to match start of id1 to end of id2
-        # E = [] # min heap. {cost: (id1, id2)} cost to match end of id2 to start of id1
-        ready = set() # set of ids indicate end of track ready to be matched
-        processed = set() # set of ids whose tails are matched
-        matched = 0 # count matched pairs
         # define cost
         def _getCost(track1, track2):
             '''
@@ -1185,8 +1154,8 @@ def stitch_objects_tsmn_online(o, THRESHOLD_C=50, VARX=0.03, VARY=0.03, time_out
             '''
             if track1['id']==track2['id']:
                 return -1
-            if (track1['id'] in empty_id) or (track1['id'] in empty_id):
-                return -1
+            # if (track1['id'] in empty_id) or (track1['id'] in empty_id):
+            #     return -1
             if track2["t"][0] < track1['t'][-1]: # if track2 starts before track1 ends
                 return 999
             if track2['t'][0] - track1['t'][-1] > time_out: # if track2 starts TIMEOUT after track1 ends
@@ -1203,22 +1172,81 @@ def stitch_objects_tsmn_online(o, THRESHOLD_C=50, VARX=0.03, VARY=0.03, time_out
             var = torch.transpose(torch.tensor([varx,vary]),0,1)
             nll = loss(input,target,var)
             return nll.item()
-                    
-        for track in ordered_tracks:
-            
-            path[track['id']] = track['id']
         
+        def _addEdge(graph,u,v):
+            # add undirected edge
+            graph[u].add(v)
+            graph[v].add(u)
+        
+        def _first(s):
+            '''Return the first element from an ordered collection
+               or an arbitrary element from an unordered collection.
+               Raise StopIteration if the collection is empty.
+            '''
+            return next(iter(s.values()))
+        
+        df = o.df
+        # sort tracks by start/end time - not for real deployment
+        
+        groups = {k: v for k, v in df.groupby("ID")}
+        ids = list(groups.keys())
+        ordered_tracks = deque() # list of dictionaries
+        all_tracks = {}
+        S = []
+        E = []
+        for id, car in groups.items():
+            t = car["Frame #"].values
+            x = (car.bbr_x.values + car.bbl_x.values)/2
+            y = (car.bbr_y.values + car.bbl_y.values)/2
+            notnan = ~np.isnan(x)
+            t,x,y = t[notnan], x[notnan],y[notnan]
+            if len(t)>1: # ignore empty or only has 1 frame
+                S.append([t[0], id])
+                E.append([t[-1], id])
+                track = {"id":id, "t": t, "x": x, "y": y} 
+                # ordered_tracks.append(track)
+                all_tracks[id] = track
+
+            
+        heapq.heapify(S) # min heap (frame, id)
+        heapq.heapify(E)
+        EE = E.copy()
+        while EE:
+            e, id = heapq.heappop(EE)
+            ordered_tracks.append(all_tracks[id])
+            
+        # Initialize
+        X = defaultdict(set) # exclusion graph
+        curr_tracks = deque() # tracks in view. list of tracks. should be sorted by end_time
+        path = {} # oldid: newid. to store matching assignment
+        C = [] # min heap. {cost: (id1, id2)} cost to match start of id1 to end of id2
+        past_tracks = set() # set of ids indicate end of track ready to be matched
+        processed = set() # set of ids whose tails are matched
+        matched = 0 # count matched pairs
+        
+        running_tracks = OrderedDict() # tracks that start but not end at e 
+        
+        for track in ordered_tracks:
+            print("\n")
+            
+            curr_id = track['id'] # last_track = track['id']
+            path[curr_id] = curr_id
+            print('at end of: ',curr_id)
+            
+            right = track['t'][-1] # right pointer: current time
+            
+            # get tracks that started but not end - used to define the window left pointer
+            while S and S[0][0] < right: # append all the tracks that already starts
+                started_time, started_id = heapq.heappop(S)
+                running_tracks[started_id] = started_time
+            print('running tracks: ', running_tracks.keys())
             # compute track statistics
             t,x,y = track['t'],track['x'],track['y']
             ct = np.nanmean(t)
-            notnan = ~np.isnan(x)
-            t,x,y = t[notnan], x[notnan],y[notnan]
 
-            if len(t)<1: 
-                empty_id.add(track['id'])
-                continue
-            
-            elif len(t)<2:
+            #     empty_id.add(track['id'])
+            #     continue
+            if len(t)<2:
                 v = np.sign(x[-1]-x[0]) # assume 1/-1 m/frame = 30m/s
                 b = x-v*ct # recalculate y-intercept
                 fitx = np.array([v,b[0]])
@@ -1233,73 +1261,72 @@ def stitch_objects_tsmn_online(o, THRESHOLD_C=50, VARX=0.03, VARY=0.03, time_out
             track['fitx'] = fitx
             track['fity'] = fity
             
-            window_end = track['t'][-1]
-            window_start = window_end - time_out
+            try: left = max(0,_first(running_tracks) - time_out)
+            except: left = 0
+            print("pointers :", left, right)
+            # remove out of sight tracks
             
-            # update curr, remove out of sight tracks
-            curr.append(track)
-
-            while curr[0]['t'][-1] < window_start:           
-                ready.add(curr.popleft()['id'])
+            while curr_tracks and curr_tracks[0]['t'][-1] < left:           
+                past_tracks.add(curr_tracks.popleft()['id'])
             
-            # compute score from every track in curr to track, update S
-            for curr_track in curr:
+            print("curr tracks: ",[i['id'] for i in curr_tracks])
+            print("past tracks: ", past_tracks)
+            # compute score from every track in curr to track, update Cost
+            for curr_track in curr_tracks:
                 if curr_track['id']==track['id']: continue
                 cost = _getCost(curr_track, track)
                 if cost > THRESHOLD_C:
                     _addEdge(X, curr_track['id'], track['id'])
                 elif cost > 0:
-                    if curr_track['id'] == 2 and track['id']==2000:
-                        print(2)
-                    heapq.heappush(S, (cost, (curr_track['id'], track['id'])))
-                # if curr_track['t'][-1] < window_start:
-                #     ready.add(curr_track['id'])
-            
+                    heapq.heappush(C, (cost, (curr_track['id'], track['id'])))
+
+            try: print("best cost:", C[0])
+            except: print(" **no cost")
             # start matching
             while True:
-                if len(S) == 0:
+                if len(C) == 0:
                     break
-                id1, id2 = S[0][1] # min cost pair
-                if id1 in ready: # if the former track is ready to be matched
+                id1, id2 = C[0][1] # min cost pair
+                if id1 in past_tracks: # if the former track is ready to be matched
                     # if path[id2]._find() == path[id1]._find(): 
                     if path[id2] == path[id1]: # already matched
-                        heapq.heappop(S) # remove from current pool
+                        heapq.heappop(C) # remove from current pool
                     elif id2 not in X[id1]: # match if no exlusion
-                        # print("match", id1, id2)
+                        print("match", id1, id2)
                         # path[id1]._union(path[id2]) # update id2's root to id1's
                         path[id2] = path[id1]
                         matched += 1
                         # update X: make id1's neighbors(conflicts) also id2's neighbors
                         conflicts1 = X[id1].copy()
                         conflicts2 = X[id2].copy()
-                        for conf in conflicts1:
-                            _addEdge(X, id2, conf)
-                        for conf in conflicts2:
-                            _addEdge(X, id1, conf)
-                        # update S: 
-                        heapq.heappop(S)
+                        for conf in conflicts1: _addEdge(X, id2, conf)  
+                        for conf in conflicts2: _addEdge(X, id1, conf)      
+                        # update cost: 
+                        heapq.heappop(C)
                     else: # id1 is matched to all possible tails
                         processed.add(id1)
                         break
                 else: # keep waiting for new tracks
                     break # break while loop, but stay in for loop
-        
+                    
+            curr_tracks.append(track)        
+            running_tracks.pop(curr_id) # remove tracks that ended
+            print("matched:", matched)
             
         # delete IDs that are empty
         print("\n")
-        print("{} Ready: ".format(len(ready)))
+        print("{} Ready: ".format(len(past_tracks)))
         print("{} Processsed: ".format(len(processed)))
         print("{} pairs matched".format(matched))
-        print("Deleting {} empty tracks".format(len(empty_id)))
-        df = df.groupby("ID").filter(lambda x: (x["ID"].iloc[0] not in empty_id))
+        # print("Deleting {} empty tracks".format(len(empty_id)))
+        # df = df.groupby("ID").filter(lambda x: (x["ID"].iloc[0] not in empty_id))
         
         # for debugging only
         o.path = path
-        o.S = S
+        o.C = C
         o.X = X
         o.groupList = ids
-        o.empty_id = empty_id
-        o.ready = ready
+        o.past_tracks = past_tracks
         
         # replace IDs
         newids = [v for _,v in path.items()]

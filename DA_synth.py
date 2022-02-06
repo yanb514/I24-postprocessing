@@ -62,7 +62,7 @@ class Data_Association():
         nfrags = 0
         for newid, oldids in inv_path.items():
             trueID = newid if newid<1000 else newid//1000
-            if (newid>=1000) and (newid not in self.empty_id) and (newid in self.ready):
+            if (newid>=1000) and (newid in self.past_tracks):
                 # FRAG[trueID].add(newid)
                 FRAG.add(newid)
                 nfrags += 1
@@ -167,8 +167,8 @@ if __name__ == "__main__":
     params = {
               "threshold": (0,0), # 0.3, 0.04 for tsmn
               "start": 0, # starting frame
-              "end": 300, # ending frame
-              "args": (3, 0.05, 0.02, 100) # THRESHOLD_C=50, VARX=0.03, VARY=0.03, time_out = 500
+              "end": 500, # ending frame
+              "args": (3, 0.05, 0.02, 10) # THRESHOLD_C=3, VARX=0.03, VARY=0.03, time_out = 500
               }
     
     da = Data_Association(raw_path, gt_path, params)
