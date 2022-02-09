@@ -40,9 +40,10 @@ class Data_Association():
    
     def stitch(self):
 
-        THRESHOLD_C, VARX, VARY, time_out = self.params["args"]
-        # self = uda.stitch_objects_tsmn_ll(self, THRESHOLD_C, VARX, VARY, time_out)
-        self = uda.stitch_objects_tsmn_online(self, THRESHOLD_C, VARX, VARY, time_out)
+        THRESHOLD_MIN, THRESHOLD_MAX, VARX, VARY, time_out = self.params["args"]
+        # self = uda.stitch_objects_tsmn_ll(self, THRESHOLD_MAX, VARX, VARY, time_out)
+        # self = uda.stitch_objects_tsmn_online(self, THRESHOLD_MIN, THRESHOLD_MAX, VARX, VARY, time_out)
+        self = uda.stitch_objects_tsmn_online_2(self, THRESHOLD_MAX, VARX, VARY, time_out)
         
         return
 
@@ -168,7 +169,7 @@ if __name__ == "__main__":
               "threshold": (0,0), # 0.3, 0.04 for tsmn
               "start": 0, # starting frame
               "end": 500, # ending frame
-              "args": (3, 0.05, 0.02, 10) # THRESHOLD_C=3, VARX=0.03, VARY=0.03, time_out = 500
+              "args": (1, 3, 0.05, 0.02, 100) # THRESHOLD_C=3, VARX=0.03, VARY=0.03, time_out = 500
               }
     
     da = Data_Association(raw_path, gt_path, params)
@@ -177,7 +178,7 @@ if __name__ == "__main__":
     da.stitch()    
     da.da_evaluate(synth=True) # set to False if absence of GT
 
-    da.visualize_BA(lanes=[1,2,3,4])
+    # da.visualize_BA(lanes=[1,2,3,4])
 
 
     

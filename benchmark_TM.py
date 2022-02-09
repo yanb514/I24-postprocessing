@@ -296,7 +296,7 @@ def pollute(df, AVG_CHUNK_LENGTH, OUTLIER_RATIO):
 # %%
 if __name__ == "__main__":
     data_path = r"E:\I24-postprocess\benchmark\TM_trajectory.csv"
-    df = pd.read_csv(data_path, nrows=1000)
+    df = pd.read_csv(data_path, nrows=10000)
     # df = df[df["ID"]==38]
     # print(len(df))
     df = standardize(df)
@@ -307,15 +307,15 @@ if __name__ == "__main__":
     # df = df[df["x"]>1000]
     # df = df[df["Frame #"]>1000]
 
-    df.to_csv(r"E:\I24-postprocess\benchmark\TM_2000_GT.csv", index=False) # save the ground truth data
+    df.to_csv(r"E:\I24-postprocess\benchmark\TM_10000_GT.csv", index=False) # save the ground truth data
     # plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)
     #%%
     df = pollute(df, AVG_CHUNK_LENGTH=30, OUTLIER_RATIO=0.2) # manually perturb (downgrade the data)
 
-    df.to_csv(r"E:\I24-postprocess\benchmark\TM_2000_pollute.csv", index=False) # save the downgraded data
+    df.to_csv(r"E:\I24-postprocess\benchmark\TM_10000_pollute.csv", index=False) # save the downgraded data
     print("saved.")
     # %% visualize in time-space diagram
-    # plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)
+    plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)
     
     # %% examine an individual track by its ID
     # car = df[df["ID"]==38]
