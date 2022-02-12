@@ -43,8 +43,11 @@ class Experiment():
         #         print(carid)
         #     if car.lane.nunique()>1:
         #         print(carid)
-        self.gt = df[df["ID"]==params["carid"]]
-        print(len(self.gt))
+        try:
+            self.gt = df[df["ID"]==params["carid"]]
+        except: 
+            self.gt = df
+        print("total measurements of df:", len(self.gt))
         self.gt = self.gt.reset_index(drop=True)
         
         self.pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
@@ -62,10 +65,10 @@ class Experiment():
             self.N = params["N"] # as default length for evaluate_single
             self.gt = self.gt[:self.N]
         self.meas = self.gt.copy()
-        
+        print("total measurements rectified:", len(self.meas))
         # states to be plotted
-        self.states = ["x","y","speed","speed_x","speed_y","acceleration_x","acceleration_y","jerk_x","jerk_y","theta","acceleration","jerk"]
-        # self.states = ["x","y","speed","acceleration","jerk","theta"]
+        # self.states = ["x","y","speed","speed_x","speed_y","acceleration_x","acceleration_y","jerk_x","jerk_y","theta","acceleration","jerk"]
+        self.states = ["x","speed_x","acceleration_x","jerk_x"]
         self.units = {
                   **dict.fromkeys(['x', 'y'], "m"), 
                   **dict.fromkeys(['speed', 'speed_x', 'speed_y'], 'm/s'),
@@ -206,7 +209,7 @@ class Experiment():
         rec = self.meas.copy()
         # rec = opt.rectify_single_car(rec, self.params["args"])
         start = time.time()
-        rec = opt.rectify_2d(rec, width, length, self.params["args"])
+        rec = opt.rectify_2d(rec, width, length, self.params["args"], reg=self.params["reg"])
         print("Rectify_2d: ", time.time()-start)
         self.rec = rec
 
@@ -225,8 +228,8 @@ class Experiment():
         width = np.nanmedian(width_array)
         length = np.nanmedian(length_array)
         
-        lamx,lamy  = self.params["args"]
-        args = (lamx, lamy, self.params["PH"], self.params["IH"]) #lam, order, PH, IH
+        lamx,lamy, order  = self.params["args"]
+        args = (lamx, lamy, self.params["PH"], self.params["IH"], order) #lam, order, PH, IH
         
         rec = self.meas.copy()
         start = time.time()
@@ -299,12 +302,11 @@ class Experiment():
         pert = []
         reg = []
         dt = 1/30
-        
-        lam_x, lam_y = self.params["args"]
+
         if axis == "x":
-            lambdas = np.logspace(-1,1.5, num=20)
+            lambdas = np.logspace(-5,1, num=20)
         else:
-            lambdas = np.logspace(-3,1, num=20)
+            lambdas = np.logspace(-5,1, num=20)
             # lambdas = np.arange(1e-3,5,0.2)
         # lambdas = [1]
         for lam in lambdas:
@@ -352,7 +354,7 @@ class Experiment():
         
         return
             
-        
+     
     def runtime_analysis(self):
 
         run_time = []
@@ -407,32 +409,34 @@ class Experiment():
     
 if __name__ == "__main__":
     # N = list(np.arange(10,1400, 50)) # number of frames
-    N = 500
+    N = 1000
     file_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
     
-    params = {"missing": 0, #np.arange(0,0.7,0.1), # missing rate
+    params = {"missing": 0.2, #np.arange(0,0.7,0.1), # missing rate
                "noise_x": 0.2, #np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
                "noise_y": 0.02, #.1*np.arange(0,0.7,0.1),
               "N": N,
               "epoch": 1, # number of random runs of generate
-                "args" : (1e0,1e-1), # lamx,lamy - no l1 reg
-              # "args" : (7,7, 1), # deltax, deltay, lam - for l1 reg (delta=0 for no outliers)
-              "carid": 16, # 16, 38, for lane change
-              "nrows": 20000,
-              "AVG_CHUNK_LENGTH": 0,
-              "OUTLIER_RATIO": 0,
-              "PH": 200,
-              "IH": 10
+              "reg": "l1",
+               # "args" : (1e1,1e1), # lamx,lamy - no l1 reg
+                "args" : (1e1, 1e1,1e6), # lamx, lamy, delta - for l1 reg (delta has to be large for optimal solver status)
+                "carid": 16, # 16, 38, for lane change
+              "nrows": 30000,
+              "AVG_CHUNK_LENGTH": 30,
+              "OUTLIER_RATIO": 0.2,
+              "PH": 100,
+              "IH": 5
         }
     
     ex = Experiment(file_path, params)
-    # ex.evaluate_single()
+    ex.evaluate_single()
     # ex.grid_evaluate()
     # ex.pareto_curve(axis="y")
-    ex.receding_horizon_rectify()
+    # ex.receding_horizon_rectify()
+    # ex.df = opt.rectify_sequential(ex.meas, (1e1, 1e1, 200, 100))
     if isinstance(N,list): # trigger run time analysis
         ex.runtime_analysis()
     #     # %%
-    ex.visualize()
+    # ex.visualize()
 
     

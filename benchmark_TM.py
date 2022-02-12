@@ -16,7 +16,7 @@ from tqdm import tqdm
 import random
 from scipy.signal import savgol_filter
 
-dt = 1/100
+dt = 1/30
 pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
 def smooth(y, box_pts):
     box = np.ones(box_pts)/box_pts
@@ -158,73 +158,63 @@ def generate_meas(car):
     x0 = car.Distance.values[0]
     y0 = car.y.values[0]
     theta=car.theta.values
-    # if len(theta)//2>0: win = len(theta)-2
-    # else: win = len(theta)-1
-    try:
-        theta = savgol_filter(theta, len(theta)//2-1, 3) # TODO: smoothing window to be testeds
-        theta = savgol_filter(theta, len(theta)//2-1, 3)
-    except:
-        theta = savgol_filter(theta, len(theta)//2, 3)
-        theta = savgol_filter(theta, len(theta)//2, 3)
-    # theta = savgol_filter(theta, len(theta)//2-1, 3)
+
+    win = min(500,len(theta)//2)
+    if win%2 == 0:
+        win += 1
+    theta = savgol_filter(theta, win, 3)
+
     v=car.speed.values
-    a = np.diff(v)/dt
-    j = np.diff(a)/dt
-    j = np.clip(j,-5,5)
-    
-    # highest_order_dynamics = smooth(highest_order_dynamics, 300)
-    
-    j = np.append(j, np.zeros(2))
-    if len(j)%2 > 0: # odd number
-        win = len(j)-2
-    else:
-        win = len(j)-1
+    # a = np.diff(v)/dt
+    # j = np.diff(a)/dt
+    # j = np.clip(j,-5,5)
+    # j = np.append(j, np.zeros(2))
 
-    highest_order_dynamics = savgol_filter(j, win, 3)
+    # highest_order_dynamics = savgol_filter(j, win, 3)
     
-    # Yre,x,y,a = opt.generate(w,l,x0, y0, theta, v, outputall=True)
+    Yre,x,y,a = opt.generate(w,l,x0, y0, theta, v, outputall=True)
 
-    initial_state = [x0, y0, v[0], a[0]] 
-    x,y,theta,v,a,j = opt.generate_2d(initial_state, highest_order_dynamics, theta, dt, order)
+    # initial_state = [x0, y0, v[0], a[0]] 
+    # x,y,theta,v,a,j = opt.generate_2d(initial_state, highest_order_dynamics, theta, dt, order)
     car["x"] = x
     car["y"] = y
     car["speed"] = v
     car["acceleration"] = a
-    car["jerk"] = j
+    # car["jerk"] = j
     car["theta"] = theta
     
-    vx,vy,ax,ay,jx,jy = opt.decompose_2d(car)
-    jx[-3:] = 0
-    jy[-3:] = 0
-    jx = savgol_filter(jx, win, 3)
-    jy = savgol_filter(jy, win, 3)
+    # vx,vy,ax,ay,jx,jy = opt.decompose_2d(car)
+    # jx[-3:] = 0
+    # jy[-3:] = 0
+    # jx = savgol_filter(jx, win, 3)
+    # jy = savgol_filter(jy, win, 3)
     
-    x,vx,ax,jx = opt.generate_1d([x[0],vx[0],ax[0]], jx, dt, order)
-    y,vy,ay,jy = opt.generate_1d([y[0],vy[0],ay[0]], jy, dt, order)
+    # x,vx,ax,jx = opt.generate_1d([x[0],vx[0],ax[0]], jx, dt, order)
+    # y,vy,ay,jy = opt.generate_1d([y[0],vy[0],ay[0]], jy, dt, order)
     
-    theta = np.arctan2(vy,vx)
-    theta[theta < 0] += 2*np.pi
+    # theta = np.arctan2(vy,vx)
+    # theta[theta < 0] += 2*np.pi
     
-    v = np.sqrt(vx**2, vy**2)
-    a = np.diff(v)/dt
-    a = np.append(a,a[-1])
-    j = np.diff(a)/dt
-    j = np.append(j, 0)
-    Y = opt.generate_box(w, l, x, y, theta)
-    car["x"] = x
-    car["y"] = y
-    car["speed"] = v
-    car["acceleration"] = a
-    car["jerk"] = j
-    car["theta"] = theta
-    car["speed_x"] = vx
-    car["acceleration_x"] = ax
-    car["jerk_x"] = jx
-    car["speed_y"] = vy
-    car["acceleration_y"] = ay
-    car["jerk_y"] = jy
+    # v = np.sqrt(vx**2, vy**2)
+    # a = np.diff(v)/dt
+    # a = np.append(a,a[-1])
+    # j = np.diff(a)/dt
+    # j = np.append(j, 0)
+    # Y = opt.generate_box(w, l, x, y, theta)
+    # car["x"] = x
+    # car["y"] = y
+    # car["speed"] = v
+    # car["acceleration"] = a
+    # car["jerk"] = j
+    # car["theta"] = theta
+    # car["speed_x"] = vx
+    # car["acceleration_x"] = ax
+    # car["jerk_x"] = jx
+    # car["speed_y"] = vy
+    # car["acceleration_y"] = ay
+    # car["jerk_y"] = jy
     
-    car.loc[:,pts] = Y 
+    car.loc[:,pts] = Yre
     
     return car
     
@@ -249,7 +239,8 @@ def preprocess(df):
             'vel_x','vel_y','Generation method',
             'fbrx','fbry','fblx','fbly','bbrx','bbry','bblx','bbly','ftrx','ftry','ftlx','ftly','btrx','btry','btlx','btly',
             'fbr_x','fbr_y','fbl_x','fbl_y','bbr_x','bbr_y','bbl_x','bbl_y',
-            'direction','camera','acceleration','speed','x','y','theta','width','length','height',"lane","jerk","jerk_x","jerk_y","acceleration_x","acceleration_y"]
+            'direction','camera','acceleration','speed','x','y','theta','width','length','height',"lane"]
+    # "jerk","jerk_x","jerk_y","acceleration_x","acceleration_y"
     df = df.reindex(columns=col)
 
     df = df.sort_values(by=['Frame #','ID']).reset_index(drop=True)         
@@ -296,29 +287,44 @@ def pollute(df, AVG_CHUNK_LENGTH, OUTLIER_RATIO):
 # %%
 if __name__ == "__main__":
     data_path = r"E:\I24-postprocess\benchmark\TM_trajectory.csv"
-    df = pd.read_csv(data_path, nrows=10000)
-    # df = df[df["ID"]==38]
+    nrows = 8000
+    df = pd.read_csv(data_path, nrows = nrows)
+    # df = df[df["ID"]==5]
     # print(len(df))
     df = standardize(df)
     df = calc_state(df)
     df = preprocess(df)
     
     # you can select some time-space window such that the trajectory lengths are similar (run plot_time_space to visualize)
+    print("min/max frame:",min(df["Frame #"].values),max(df["Frame #"].values))
+    print("min/max x:",min(df["x"].values),max(df["x"].values))
+    
     # df = df[df["x"]>1000]
     # df = df[df["Frame #"]>1000]
 
-    df.to_csv(r"E:\I24-postprocess\benchmark\TM_10000_GT.csv", index=False) # save the ground truth data
+    df.to_csv(r"E:\I24-postprocess\benchmark\TM_{}_GT_nojerk.csv".format(nrows), index=False) # save the ground truth data
     # plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)
     #%%
     df = pollute(df, AVG_CHUNK_LENGTH=30, OUTLIER_RATIO=0.2) # manually perturb (downgrade the data)
 
-    df.to_csv(r"E:\I24-postprocess\benchmark\TM_10000_pollute.csv", index=False) # save the downgraded data
+    df.to_csv(r"E:\I24-postprocess\benchmark\TM_{}_pollute_nojerk.csv".format(nrows), index=False) # save the downgraded data
     print("saved.")
     # %% visualize in time-space diagram
-    plot_time_space(df, lanes=[1], time="Frame #", space="x", ax=None, show =True)
-    
+    # plot_time_space(df, lanes=[1,2,3,4], time="Frame #", space="x", ax=None, show =True)
+    # plt.figure()
+    # plt.plot(df['Frame #'].values, df['y'].values)
+    # plt.figure()
+    # plt.plot(df['Frame #'].values, df['jerk'].values)
+    # plt.figure()
+    # plt.plot(df['Frame #'].values, df['theta'].values)
+    # plt.figure()
+    # plt.plot(df['x'].values, df['y'].values)
     # %% examine an individual track by its ID
     # car = df[df["ID"]==38]
     # vis.dashboard([car],["x","y","speed","acceleration","jerk","theta","jerk_x","jerk_y"],["gt"])
     # vis.plot_track_df(car[0:100])
     
+    # cars = df.groupby("ID")
+    # for carid, car in cars:
+    #     if car.lane.nunique()>1:
+    #         print(carid)

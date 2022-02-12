@@ -7,8 +7,9 @@ from tqdm import tqdm
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from cvxopt import matrix, solvers, sparse,spdiag,spmatrix
-import cvxopt.lapack as cla
-from scipy.interpolate import InterpolatedUnivariateSpline  
+# import cvxopt.lapack as cla
+# from scipy.interpolate import InterpolatedUnivariateSpline  
+import time
 
 # import utils_vis as vis
 solvers.options['show_progress'] = False
@@ -233,11 +234,12 @@ def rectify_1d(df, args, axis):
     # xhat = +matrix(x)
     # cla.gesv(+matrix(A), xhat) # solve AX=B, change b in-place
     
-    # QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
-    Q = 2*(HH+DD)
-    p = -2*H.trans() * matrix(x)
+    # QP formulation with sparse matrix min 1/M||y-x||_2^2 + \lam/N ||Dx||_2^2
+    M = len(idx) 
+    Q = 2*(HH/M+DD/N)
+    p = -2*H.trans() * matrix(x)/M
     sol=solvers.qp(P=Q, q=p)
-    # print(sol["status"])
+    print(sol["status"])
     
     # extract result
     xhat = sol["x"][:N]
@@ -248,9 +250,10 @@ def rectify_1d(df, args, axis):
 
 def rectify_1d_l1(df, args, axis):
     '''                        
-    solve for ||y-x-e||_2^2 + \lam ||Dx||_2^2 + \delta||e||_1
+    solve for ||y-Hx-e||_2^2 + \lam ||Dx||_2^2 + \delta||e||_1
     convert to quadratic programming with linear inequlity constraints
     handle sparse outliers in data
+    rewrite l1 penalty to linear constraints https://math.stackexchange.com/questions/391796/how-to-expand-equation-inside-the-l2-norm
     '''  
     # get data
     lam, delta = args
@@ -284,13 +287,13 @@ def rectify_1d_l1(df, args, axis):
 
     H = I[idx,:]
     HH = H.trans()*H
-    Q = 2*sparse([[HH+DD,H*I,spmatrix([], [], [], (M,N))], 
-                [I*H.trans(),IM,OM], 
-                [spmatrix([], [], [], (N,M)),OM,OM]]) 
+    Q = 2*sparse([[HH/M+DD/N,H/M,-H/M], # first column of Q
+                [H.trans()/M,IM/M, -H*H.trans()/M], 
+                [-H.trans()/M,-H*H.trans()/M,IM/M]]) 
     
-    p = sparse([-2*H.trans()*matrix(x), -2*matrix(x), matrix(delta, (M,1))])
+    p = 1/M * sparse([-2*H.trans()*matrix(x), -2*matrix(x)+delta, 2*matrix(x)+delta])
 
-    G = sparse([[H*O,H*O],[IM,-IM],[-IM,-IM]])
+    G = sparse([[H*O,H*O],[-IM,OM],[OM,-IM]])
     h = spmatrix([], [], [], (2*M,1))
     sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
     
@@ -306,22 +309,22 @@ def rectify_1d_l1(df, args, axis):
     
     return xhat, vhat, ahat, jhat
 
-def rectify_2d(df, w,l,args):
+def rectify_2d(df, w,l,args,reg = "l2"):
     '''
     rectify on x and y component independently
     '''
-    try:
-        lamx, lamy = args
-    except: lamx, lamy, delta = args
     df.loc[:,'y'] = (df["bbr_y"].values + df["bbl_y"].values)/2
     df.loc[:,'x'] = (df["bbr_x"].values + df["bbl_x"].values)/2
     
-    if len(args) == 2:
+    if reg == "l2":
+        lamx, lamy = args
         xhat, vxhat, axhat, jxhat = rectify_1d(df, lamx, "x")
         yhat, vyhat, ayhat, jyhat = rectify_1d(df, lamy, "y")
-    elif len(args) == 3:
+    elif reg == "l1": 
+        lamx, lamy, delta = args
         xhat, vxhat, axhat, jxhat = rectify_1d_l1(df, (lamx, delta), "x")
         yhat, vyhat, ayhat, jyhat = rectify_1d_l1(df, (lamy, delta), "y")
+        
         
     # calculate the states
     vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed (N-1)
@@ -454,23 +457,16 @@ def rectify_single_car(car, args):
     width = np.nanmedian(width_array)
     length = np.nanmedian(length_array)
     
-    # car = box_fitting(car, width, length) # modify x and y
-    # car = utils.mark_outliers(car)
-    # print(pts)
-    # car.loc[car["Generation method"]=="outlier1",pts] = np.nan
-    # print("outlier ratio: {}/{}".format( np.count_nonzero(~np.isnan(car.bbr_y.values)),len(car)))
-    # car = decompose_2d(car, write_to_df=True)
-
-    # short tracks
-    # if np.count_nonzero(~np.isnan(car.bbr_y.values)) < 4:
-    #     print("Short track ", car.ID.values[0])
-    #     return car
-    car = rectify_2d(car, width, length,args) # modify x, y, speed, acceleration, jerk, boxes coords
+    # car = rectify_2d(car, width, length,args) # modify x, y, speed, acceleration, jerk, boxes coords
+    car = receding_horizon_2d(car, width, length, args)
     return car
 
 def rectify_sequential(df, args):
-    
+    print("{} total trajectories, {} total measurements".format(df['ID'].nunique(), len(df)))
+    start = time.time()
     df = df.groupby('ID').apply(rectify_single_car, args=args).reset_index(drop=True)
+    end = time.time()
+    print('total time rectify_sequential: ',end-start)
     return df
 
 # =================== RECEDING HORIZON RECTIFICATION =========================
@@ -484,13 +480,16 @@ def receding_horizon_1d(df, args, axis="x"):
     QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
     '''
     # get data
-    lam, PH, IH = args
+    lam, PH, IH, order = args
     
     x = df[axis].values
     n_total = len(x)          
 
     # Define constraints for the first PH
     idx = [i.item() for i in np.argwhere(~np.isnan(x[:PH])).flatten()]
+    if len(idx) < 2: # not enough measurements
+        print('not enough measurements in receding_horizon_1d')
+        return
     xx = x[:PH]
     xx = xx[idx]
 
@@ -503,7 +502,10 @@ def receding_horizon_1d(df, args, axis="x"):
     # sol: xhat = (I+delta D'D)^(-1)x
     I = spmatrix(1.0, range(PH), range(PH))
     H = I[idx,:]
-    DD = lam*D4.trans() * D4
+    if order ==3:
+        DD = lam*D3.trans() * D3
+    else:
+        DD = lam*D4.trans() * D4
     HH = H.trans() * H
     
     # QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
@@ -521,10 +523,10 @@ def receding_horizon_1d(df, args, axis="x"):
     afinal = matrix([])
     jfinal = matrix([])
     
-    n_win = (n_total-PH+IH)//IH
+    n_win = max(0,(n_total-PH+IH)//IH)
     last = False
     
-    cs = 4 # new constraint steps
+    cs = order # new constraint steps
     for i in range(n_win+1):
         # print(i,'/',n_total, flush=True)
         if i == n_win: # last
@@ -541,7 +543,7 @@ def receding_horizon_1d(df, args, axis="x"):
         D2 = D2[:nn-2 ,:nn]
         D3 = D3[:nn-3 ,:nn]
         D4 = D4[:nn-4 ,:nn]
-        DD = lam*D4.trans() * D4
+        DD = lam*D3.trans() * D3 if order ==3 else lam*D4.trans() * D4
         HH = H.trans() * H
 
         Q = 2*(HH+DD)
@@ -580,12 +582,14 @@ def receding_horizon_2d(df, w,l,args):
     '''
     '''
     # get data
-    lamx, lamy, PH, IH = args
+    # curr_id = df['ID'].values[0]
+    # print("RH 2d: ", curr_id, len(df))
+    lamx, lamy, PH, IH, order = args
     df.loc[:,'y'] = (df["bbr_y"].values + df["bbl_y"].values)/2
     df.loc[:,'x'] = (df["bbr_x"].values + df["bbl_x"].values)/2
     
-    xhat,vxhat,axhat,jxhat = receding_horizon_1d(df, (lamx, PH, IH), "x")
-    yhat,vyhat,ayhat,jyhat = receding_horizon_1d(df, (lamy, PH, IH), "y")
+    xhat,vxhat,axhat,jxhat = receding_horizon_1d(df, (lamx, PH, IH, order), "x")
+    yhat,vyhat,ayhat,jyhat = receding_horizon_1d(df, (lamy, PH, IH, order), "y")
     
     # calculate the states
     vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed

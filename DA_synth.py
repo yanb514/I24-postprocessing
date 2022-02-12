@@ -14,12 +14,13 @@ Data association class consists of
 """
 import numpy as np
 import utils
-import pandas as pd
+# import pandas as pd
 import utils_vis as vis
 import matplotlib.pyplot as plt
 import utils_evaluation as ev
 import utils_data_association as uda
 from collections import defaultdict
+import time
 
 
 class Data_Association():
@@ -32,19 +33,25 @@ class Data_Association():
         self.params = params 
 
         self.df = utils.read_data(data_path)
-        self.df = self.df[(self.df["Frame #"] >= params["start"]) & (self.df["Frame #"] <= params["end"])]
+        try:
+            self.df = self.df[(self.df["Frame #"] >= params["start"]) & (self.df["Frame #"] <= params["end"])]
+        except: pass
         self.original = self.df.copy()
+        print("Total Frames: ", max(self.df["Frame #"].values)-min(self.df["Frame #"].values))
         self.gt = utils.read_data(gt_path)
-        self.gt = self.gt[(self.gt["Frame #"] >= params["start"]) & (self.gt["Frame #"] <= params["end"])]
-        
+        try:
+            self.gt = self.gt[(self.gt["Frame #"] >= params["start"]) & (self.gt["Frame #"] <= params["end"])]
+        except: pass
    
     def stitch(self):
 
         THRESHOLD_MIN, THRESHOLD_MAX, VARX, VARY, time_out = self.params["args"]
         # self = uda.stitch_objects_tsmn_ll(self, THRESHOLD_MAX, VARX, VARY, time_out)
         # self = uda.stitch_objects_tsmn_online(self, THRESHOLD_MIN, THRESHOLD_MAX, VARX, VARY, time_out)
-        self = uda.stitch_objects_tsmn_online_2(self, THRESHOLD_MAX, VARX, VARY, time_out)
-        
+        # start = time.time()
+        self = uda.stitch_objects_tsmn_online_3(self, THRESHOLD_MAX, VARX, VARY, time_out)
+        # end = time.time()
+        # print('total runtime: ', end-start)
         return
 
     def da_evaluate(self, synth=True):
@@ -162,19 +169,19 @@ class Data_Association():
     
 if __name__ == "__main__":
 
-    raw_path = r"E:\I24-postprocess\benchmark\TM_1000_pollute.csv"
-    gt_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
+    raw_path = r"E:\I24-postprocess\benchmark\TM_5000_pollute_nojerk.csv"
+    gt_path = r"E:\I24-postprocess\benchmark\TM_5000_GT_nojerk.csv"
     
     params = {
               "threshold": (0,0), # 0.3, 0.04 for tsmn
-              "start": 0, # starting frame
-              "end": 500, # ending frame
-              "args": (1, 3, 0.05, 0.02, 100) # THRESHOLD_C=3, VARX=0.03, VARY=0.03, time_out = 500
+               # "start": 0, # starting frame
+               # "end": 1000, # ending frame
+              "args": (1, 3, 0.05, 0.02, 80) # THRESHOLD_C=3, VARX=0.03, VARY=0.03, time_out = 500
               }
     
     da = Data_Association(raw_path, gt_path, params)
 
-    # da.df = da.df[da.df["ID"].isin([66,66008,66009])] # for debugging purposes
+    da.df = da.df[da.df["ID"].isin([66,66008,66009])] # for debugging purposes
     da.stitch()    
     da.da_evaluate(synth=True) # set to False if absence of GT
 

@@ -1,6 +1,6 @@
-# A complete working Python
-# program to demonstrate all
-# insertion methods
+import heapq
+from collections import defaultdict,OrderedDict
+import numpy as np
 
 # A linked list node
 class Node:
@@ -157,3 +157,154 @@ class DoublyLinkedList:
             # last = node
             node = node.next
         return s
+
+
+
+class UndirectedGraph(defaultdict):
+    def __init__(self):
+        super().__init__(set)
+        
+    # add two-way edge
+    def _addEdge(self,u,v):
+        self[u].add(v)
+        self[v].add(u)
+        
+    # remove node u and all edges to/from it
+    def _remove(self, u):
+        neighbors = self[u]
+        for v in neighbors:
+            self[v].remove(u)
+        self.pop(u)
+        
+    # make u and v's neighbors the union of their neighbors
+    def _union(self, u, v):
+        nei_u = self[u]
+        nei_v = self[v]
+        
+        u_v = nei_u-nei_v
+        for w in u_v:
+            self._addEdge(w,v)
+            
+        v_u = nei_v-nei_u
+        for w in v_u:
+            self._addEdge(w,u)
+            
+    def _printGraph(self):
+        for key,val in self.items():
+            print(key, val)
+ 
+class Fragment:
+    # Constructor to create a new fragment
+    def __init__(self, id,t,x,y):
+        self.ready = False # if tail is ready to be matched
+        self.id = id
+        self.t = t
+        self.x = x
+        self.y = y
+        self.suc = [] # tail matches to [(cost, Fragment_obj)] - minheap
+        self.pre = [] # head matches to [(cost, Fragment_obj)] - minheap
+        self.conflicts_with = set() # keep track of conflicts - bi-directional
+    
+    def _computeStats(self):
+        t,x,y = self.t, self.x, self.y
+        ct = np.nanmean(t)
+        if len(t)<2:
+            v = np.sign(x[-1]-x[0]) # assume 1/-1 m/frame = 30m/s
+            b = x-v*ct # recalculate y-intercept
+            fitx = np.array([v,b[0]])
+            fity = np.array([0,y[0]])
+        else:
+            xx = np.vstack([t,np.ones(len(t))]).T # N x 2
+            fitx = np.linalg.lstsq(xx,x, rcond=None)[0]
+            fity = np.linalg.lstsq(xx,y, rcond=None)[0]
+        self.fitx = fitx
+        self.fity = fity
+        return
+
+    # add successor to fragment with matching cost
+    def _addSuc(self, cost, fragment):
+        heapq.heappush(self.suc, (cost, fragment))
+    # add predecessor
+    def _addPre(self, cost, fragment):
+        heapq.heappush(self.pre, (cost, fragment))
+       
+    def _getFirstSuc(self):
+        # return the best successor of self if exists
+        # otherwise return None
+        # heappop empty fragments from self.suc
+        while self.suc and self.suc[0][1].id is None: # get the first non-empty fragment
+            _, suc = heapq.heappop(self.suc)
+        try: suc = self.suc[0][1] # self.suc[0] is None
+        except: suc = None
+        return suc
+    
+    def _getFirstPre(self):
+        # return the best successor of self if exists
+        # otherwise return None
+        # heappop empty fragments from self.suc
+        while self.pre and self.pre[0][1].id is None: # get the first non-empty fragment
+            _, pre = heapq.heappop(self.pre)
+        try: pre = self.pre[0][1]
+        except: pre = None
+        return pre
+    
+    # clear the reference once out of sight or matched
+    def _delete(self):
+        self.ready = False # if tail is ready to be matched
+        self.id = None
+        self.t = None
+        self.x = None
+        self.y = None
+        self.suc = None # tail matches to [(cost, Fragment_obj)] - minheap
+        self.pre = None # head matches to [(cost, Fragment_obj)] - minheap
+        self.conflicts_with = None
+        # del self.id, self.t, self.x
+       
+    # add bi-directional conflicts
+    def _addConflict(self, fragment):
+        if fragment.id: # only add if fragment is valid (not out of view)
+            self.conflicts_with.add(fragment)
+            fragment.conflicts_with.add(self)
+        return
+    
+    # union conflicted neighbors, set head's pre to [], delete self
+    @classmethod
+    def _matchTailHead(cls, u,v):
+        # match u's tail to v's head
+        # 1. add u's conflicts to v -> contagious conflicts!
+        nei_u = u.conflicts_with
+        nei_v = v.conflicts_with     
+        u_v = nei_u-nei_v
+        for w in u_v:
+            v._addConflict(w)      
+        # v_u = nei_v-nei_u
+        # for w in v_u:
+        #     u._addEdge(u)
+            
+        # 2. remove all u's succ from u -> remove all from v's pre
+        v.pre = None
+        # 3. delete u
+        u._delete()
+        return
+    
+    # remove node u and all edges to/from it
+    def _remove(self, u):
+        neighbors = self[u]
+        for v in neighbors:
+            self[v].remove(u)
+        self.pop(u)
+
+
+        
+if __name__ == "__main__":
+    ug = UndirectedGraph()
+    ug._addEdge(1,2)
+    ug._addEdge(3,4)
+    ug._addEdge(4,5)
+    
+    # ug._printGraph()
+    ug._union(2,4)
+    ug._printGraph()
+    
+    ug._remove(4)
+    ug._printGraph()
