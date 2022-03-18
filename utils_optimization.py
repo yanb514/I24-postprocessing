@@ -202,42 +202,73 @@ def _blocdiag(X, n):
             mat.append(row)
         return sparse(mat)
 
-  
+
+def _getQPMatrices(x, t, args, reg="l2"):
+    '''
+    turn ridge regression (reg=l2) 
+    1/M||y-x||_2^2 + \lam2/N ||Dx||_2^2
+    and elastic net regression (reg=l1)
+    1/M||y-Hx-e||_2^2 + \lam2/N ||Dx||_2^2 + \lam1/M||e||_1
+    to QP form
+    input:  x: data array with missing data
+            t: array of timestamps (no missing)
+    return: Q, p, D1, D2, D3, H, (G, h if l1)
+    TODO: uneven timestamps
+    '''
+    # get data
+    N = len(x)
+    
+    # impute missing data 
+    idx = [i.item() for i in np.argwhere(~np.isnan(x)).flatten()]
+    x = x[idx]
+    M = len(x)
+    
+    # differentiation operator
+    D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
+    D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
+    D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), N) * (1/dt**3)
+    
+    if reg == "l2":
+        lam2 = args
+        DD = lam2 * D3.trans() * D3
+        # sol: xhat = (I+delta D'D)^(-1)x
+        I = spmatrix(1.0, range(N), range(N))
+        H = I[idx,:]
+        DD = lam2*D3.trans() * D3
+        HH = H.trans() * H
+        Q = 2*(HH/M+DD/N)
+        p = -2*H.trans() * matrix(x)/M
+        return Q, p, D1, D2, D3, H, N, M
+    else:
+        lam2, lam1 = args
+        DD = lam2 * D3.trans() * D3
+        # define matices
+        I = spmatrix(1.0, range(N), range(N))
+        IM = spmatrix(1.0, range(M), range(M))
+        O = spmatrix([], [], [], (N,N))
+        OM = spmatrix([], [], [], (M,M))
+        H = I[idx,:]
+        HH = H.trans()*H
+
+        Q = 2*sparse([[HH/M+DD/N,H/M,-H/M], # first column of Q
+                    [H.trans()/M,IM/M, -H*H.trans()/M], 
+                    [-H.trans()/M,-H*H.trans()/M,IM/M]]) 
+        
+        p = 1/M * sparse([-2*H.trans()*matrix(x), -2*matrix(x)+lam1, 2*matrix(x)+lam1])
+        G = sparse([[H*O,H*O],[-IM,OM],[OM,-IM]])
+        h = spmatrix([], [], [], (2*M,1))
+        return Q, p, D1, D2, D3, H, G, h, N,M
+
 def rectify_1d(df, args, axis):
     '''                        
     solve solve for ||y-x||_2^2 + \lam ||Dx||_2^2
     args: lam
     axis: "x" or "y"
     '''  
-    # get data
-    lam = args
+    # get data and matrices
     x = df[axis].values
-    N = len(x)
-          
-    idx = [i.item() for i in np.argwhere(~np.isnan(x)).flatten()]
-    x = x[idx]
-
-    # differentiation operator
-    D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
-    D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
-    D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), N) * (1/dt**3)
-    # D4 = _blocdiag(matrix([1,-4,6,-4,1],(1,5), tc="d"), N) * (1/dt**4)
+    Q, p, D1, D2, D3, H, N,M = _getQPMatrices(x, 0, args, reg="l2")
     
-    # sol: xhat = (I+delta D'D)^(-1)x
-    I = spmatrix(1.0, range(N), range(N))
-    H = I[idx,:]
-    DD = lam*D3.trans() * D3
-    HH = H.trans() * H
-    
-    # analytical solution
-    # A = I + DD
-    # xhat = +matrix(x)
-    # cla.gesv(+matrix(A), xhat) # solve AX=B, change b in-place
-    
-    # QP formulation with sparse matrix min 1/M||y-x||_2^2 + \lam/N ||Dx||_2^2
-    M = len(idx) 
-    Q = 2*(HH/M+DD/N)
-    p = -2*H.trans() * matrix(x)/M
     sol=solvers.qp(P=Q, q=p)
     print(sol["status"])
     
@@ -250,57 +281,19 @@ def rectify_1d(df, args, axis):
 
 def rectify_1d_l1(df, args, axis):
     '''                        
-    solve for ||y-Hx-e||_2^2 + \lam ||Dx||_2^2 + \delta||e||_1
+    solve for ||y-Hx-e||_2^2 + \lam2 ||Dx||_2^2 + \lam1||e||_1
     convert to quadratic programming with linear inequlity constraints
     handle sparse outliers in data
     rewrite l1 penalty to linear constraints https://math.stackexchange.com/questions/391796/how-to-expand-equation-inside-the-l2-norm
     '''  
-    # get data
-    lam, delta = args
     x = df[axis].values
-    N = len(x)
-
-    # impute missing data 
-    idx = [i.item() for i in np.argwhere(~np.isnan(x)).flatten()]
-    x = x[idx]
-    M = len(x)
-           
-    # idx = np.argwhere(np.isnan(x)).flatten()
-    # idx = [i.item() for i in idx]
-    # idx1 = [i+N for i in idx]
-    # idx2 = [i+2*N for i in idx]
-    # t = df["Frame #"].values
-    # spl = InterpolatedUnivariateSpline(t[notnan_idx],x[notnan_idx])
-    # x = spl(t)
-    
-    # differentiation operator
-    D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
-    D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
-    D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), N) * (1/dt**3)
-    DD = lam * D3.trans() * D3
-    
-    # define matices
-    I = spmatrix(1.0, range(N), range(N))
-    IM = spmatrix(1.0, range(M), range(M))
-    O = spmatrix([], [], [], (N,N))
-    OM = spmatrix([], [], [], (M,M))
-
-    H = I[idx,:]
-    HH = H.trans()*H
-    Q = 2*sparse([[HH/M+DD/N,H/M,-H/M], # first column of Q
-                [H.trans()/M,IM/M, -H*H.trans()/M], 
-                [-H.trans()/M,-H*H.trans()/M,IM/M]]) 
-    
-    p = 1/M * sparse([-2*H.trans()*matrix(x), -2*matrix(x)+delta, 2*matrix(x)+delta])
-
-    G = sparse([[H*O,H*O],[-IM,OM],[OM,-IM]])
-    h = spmatrix([], [], [], (2*M,1))
+    Q, p, D1, D2, D3, H, G, h, N,M = _getQPMatrices(x, 0, args, reg="l1")
     sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
     
     # extract result
     xhat = sol["x"][:N]
-    e = sol["x"][N:N+M]
-    t = sol["x"][N+M:]
+    u = sol["x"][N:N+M]
+    v = sol["x"][N+M:]
     print(sol["status"])
 
     jhat = D3 * xhat
@@ -321,9 +314,9 @@ def rectify_2d(df, w,l,args,reg = "l2"):
         xhat, vxhat, axhat, jxhat = rectify_1d(df, lamx, "x")
         yhat, vyhat, ayhat, jyhat = rectify_1d(df, lamy, "y")
     elif reg == "l1": 
-        lamx, lamy, delta = args
-        xhat, vxhat, axhat, jxhat = rectify_1d_l1(df, (lamx, delta), "x")
-        yhat, vyhat, ayhat, jyhat = rectify_1d_l1(df, (lamy, delta), "y")
+        lamx, lamy, lam1 = args
+        xhat, vxhat, axhat, jxhat = rectify_1d_l1(df, (lamx, lam1), "x")
+        yhat, vyhat, ayhat, jyhat = rectify_1d_l1(df, (lamy, lam1), "y")
         
         
     # calculate the states
@@ -382,6 +375,275 @@ def generate_box(w,l, x, y, theta):
 
     Y = np.stack([xa,ya,xb,yb,xc,yc,xd,yd],axis=-1)
     return Y
+
+def rectify_single_car(car, args):
+    '''
+    to replace rectify_single_camera
+    1. get the medium width and length
+    2. find the best-fit x and y without considering the dynamics
+    3. run rectify_2d
+    4. run generate_box to get full box rectified measurement
+    '''
+    width_array = np.abs(car["bbr_y"].values - car["bbl_y"].values)
+    length_array = np.abs(car["bbr_x"].values - car["fbr_x"].values)
+    
+    width = np.nanmedian(width_array)
+    length = np.nanmedian(length_array)
+    
+    # car = rectify_2d(car, width, length,args) # modify x, y, speed, acceleration, jerk, boxes coords
+    car = receding_horizon_2d(car, width, length, args)
+    return car
+
+def rectify_sequential(df, args):
+    print("{} total trajectories, {} total measurements".format(df['ID'].nunique(), len(df)))
+    start = time.time()
+    df = df.groupby('ID').apply(rectify_single_car, args=args).reset_index(drop=True)
+    end = time.time()
+    print('total time rectify_sequential: ',end-start)
+    return df
+
+# =================== RECEDING HORIZON RECTIFICATION =========================
+def receding_horizon_1d(df, args, axis="x"):
+    '''
+    rolling horizon version of rectify_1d
+    car: df
+    args: (lam, axis, PH, IH)
+        PH: prediction horizon
+        IH: implementation horizon
+    QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
+    '''
+    # get data
+    lam, PH, IH = args
+    x = df[axis].values
+    n_total = len(x)
+    Q, p, D1, D2, D3, H, N,M = _getQPMatrices(x[:PH], 0, lam, reg="l2")
+    
+    sol=solvers.qp(P=Q, q=p)
+    
+    # additional equality constraint: state continuity
+    A = sparse([[spmatrix(1.0, range(4), range(4))], [spmatrix([], [], [], (4,PH-4))]])
+    A = matrix(A, tc="d")
+    
+    # save final answers
+    xfinal = matrix([])
+    vfinal = matrix([])
+    afinal = matrix([])
+    jfinal = matrix([])
+    
+    n_win = max(0,(n_total-PH+IH)//IH)
+    last = False
+    
+    cs = 3
+    for i in range(n_win+1):
+        # print(i,'/',n_total, flush=True)
+        if i == n_win: # last
+            xx =x[i*IH:]
+            last = True
+        else:
+            xx = x[i*IH: i*IH+PH]
+        nn = len(xx)
+        Q, p, D1, D2, D3, H, N,M = _getQPMatrices(xx, 0, lam, reg="l2")
+        
+        if i == 0:
+            sol=solvers.qp(P=Q, q=p)          
+        else: # if x_prev exists - not first window
+            A = sparse([[spmatrix(1.0, range(cs), range(cs))], [spmatrix([], [], [], (cs,nn-cs))]])
+            A = matrix(A, tc="d")
+            b = matrix(x_prev)
+            sol=solvers.qp(P=Q, q=p, A = A, b=b)          
+            
+        xhat = sol["x"]
+        vhat = D1*xhat
+        ahat = D2*xhat
+        jhat = D3*xhat
+        if last:
+            xfinal = matrix([xfinal, xhat])
+            vfinal = matrix([vfinal, vhat, np.nan])
+            afinal = matrix([afinal, ahat, matrix([np.nan, np.nan])])
+            jfinal = matrix([jfinal, jhat, matrix([np.nan, np.nan, np.nan])])
+        else:
+            xfinal = matrix([xfinal, xhat[:IH]])
+            vfinal = matrix([vfinal, vhat[:IH]])
+            afinal = matrix([afinal, ahat[:IH]])
+            jfinal = matrix([jfinal, jhat[:IH]])
+
+            
+        # save for the next loop
+        x_prev = xhat[IH:IH+cs]
+    
+    return xfinal, vfinal,  afinal, jfinal
+
+
+def receding_horizon_1d_original(df, args, axis="x"):
+    '''
+    rolling horizon version of rectify_1d
+    car: df
+    args: (lam, axis, PH, IH)
+        PH: prediction horizon
+        IH: implementation horizon
+    QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
+    '''
+    # get data
+    lam, PH, IH = args
+    
+    x = df[axis].values
+    n_total = len(x)          
+
+    # Define constraints for the first PH
+    idx = [i.item() for i in np.argwhere(~np.isnan(x[:PH])).flatten()]
+    if len(idx) < 2: # not enough measurements
+        print('not enough measurements in receding_horizon_1d')
+        return
+    xx = x[:PH]
+    xx = xx[idx]
+
+    # differentiation operator
+    D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), PH) * (1/dt)
+    D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), PH) * (1/dt**2)
+    D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), PH) * (1/dt**3)
+    
+    # sol: xhat = (I+delta D'D)^(-1)x
+    I = spmatrix(1.0, range(PH), range(PH))
+    H = I[idx,:]
+    M = len(idx)
+
+    DD = lam*D3.trans() * D3
+
+    HH = H.trans() * H
+    
+    # QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
+    Q = 2*(HH+DD)
+    p = -2*H.trans() * matrix(xx)
+    sol=solvers.qp(P=Q, q=p)
+    
+    # additional equality constraint: state continuity
+    A = sparse([[spmatrix(1.0, range(4), range(4))], [spmatrix([], [], [], (4,PH-4))]])
+    A = matrix(A, tc="d")
+    
+    # save final answers
+    xfinal = matrix([])
+    vfinal = matrix([])
+    afinal = matrix([])
+    jfinal = matrix([])
+    
+    n_win = max(0,(n_total-PH+IH)//IH)
+    last = False
+    
+    cs = 3 # new constraint steps
+    for i in range(n_win+1):
+        # print(i,'/',n_total, flush=True)
+        if i == n_win: # last
+            xx =x[i*IH:]
+            last = True
+        else:
+            xx = x[i*IH: i*IH+PH]
+        nn = len(xx)
+        idx = [i.item() for i in np.argwhere(~np.isnan(xx)).flatten()]
+        xx = xx[idx]
+        I = I[:nn, :nn]
+        H = I[idx,:]
+        D1 = D1[:nn-1 ,:nn]
+        D2 = D2[:nn-2 ,:nn]
+        D3 = D3[:nn-3 ,:nn]
+        DD = lam*D3.trans() * D3
+        HH = H.trans() * H
+
+        Q = 2*(HH+DD)
+        p = -2*H.trans() * matrix(xx)
+        
+        if i == 0:
+            sol=solvers.qp(P=Q, q=p)          
+        else: # if x_prev exists - not first window
+            A = sparse([[spmatrix(1.0, range(cs), range(cs))], [spmatrix([], [], [], (cs,nn-cs))]])
+            A = matrix(A, tc="d")
+            b = matrix(x_prev)
+            sol=solvers.qp(P=Q, q=p, A = A, b=b)          
+            
+        xhat = sol["x"]
+        vhat = D1*xhat
+        ahat = D2*xhat
+        jhat = D3*xhat
+        if last:
+            xfinal = matrix([xfinal, xhat])
+            vfinal = matrix([vfinal, vhat, np.nan])
+            afinal = matrix([afinal, ahat, matrix([np.nan, np.nan])])
+            jfinal = matrix([jfinal, jhat, matrix([np.nan, np.nan, np.nan])])
+        else:
+            xfinal = matrix([xfinal, xhat[:IH]])
+            vfinal = matrix([vfinal, vhat[:IH]])
+            afinal = matrix([afinal, ahat[:IH]])
+            jfinal = matrix([jfinal, jhat[:IH]])
+
+            
+        # save for the next loop
+        x_prev = xhat[IH:IH+cs]
+    
+    return xfinal, vfinal,  afinal, jfinal
+
+def receding_horizon_2d(df, w,l,args):
+    '''
+    '''
+    # get data
+    # curr_id = df['ID'].values[0]
+    # print("RH 2d: ", curr_id, len(df))
+    lamx, lamy, PH, IH = args
+    df.loc[:,'y'] = (df["bbr_y"].values + df["bbl_y"].values)/2
+    df.loc[:,'x'] = (df["bbr_x"].values + df["bbl_x"].values)/2
+    
+    xhat,vxhat,axhat,jxhat = receding_horizon_1d(df, (lamx, PH, IH), "x")
+    yhat,vyhat,ayhat,jyhat = receding_horizon_1d(df, (lamy, PH, IH), "y")
+    
+    # calculate the states
+    vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed
+    thetahat = np.arctan2(vyhat,vxhat)
+    vhat = np.reshape(vhat, -1)
+    thetahat = np.reshape(thetahat, -1)
+    thetahat[thetahat < 0] += 2*np.pi
+    ahat = np.diff(vhat)/dt
+    ahat = np.append(ahat,  ahat[-1])
+    
+    # add constant jerk in the end
+    jhat = np.diff(ahat)/dt
+    jhat = np.append(jhat, 0)
+    # expand to full boxes measurements
+    Y0 = generate_box(w,l, np.reshape(xhat,-1), np.reshape(yhat,-1), thetahat)
+    
+    # write to df
+    df.loc[:,'x'] = xhat
+    df.loc[:,'jerk'] = jhat
+    df.loc[:,'acceleration'] = ahat
+    df.loc[:,'speed'] = vhat   
+    df.loc[:,'y'] = yhat   
+    df.loc[:,'theta'] = thetahat
+    
+    # store auxiliary states for debugging
+    df.loc[:,'speed_x'] = vxhat
+    df.loc[:,'jerk_x'] = jxhat
+    df.loc[:,'acceleration_x'] = axhat
+    df.loc[:,'speed_y'] = vyhat
+    df.loc[:,'jerk_y'] = jyhat
+    df.loc[:,'acceleration_y'] = ayhat 
+    
+    # pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
+    df.loc[:, pts] = Y0
+    
+    
+    return df
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def box_fitting(car, width, length):
     '''
@@ -442,202 +704,6 @@ def box_fitting(car, width, length):
     car.loc[:,"y"] = y_opt
     car.loc[:,pts] = Yre
     return car
-
-def rectify_single_car(car, args):
-    '''
-    to replace rectify_single_camera
-    1. get the medium width and length
-    2. find the best-fit x and y without considering the dynamics
-    3. run rectify_2d
-    4. run generate_box to get full box rectified measurement
-    '''
-    width_array = np.abs(car["bbr_y"].values - car["bbl_y"].values)
-    length_array = np.abs(car["bbr_x"].values - car["fbr_x"].values)
-    
-    width = np.nanmedian(width_array)
-    length = np.nanmedian(length_array)
-    
-    # car = rectify_2d(car, width, length,args) # modify x, y, speed, acceleration, jerk, boxes coords
-    car = receding_horizon_2d(car, width, length, args)
-    return car
-
-def rectify_sequential(df, args):
-    print("{} total trajectories, {} total measurements".format(df['ID'].nunique(), len(df)))
-    start = time.time()
-    df = df.groupby('ID').apply(rectify_single_car, args=args).reset_index(drop=True)
-    end = time.time()
-    print('total time rectify_sequential: ',end-start)
-    return df
-
-# =================== RECEDING HORIZON RECTIFICATION =========================
-def receding_horizon_1d(df, args, axis="x"):
-    '''
-    rolling horizon version of rectify_1d
-    car: df
-    args: (lam, axis, PH, IH)
-        PH: prediction horizon
-        IH: implementation horizon
-    QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
-    '''
-    # get data
-    lam, PH, IH, order = args
-    
-    x = df[axis].values
-    n_total = len(x)          
-
-    # Define constraints for the first PH
-    idx = [i.item() for i in np.argwhere(~np.isnan(x[:PH])).flatten()]
-    if len(idx) < 2: # not enough measurements
-        print('not enough measurements in receding_horizon_1d')
-        return
-    xx = x[:PH]
-    xx = xx[idx]
-
-    # differentiation operator
-    D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), PH) * (1/dt)
-    D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), PH) * (1/dt**2)
-    D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), PH) * (1/dt**3)
-    D4 = _blocdiag(matrix([1,-4,6,-4,1],(1,5), tc="d"), PH) * (1/dt**4)
-    
-    # sol: xhat = (I+delta D'D)^(-1)x
-    I = spmatrix(1.0, range(PH), range(PH))
-    H = I[idx,:]
-    if order ==3:
-        DD = lam*D3.trans() * D3
-    else:
-        DD = lam*D4.trans() * D4
-    HH = H.trans() * H
-    
-    # QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
-    Q = 2*(HH+DD)
-    p = -2*H.trans() * matrix(xx)
-    sol=solvers.qp(P=Q, q=p)
-    
-    # additional equality constraint: state continuity
-    A = sparse([[spmatrix(1.0, range(4), range(4))], [spmatrix([], [], [], (4,PH-4))]])
-    A = matrix(A, tc="d")
-    
-    # save final answers
-    xfinal = matrix([])
-    vfinal = matrix([])
-    afinal = matrix([])
-    jfinal = matrix([])
-    
-    n_win = max(0,(n_total-PH+IH)//IH)
-    last = False
-    
-    cs = order # new constraint steps
-    for i in range(n_win+1):
-        # print(i,'/',n_total, flush=True)
-        if i == n_win: # last
-            xx =x[i*IH:]
-            last = True
-        else:
-            xx = x[i*IH: i*IH+PH]
-        nn = len(xx)
-        idx = [i.item() for i in np.argwhere(~np.isnan(xx)).flatten()]
-        xx = xx[idx]
-        I = I[:nn, :nn]
-        H = I[idx,:]
-        D1 = D1[:nn-1 ,:nn]
-        D2 = D2[:nn-2 ,:nn]
-        D3 = D3[:nn-3 ,:nn]
-        D4 = D4[:nn-4 ,:nn]
-        DD = lam*D3.trans() * D3 if order ==3 else lam*D4.trans() * D4
-        HH = H.trans() * H
-
-        Q = 2*(HH+DD)
-        p = -2*H.trans() * matrix(xx)
-        
-        if i == 0:
-            sol=solvers.qp(P=Q, q=p)          
-        else: # if x_prev exists - not first window
-            A = sparse([[spmatrix(1.0, range(cs), range(cs))], [spmatrix([], [], [], (cs,nn-cs))]])
-            A = matrix(A, tc="d")
-            b = matrix(x_prev)
-            sol=solvers.qp(P=Q, q=p, A = A, b=b)          
-            
-        xhat = sol["x"]
-        vhat = D1*xhat
-        ahat = D2*xhat
-        jhat = D3*xhat
-        if last:
-            xfinal = matrix([xfinal, xhat])
-            vfinal = matrix([vfinal, vhat, np.nan])
-            afinal = matrix([afinal, ahat, matrix([np.nan, np.nan])])
-            jfinal = matrix([jfinal, jhat, matrix([np.nan, np.nan, np.nan])])
-        else:
-            xfinal = matrix([xfinal, xhat[:IH]])
-            vfinal = matrix([vfinal, vhat[:IH]])
-            afinal = matrix([afinal, ahat[:IH]])
-            jfinal = matrix([jfinal, jhat[:IH]])
-
-            
-        # save for the next loop
-        x_prev = xhat[IH:IH+cs]
-    
-    return xfinal, vfinal,  afinal, jfinal
-
-def receding_horizon_2d(df, w,l,args):
-    '''
-    '''
-    # get data
-    # curr_id = df['ID'].values[0]
-    # print("RH 2d: ", curr_id, len(df))
-    lamx, lamy, PH, IH, order = args
-    df.loc[:,'y'] = (df["bbr_y"].values + df["bbl_y"].values)/2
-    df.loc[:,'x'] = (df["bbr_x"].values + df["bbl_x"].values)/2
-    
-    xhat,vxhat,axhat,jxhat = receding_horizon_1d(df, (lamx, PH, IH, order), "x")
-    yhat,vyhat,ayhat,jyhat = receding_horizon_1d(df, (lamy, PH, IH, order), "y")
-    
-    # calculate the states
-    vhat = np.sqrt(vxhat**2 + vyhat**2) # non-negative speed
-    thetahat = np.arctan2(vyhat,vxhat)
-    vhat = np.reshape(vhat, -1)
-    thetahat = np.reshape(thetahat, -1)
-    thetahat[thetahat < 0] += 2*np.pi
-    ahat = np.diff(vhat)/dt
-    ahat = np.append(ahat,  ahat[-1])
-    
-    # add constant jerk in the end
-    jhat = np.diff(ahat)/dt
-    jhat = np.append(jhat, 0)
-    # expand to full boxes measurements
-    Y0 = generate_box(w,l, np.reshape(xhat,-1), np.reshape(yhat,-1), thetahat)
-    
-    # write to df
-    df.loc[:,'x'] = xhat
-    df.loc[:,'jerk'] = jhat
-    df.loc[:,'acceleration'] = ahat
-    df.loc[:,'speed'] = vhat   
-    df.loc[:,'y'] = yhat   
-    df.loc[:,'theta'] = thetahat
-    
-    # store auxiliary states for debugging
-    df.loc[:,'speed_x'] = vxhat
-    df.loc[:,'jerk_x'] = jxhat
-    df.loc[:,'acceleration_x'] = axhat
-    df.loc[:,'speed_y'] = vyhat
-    df.loc[:,'jerk_y'] = jyhat
-    df.loc[:,'acceleration_y'] = ayhat 
-    
-    # pts = ['bbr_x','bbr_y', 'fbr_x','fbr_y','fbl_x','fbl_y','bbl_x', 'bbl_y']
-    df.loc[:, pts] = Y0
-    
-    
-    return df
-
-
-
-
-
-
-
-
-
-
-
 
 
 def obj_1d(X, x, order, N, dt, notNan, lam):

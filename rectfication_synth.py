@@ -9,7 +9,6 @@ Build upon synthetic_2d.py
 - runtime analysis
 
 """
-import utils
 import utils_optimization as opt
 import pandas as pd
 import numpy as np
@@ -17,12 +16,14 @@ import math
 import matplotlib.pyplot as plt
 import time
 import utils_vis as vis
-# import numpy.linalg as LA
 import matplotlib.cm as cm
 import random
+from cvxopt import matrix, solvers
 
-# import warnings
-# warnings.simplefilter("error")
+def _l2(z):
+    return np.linalg.norm(z, 2)**2
+def _l1(z):
+    return np.linalg.norm(z, 1)
 
 pd.options.mode.chained_assignment = None # default "warn"
     
@@ -67,8 +68,8 @@ class Experiment():
         self.meas = self.gt.copy()
         print("total measurements rectified:", len(self.meas))
         # states to be plotted
-        # self.states = ["x","y","speed","speed_x","speed_y","acceleration_x","acceleration_y","jerk_x","jerk_y","theta","acceleration","jerk"]
-        self.states = ["x","speed_x","acceleration_x","jerk_x"]
+        self.states = ["x","y","speed","speed_x","speed_y","acceleration_x","acceleration_y","jerk_x","jerk_y","theta","acceleration","jerk"]
+        # self.states = ["x","speed_x","acceleration_x","jerk_x"]
         self.units = {
                   **dict.fromkeys(['x', 'y'], "m"), 
                   **dict.fromkeys(['speed', 'speed_x', 'speed_y'], 'm/s'),
@@ -185,15 +186,17 @@ class Experiment():
             state_err[state] = error
         return state_err
     
+    def downgrade_measurements(self):
+        self.gt = self.gt[:self.N]
+        self.meas = self.meas[:self.N]
+        self.meas = self.pollute_car(self.meas)
+        return
+    
     def evaluate_single(self):
         if isinstance(self.N,list):
             print("In runtime analysis mode")
             return
-        self.gt = self.gt[:self.N]
-        self.meas = self.meas[:self.N]
-        self.meas = self.pollute_car(self.meas)
-        # newmeas = self.meas.copy()
-        
+        self.downgrade_measurements()
         # modify meas first with box fitting
         width_array = np.abs(self.meas["bbr_y"].values - self.meas["bbl_y"].values)
         length_array = np.abs(self.meas["bbr_x"].values - self.meas["fbr_x"].values)
@@ -201,9 +204,6 @@ class Experiment():
         width = np.nanmedian(width_array)
         length = np.nanmedian(length_array)
 
-        # newmeas = opt.box_fitting(newmeas, width, length) # modify x and y
-        # newmeas = utils.mark_outliers(newmeas)
-        # newmeas.loc[newmeas["Generation method"]=="outlier1",self.pts+["x","y"]] = np.nan
         self.meas = opt.decompose_2d(self.meas, write_to_df=True)
         
         rec = self.meas.copy()
@@ -220,16 +220,15 @@ class Experiment():
         return
         
     def receding_horizon_rectify(self):
-        
-        self.meas = self.pollute_car(self.meas)
+        self.downgrade_measurements()
         width_array = np.abs(self.meas["bbr_y"].values - self.meas["bbl_y"].values)
         length_array = np.abs(self.meas["bbr_x"].values - self.meas["fbr_x"].values)
         
         width = np.nanmedian(width_array)
         length = np.nanmedian(length_array)
         
-        lamx,lamy, order  = self.params["args"]
-        args = (lamx, lamy, self.params["PH"], self.params["IH"], order) #lam, order, PH, IH
+        lamx,lamy  = self.params["args"]
+        args = (lamx, lamy, self.params["PH"], self.params["IH"]) #lam, order, PH, IH
         
         rec = self.meas.copy()
         start = time.time()
@@ -282,21 +281,15 @@ class Experiment():
         # self.correction_score = correction_score
         return
     
+
+        
     def pareto_curve(self, axis="x"):
         '''
         for lambda tuning
         for each lambda between [0,1], solve rectify_1d
         record the final objective function value for both perturbation and regularization term
         '''
-        # make a copy of gt
-        # meas = self.downgrade(missing_rate, noise_std)
-        def _l2(z):
-            return np.linalg.norm(z, 2)**2
-        
-        try:
-            meas = self.newmeas
-        except:
-            meas = self.meas
+        meas = self.meas
         x = meas[axis].values
         notNan = ~np.isnan(x)
         pert = []
@@ -327,17 +320,6 @@ class Experiment():
         
         # plot the pareto curve
         colors = cm.rainbow(np.linspace(0, 1, len(lambdas)+1))
-        # fig, ax = plt.subplots()
-        # ax.plot(pert, reg, linewidth = 0.2, color = "blue", label="rectified")
-
-        # for i in range(len(lambdas)):
-        #     ax.scatter(pert[i], reg[i], s = 20, color =colors[i], marker = "x",label="lam={:.1f}".format(lambdas[i]) if i%5==0 else "")
-        
-        # ax.scatter(gt_pert, gt_reg, s = 30, color = "black", marker = "o", label="GT")
-
-        # ax.set_xlabel("||x-\hat{x}||_2^2")
-        # ax.set_ylabel("||\hat{j}||_2^2")
-        # ax.legend()
         
         # plot the pareto curve wihtout lamda=1
         fig, ax = plt.subplots()
@@ -354,7 +336,74 @@ class Experiment():
         
         return
             
-     
+    def grid_search_en(self, axis="x"):
+        lam2s = np.logspace(-2,-1, num=10)
+        lam1s = np.logspace(-3.2,-2.5, num=10) # Q not scaled by (1+lam2)
+        
+        self.downgrade_measurements()
+        meas = self.meas
+        x = meas[axis].values
+        N = len(x)
+        notNan = ~np.isnan(x)
+        M = np.count_nonzero(notNan)
+        
+        fig, axs = plt.subplots(3,figsize=(10,12))
+        
+        for i,lam2 in enumerate(lam2s):
+            status = []
+            c_arr = []
+            c2_arr = []
+            c1_arr = []
+            s_arr = [] # outlier ratio
+            for j,lam1 in enumerate(lam1s):
+                Q, p, D1, D2, D3, H, G, h, N,M = opt._getQPMatrices(x, 0, (lam2, lam1), reg="l1")
+                sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
+                # extract result
+                xhat = sol["x"][:N]
+                u = sol["x"][N:N+M]
+                v = sol["x"][N+M:]
+                if sol["status"] != "optimal": # invalid
+                    status.append(1)
+                else: #valid
+                    status.append(0)
+                
+                jhat = D3 * xhat
+                xhat = np.reshape(xhat,-1)
+                c =  _l2(x[notNan]-xhat[notNan])/M
+                c2 = _l2(np.reshape(jhat,-1))/N
+                c1 = _l1(np.reshape(u,-1)-np.reshape(v,-1))/M # |e|/M
+                c_arr.append(c)
+                c2_arr.append(c2)
+                c1_arr.append(c1)
+                # s = np.count_nonzero(np.array(u-v))/M
+                # s_arr.append(s)
+                # print(s)
+            valid = [i for i in range(len(status)) if status[i]==0]
+            axs[0].plot(lam1s[valid], np.array(c_arr)[valid], linewidth = 2, label="lam2={:.2e}".format(lam2))  
+            axs[1].plot(lam1s[valid], np.array(c2_arr)[valid], linewidth = 2, label="lam2={:.2e}".format(lam2))
+            axs[2].plot(lam1s[valid], np.array(c1_arr)[valid], linewidth = 2, label="lam2={:.2e}".format(lam2))
+            
+        c_gt = _l2(x[notNan]-self.gt[axis].values[notNan])/M #1/M||x-H xhat||_2^2
+        axs[0].set_ylabel("||x-xhat||_2^2")
+        axs[0].axhline(y=c_gt, color="r",linestyle="--", label="gt")
+        axs[0].legend()
+        
+        c2_gt = _l2(self.gt["jerk_"+axis].values)/N
+        axs[1].set_xlabel("lam1")
+        axs[1].set_ylabel("||jerk||_2^2")
+        axs[1].axhline(y=c2_gt, color="r",linestyle="--", label="gt")
+        axs[1].legend()
+        
+        e=x-self.gt.x.values
+        notnan=~np.isnan(e)
+        e = e[notnan]
+        # outlier_fraction_gt = np.count_nonzero(a&b)/np.count_nonzero(b)
+        c1_gt = _l1(e)/M #1/M(||x-H xhat-w||_1
+        axs[2].set_xlabel("lam1")
+        axs[2].set_ylabel("|e|/M")
+        axs[2].axhline(y=c1_gt, color="r",linestyle="--", label="gt")
+        axs[2].legend()
+        
     def runtime_analysis(self):
 
         run_time = []
@@ -409,18 +458,18 @@ class Experiment():
     
 if __name__ == "__main__":
     # N = list(np.arange(10,1400, 50)) # number of frames
-    N = 1000
+    N = 10000
     file_path = r"E:\I24-postprocess\benchmark\TM_1000_GT.csv"
     
     params = {"missing": 0.2, #np.arange(0,0.7,0.1), # missing rate
-               "noise_x": 0.2, #np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
-               "noise_y": 0.02, #.1*np.arange(0,0.7,0.1),
+               "noise_x": 1, #np.arange(0,0.7,0.1), # gaussian noise variance on measurement boxes
+               "noise_y": 0.1, #.1*np.arange(0,0.7,0.1),
               "N": N,
               "epoch": 1, # number of random runs of generate
-              "reg": "l1",
-               # "args" : (1e1,1e1), # lamx,lamy - no l1 reg
-                "args" : (1e1, 1e1,1e6), # lamx, lamy, delta - for l1 reg (delta has to be large for optimal solver status)
-                "carid": 16, # 16, 38, for lane change
+              "reg": "l2",
+              "args" : (4e2,1.67e1), # lamx,lamy - no l1 reg
+              # "args" : (1.67e-2,1.67e-2,0.0012), # lam2x, lam2y, lam1 - for l1 reg (delta has to be large for optimal solver status)
+              "carid": 16, # 16, 38, for lane change
               "nrows": 30000,
               "AVG_CHUNK_LENGTH": 30,
               "OUTLIER_RATIO": 0.2,
@@ -429,11 +478,21 @@ if __name__ == "__main__":
         }
     
     ex = Experiment(file_path, params)
-    ex.evaluate_single()
+    #%% evaluate single
+    # ex.evaluate_single()
+    
+    #%% grid evalution - produce state error with various missing/noise
     # ex.grid_evaluate()
+    
+    #%% pareto curve for lam2 tuning
     # ex.pareto_curve(axis="y")
-    # ex.receding_horizon_rectify()
+    
+    #%% receding horizon
+    ex.receding_horizon_rectify()
     # ex.df = opt.rectify_sequential(ex.meas, (1e1, 1e1, 200, 100))
+    
+    #%% grid search for elastic net
+    # ex.grid_search_en(axis="x")
     if isinstance(N,list): # trigger run time analysis
         ex.runtime_analysis()
     #     # %%
