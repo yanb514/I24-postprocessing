@@ -3,20 +3,13 @@
 Created on Thu Nov 18 15:07:38 2021
 
 @author: wangy79
+
 """
 import numpy as np
-import utils
-from shapely.geometry import Polygon
-import pandas as pd
-import utils_vis as vis
-import scipy
 import matplotlib.pyplot as plt
-import utils_evaluation as ev
 import torch
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-def my_nll():
-    return
 
 def nll_grid(vx,vy, alpha_x,alpha_y, T, std):
     '''

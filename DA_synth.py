@@ -15,12 +15,11 @@ Data association class consists of
 import numpy as np
 import utils
 # import pandas as pd
-import utils_vis as vis
+import utils.utils_vis as vis
+import utils.utils_evaluation as ev
+import utils.utils_data_association as uda
 import matplotlib.pyplot as plt
-import utils_evaluation as ev
-import utils_data_association as uda
 from collections import defaultdict
-import time
 
 
 class Data_Association():

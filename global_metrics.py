@@ -18,9 +18,9 @@ Produce metrics in the absence of ground truth
     # frames that one track has multiple meas
 """
 
-import utils
-import utils_evaluation as ev
-import utils_vis as vis
+import utils.utils
+import utils.utils_evaluation as ev
+import utils.utils_vis as vis
 import numpy as np
 import matplotlib.pyplot as plt
 import warnings

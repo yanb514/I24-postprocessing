@@ -3,15 +3,13 @@
 Created on Thu Nov 18 21:03:14 2021
 
 @author: wangy79
-benmark using TransModeler (TM) simulation data
+Generate ground truth and raw trajectories using TransModeler (TM) simulation data
 """
 import utils
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy import sin,cos
 import utils_optimization as opt
-import utils_vis as vis
 from tqdm import tqdm
 import random
 from scipy.signal import savgol_filter
