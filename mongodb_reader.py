@@ -15,9 +15,9 @@ import urllib.parse
 
 class DataReader():
     
-    def __init__(self, login_info, mode, collection_name=None):
+    def __init__(self, login_info, mode, collection_name=None, vis=False):
         '''
-        mode: 'data_association' or 'vis'
+        mode: 'test', 'dev' or 'deploy'
         collection_name: 'raw_trajectories' if in 'data association' mode, or all trajectories if in 'vis' mode
         '''
         # connect to MongoDB with MongoDB URL
@@ -29,13 +29,13 @@ class DataReader():
         self.db = client.trajectories
         self.gt_mode = False
         
-        if mode == 'data_association':
+        if mode == 'test':
             self.collection = getattr(self.db, collection_name)
             if hasattr(self.db, 'ground_truth_trajectories'):
                 self.gt_collection = self.db.ground_truth_trajectories
                 self.gt_mode = True
                 
-        elif mode == 'vis':
+        if vis:
             # run visualization tool
             return
         
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     login_info = {'username': 'i24-data',
                   'password': 'mongodb@i24'}
     collection_name = 'raw_trajectories'
-    mode = 'data_association'
+    mode = 'test'
     dr = DataReader(login_info, mode, collection_name)
     
     car_42 = dr._get("ID", 42)
