@@ -1,17 +1,19 @@
+'''
+data_association module connected with database
+modified based on utils_data_association.py
+'''
 import numpy as np
-
 import torch
 from collections import defaultdict, deque, OrderedDict
 import heapq
-from data_structures import DoublyLinkedList, UndirectedGraph,Fragment
+from data_structures import DoublyLinkedList, UndirectedGraph, Fragment
 import time
 import sys
 
-   
 loss = torch.nn.GaussianNLLLoss()   
    
 def _compute_stats(track):
-    t,x,y = track['t'],track['x'],track['y']
+    t,x,y = track['timestamp'],track['x_position'],track['y_position']
     ct = np.nanmean(t)
     if len(t)<2:
         v = np.sign(x[-1]-x[0]) # assume 1/-1 m/frame = 30m/s
@@ -300,145 +302,140 @@ def _first(s):
         '''
         return next(iter(s.values()))
         
-def stitch_objects_tsmn_online_3(o, THRESHOLD_MAX=3, VARX=0.03, VARY=0.03, time_out = 500):
-        '''
-        build on ver2 - with object-oriented data structure
-        '''
+def spatial_temporal_match_online(dr, TIME_WIN = 500, THRESH=3, VARX=0.03, VARY=0.03):
+    '''
+    build on ver2 - with object-oriented data structure
+    data_q: queue to store temporary matched
+    '''
+    # TODO: 
+    # 1. will the dr reflect the updates if db is being written constantly?
+    # 2. global access to data_q and log_q? assume so
+    
+    # groups = {k: v for k, v in df.groupby("ID")}
+    # ids = list(groups.keys())
+    # ordered_tracks = deque() # list of dictionaries
+    # all_tracks = {}
+    # S = []
+    # E = []
+    # for id, car in groups.items():
+    #     t = car["Frame #"].values
+    #     x = (car.bbr_x.values + car.bbl_x.values)/2
+    #     y = (car.bbr_y.values + car.bbl_y.values)/2
+    #     notnan = ~np.isnan(x)
+    #     t,x,y = t[notnan], x[notnan],y[notnan]
+    #     if len(t)>1: # ignore empty or only has 1 frame
+    #         S.append([t[0], id])
+    #         E.append([t[-1], id])
+    #         track = Fragment(id, t,x,y)
+    #         # ordered_tracks.append(track)
+    #         all_tracks[id] = track
+
+    # heapq.heapify(S) # min heap (frame, id)
+    # heapq.heapify(E)
+
+    # while E:
+    #     e, id = heapq.heappop(E)
+    #     ordered_tracks.append(all_tracks[id])
+    # del all_tracks
         
-        df = o.df
-        # sort tracks by start/end time - not for real deployment
-        
-        groups = {k: v for k, v in df.groupby("ID")}
-        ids = list(groups.keys())
-        ordered_tracks = deque() # list of dictionaries
-        all_tracks = {}
-        S = []
-        E = []
-        for id, car in groups.items():
-            t = car["Frame #"].values
-            x = (car.bbr_x.values + car.bbl_x.values)/2
-            y = (car.bbr_y.values + car.bbl_y.values)/2
-            notnan = ~np.isnan(x)
-            t,x,y = t[notnan], x[notnan],y[notnan]
-            if len(t)>1: # ignore empty or only has 1 frame
-                S.append([t[0], id])
-                E.append([t[-1], id])
-                track = Fragment(id, t,x,y)
-                # ordered_tracks.append(track)
-                all_tracks[id] = track
 
-        heapq.heapify(S) # min heap (frame, id)
-        heapq.heapify(E)
+    # Initialize
+    # running_tracks = OrderedDict() # tracks that start but not end at e 
+    curr_tracks = deque() # tracks in view. list of tracks. should be sorted by end_time
+    past_tracks = OrderedDict() # set of ids indicate end of track ready to be matched
+    path = {} # oldid: newid. to store matching assignment
+    start_times_heap = [] # a heap to order start times
 
-        while E:
-            e, id = heapq.heappop(E)
-            ordered_tracks.append(all_tracks[id])
-        del all_tracks
-            
+    # keep grabbing fragments from queue TODO: add wait time
+    while not dr._is_empty():
+        track = dr._get_first('last_timestamp') # get the earliest ended track
+        curr_id = track._id # last_track = track['id']
+        path[curr_id] = curr_id
+        right = track.timestamp[-1] # right pointer: current end time
+        left = right-1
+        while left < right: # get all tracks that started but not ended at "right"
+            start_track = dr._get_first('first_timestamp')
+            start_time = start_track['first_timestamp']
+            if start_track['last_timestamp'] >= right:
+                heapq.heappush(start_times_heap,  start_time) # TODO: check for processed documents on database side, avoid repeatedly reading
+        # start_times_heap[0] is the left pointer of the moving window
+        try: 
+            left = max(0, start_times_heap[0] - TIME_WIN)
+        except: left = 0
 
-        # Initialize
-        # X = UndirectedGraph() # exclusion graph
-        running_tracks = OrderedDict() # tracks that start but not end at e 
-        curr_tracks = deque() # tracks in view. list of tracks. should be sorted by end_time
-        past_tracks = OrderedDict() # set of ids indicate end of track ready to be matched
-
-        path = {} # oldid: newid. to store matching assignment
-        matched = 0 # count matched pairs 
-        
-        start = time.time()
-        for i,track in enumerate(ordered_tracks):
-            # print("\n")
-            # print('Adding new track {}/{},{}'.format(i, len(ordered_tracks),track.id))
-            # print("Past tracks: {}".format(len(past_tracks)))
-            # print("Curr tracks: {}".format(len(curr_tracks)))
-            # print("running tracks: {}".format(len(running_tracks)))
-            # print("path bytes: {}".format(sys.getsizeof(path)))
-            curr_id = track.id # last_track = track['id']
-            path[curr_id] = curr_id
-            right = track.t[-1] # right pointer: current time
-            
-            # get tracks that started but not end - used to define the window left pointer
-            while S and S[0][0] < right: # append all the tracks that already starts
-                started_time, started_id = heapq.heappop(S)
-                running_tracks[started_id] = started_time
+        # compute track statistics
+        track._computeStats()
+        # print("window size :", right-left)
+        # remove out of sight tracks 
+        while curr_tracks and curr_tracks[0].t[-1] < left: 
+            past_track = curr_tracks.popleft()
+            past_tracks[past_track.id] = past_track
+        # print("Curr_tracks ", [i.id for i in curr_tracks])
+        # print("past_tracks ", past_tracks.keys())
+        # compute score from every track in curr to track, update Cost
+        for curr_track in curr_tracks:
+            cost = _getCost(curr_track, track, time_out, VARX, VARY)
+            if cost > THRESHOLD_MAX:
+                curr_track._addConflict(track)
+            elif cost > 0:
+                curr_track._addSuc(cost, track)
+                track._addPre(cost, curr_track)
+                        
+        prev_size = 0
+        curr_size = len(past_tracks)
+        while curr_size > 0 and curr_size != prev_size:
+            prev_size = len(past_tracks)
+            remove_keys = set()
+            # ready = _first(past_tracks) # a fragment object
+            for ready_id, ready in past_tracks.items():
+                best_head = ready._getFirstSuc()
+                if not best_head or not best_head.pre: # if ready has no match or best head already matched to other tracks# go to the next ready
+                    # past_tracks.pop(ready.id)
+                    remove_keys.add(ready.id)
                 
-            # compute track statistics
-            track._computeStats()
-            
-            try: 
-                left = max(0,_first(running_tracks) - time_out)
-            except: left = 0
-            # print("window size :", right-left)
-            # remove out of sight tracks 
-            while curr_tracks and curr_tracks[0].t[-1] < left: 
-                past_track = curr_tracks.popleft()
-                past_tracks[past_track.id] = past_track
-            # print("Curr_tracks ", [i.id for i in curr_tracks])
-            # print("past_tracks ", past_tracks.keys())
-            # compute score from every track in curr to track, update Cost
-            for curr_track in curr_tracks:
-                cost = _getCost(curr_track, track, time_out, VARX, VARY)
-                if cost > THRESHOLD_MAX:
-                    curr_track._addConflict(track)
-                elif cost > 0:
-                    curr_track._addSuc(cost, track)
-                    track._addPre(cost, curr_track)
-                          
-            prev_size = 0
-            curr_size = len(past_tracks)
-            while curr_size > 0 and curr_size != prev_size:
-                prev_size = len(past_tracks)
-                remove_keys = set()
-                # ready = _first(past_tracks) # a fragment object
-                for ready_id, ready in past_tracks.items():
-                    best_head = ready._getFirstSuc()
-                    if not best_head or not best_head.pre: # if ready has no match or best head already matched to other tracks# go to the next ready
-                        # past_tracks.pop(ready.id)
+                else:
+                        try: best_tail = best_head._getFirstPre()
+                        except: best_tail = None
+                        if best_head and best_tail and best_tail.id == ready.id and best_tail.id not in ready.conflicts_with:
+                        # print("** match tail of {} to head of {}".format(best_tail.id, best_head.id))
+                        path[best_head.id] = path[best_tail.id]
                         remove_keys.add(ready.id)
-                    
-                    else:
-                         try: best_tail = best_head._getFirstPre()
-                         except: best_tail = None
-                         if best_head and best_tail and best_tail.id == ready.id and best_tail.id not in ready.conflicts_with:
-                            # print("** match tail of {} to head of {}".format(best_tail.id, best_head.id))
-                            path[best_head.id] = path[best_tail.id]
-                            remove_keys.add(ready.id)
-                            Fragment._matchTailHead(best_tail, best_head)
-                            matched += 1
+                        Fragment._matchTailHead(best_tail, best_head)
+                        matched += 1
 
-                [past_tracks.pop(key) for key in remove_keys]
-                curr_size = len(past_tracks)
-                
-                
-                    
-            curr_tracks.append(track)        
-            running_tracks.pop(track.id) # remove tracks that ended
-            # print("matched:", matched)
+            [past_tracks.pop(key) for key in remove_keys]
+            curr_size = len(past_tracks)
             
-        # delete IDs that are empty
-        # print("\n")
-        # print("{} Ready: ".format(past_tracks.printList()))
-        # print("{} Processsed: ".format(len(processed)))
-        print("{} pairs matched".format(matched))
-        # print("Deleting {} empty tracks".format(len(empty_id)))
-        # df = df.groupby("ID").filter(lambda x: (x["ID"].iloc[0] not in empty_id))
-        end = time.time()
-        print('run time online stitching:', end-start)
-        # for debugging only
-        o.path = path
-        # o.C = C
-        # o.X = X
-        o.groupList = ids
-        o.past_tracks = past_tracks.keys()
-        # replace IDs
-        newids = [v for _,v in path.items()]
-        m = dict(zip(path.keys(), newids))
-        df = df.replace({'ID': m})
-        df = df.sort_values(by=['Frame #','ID']).reset_index(drop=True)         
+            
+                
+        curr_tracks.append(track)        
+        running_tracks.pop(track.id) # remove tracks that ended
+        # print("matched:", matched)
         
-        print("Before DA: {} unique IDs".format(len(ids))) 
-        print("After DA: {} unique IDs".format(df.groupby("ID").ngroups))
-        print("True: {} unique IDs".format(len([id for id in ids if id<1000])))
-      
-        o.df = df
-        return o
+    # delete IDs that are empty
+    # print("\n")
+    # print("{} Ready: ".format(past_tracks.printList()))
+    # print("{} Processsed: ".format(len(processed)))
+    print("{} pairs matched".format(matched))
+    # print("Deleting {} empty tracks".format(len(empty_id)))
+    # df = df.groupby("ID").filter(lambda x: (x["ID"].iloc[0] not in empty_id))
+    end = time.time()
+    print('run time online stitching:', end-start)
+    # for debugging only
+    o.path = path
+    # o.C = C
+    # o.X = X
+    o.groupList = ids
+    o.past_tracks = past_tracks.keys()
+    # replace IDs
+    newids = [v for _,v in path.items()]
+    m = dict(zip(path.keys(), newids))
+    df = df.replace({'ID': m})
+    df = df.sort_values(by=['Frame #','ID']).reset_index(drop=True)         
+    
+    print("Before DA: {} unique IDs".format(len(ids))) 
+    print("After DA: {} unique IDs".format(df.groupby("ID").ngroups))
+    print("True: {} unique IDs".format(len([id for id in ids if id<1000])))
+    
+    o.df = df
+    return data_q, log_q

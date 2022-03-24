@@ -60,6 +60,9 @@ class DataReader():
     def _get(self, index_name, index_value):
         return self.collection.find_one({index_name: index_value})
         
+    def _is_empty(self):
+        # TODO: test this
+        return self.collection.count() == 0
         
         
         

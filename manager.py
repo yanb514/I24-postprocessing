@@ -8,6 +8,9 @@ MODE:
     'test': test using synthetic data with ground truth
     'dev': development mode on real data, no GT
     'deploy': deploy on real testbed with streaming data
+
+Questions
+1. data_q and log_q have to be global?
 """
 import queue
 from utils.mongodb_reader import DataReader
