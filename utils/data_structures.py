@@ -288,11 +288,11 @@ class Fragment:
         return
     
     # remove node u and all edges to/from it
-    def _remove(self, u):
-        neighbors = self[u]
-        for v in neighbors:
-            self[v].remove(u)
-        self.pop(u)
+    # def _remove(self, u):
+    #     neighbors = self[u]
+    #     for v in neighbors:
+    #         self[v].remove(u)
+    #     self.pop(u)
 
 
         

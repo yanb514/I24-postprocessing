@@ -10,7 +10,10 @@ from data_structures import DoublyLinkedList, UndirectedGraph, Fragment
 import time
 import sys
 
-loss = torch.nn.GaussianNLLLoss()   
+loss = torch.nn.GaussianNLLLoss() 
+# TODO: confirm these  
+x_bound_max = 31680
+x_bound_min = 0
    
 def _compute_stats(track):
     t,x,y = track['timestamp'],track['x_position'],track['y_position']
@@ -24,9 +27,6 @@ def _compute_stats(track):
         xx = np.vstack([t,np.ones(len(t))]).T # N x 2
         fitx = np.linalg.lstsq(xx,x, rcond=None)[0]
         fity = np.linalg.lstsq(xx,y, rcond=None)[0]
-    track['t'] = t
-    track['x'] = x
-    track['y'] = y
     track['fitx'] = fitx
     track['fity'] = fity
     return track
@@ -257,7 +257,7 @@ def stitch_objects_tsmn_online_2(o, THRESHOLD_MAX=3, VARX=0.03, VARY=0.03, time_
 
 
 # define cost
-def _getCost(track1, track2, time_out, VARX, VARY):
+def _getCost(track1, track2, TIME_WIN, VARX, VARY):
     '''
     track1 always ends before track2 ends
     999: mark as conflict
@@ -266,7 +266,7 @@ def _getCost(track1, track2, time_out, VARX, VARY):
 
     if track2.t[0] < track1.t[-1]: # if track2 starts before track1 ends
         return 999
-    if track2.t[0] - track1.t[-1] > time_out: # if track2 starts TIMEOUT after track1 ends
+    if track2.t[0] - track1.t[-1] > TIME_WIN: # if track2 starts TIME_WIN after track1 ends
         return -1
     
     # predict from track1 forward to time of track2
@@ -302,7 +302,7 @@ def _first(s):
         '''
         return next(iter(s.values()))
         
-def spatial_temporal_match_online(dr, TIME_WIN = 500, THRESH=3, VARX=0.03, VARY=0.03):
+def spatial_temporal_match_online(dr, data_q, log_q, TIME_WIN = 500, THRESH=3, VARX=0.03, VARY=0.03):
     '''
     build on ver2 - with object-oriented data structure
     data_q: queue to store temporary matched
@@ -350,6 +350,8 @@ def spatial_temporal_match_online(dr, TIME_WIN = 500, THRESH=3, VARX=0.03, VARY=
     while not dr._is_empty():
         track = dr._get_first('last_timestamp') # get the earliest ended track
         curr_id = track._id # last_track = track['id']
+        track = Fragment(curr_id, track['timestamp'], track['x_position'], track['y_position'])
+        
         path[curr_id] = curr_id
         right = track.timestamp[-1] # right pointer: current end time
         left = right-1
@@ -365,17 +367,19 @@ def spatial_temporal_match_online(dr, TIME_WIN = 500, THRESH=3, VARX=0.03, VARY=
 
         # compute track statistics
         track._computeStats()
+
         # print("window size :", right-left)
         # remove out of sight tracks 
         while curr_tracks and curr_tracks[0].t[-1] < left: 
             past_track = curr_tracks.popleft()
             past_tracks[past_track.id] = past_track
+
         # print("Curr_tracks ", [i.id for i in curr_tracks])
         # print("past_tracks ", past_tracks.keys())
         # compute score from every track in curr to track, update Cost
         for curr_track in curr_tracks:
-            cost = _getCost(curr_track, track, time_out, VARX, VARY)
-            if cost > THRESHOLD_MAX:
+            cost = _getCost(curr_track, track, TIME_WIN, VARX, VARY)
+            if cost > THRESH:
                 curr_track._addConflict(track)
             elif cost > 0:
                 curr_track._addSuc(cost, track)
@@ -394,9 +398,9 @@ def spatial_temporal_match_online(dr, TIME_WIN = 500, THRESH=3, VARX=0.03, VARY=
                     remove_keys.add(ready.id)
                 
                 else:
-                        try: best_tail = best_head._getFirstPre()
-                        except: best_tail = None
-                        if best_head and best_tail and best_tail.id == ready.id and best_tail.id not in ready.conflicts_with:
+                    try: best_tail = best_head._getFirstPre()
+                    except: best_tail = None
+                    if best_head and best_tail and best_tail.id == ready.id and best_tail.id not in ready.conflicts_with:
                         # print("** match tail of {} to head of {}".format(best_tail.id, best_head.id))
                         path[best_head.id] = path[best_tail.id]
                         remove_keys.add(ready.id)
@@ -405,37 +409,18 @@ def spatial_temporal_match_online(dr, TIME_WIN = 500, THRESH=3, VARX=0.03, VARY=
 
             [past_tracks.pop(key) for key in remove_keys]
             curr_size = len(past_tracks)
-            
-            
-                
-        curr_tracks.append(track)        
-        running_tracks.pop(track.id) # remove tracks that ended
-        # print("matched:", matched)
-        
-    # delete IDs that are empty
-    # print("\n")
-    # print("{} Ready: ".format(past_tracks.printList()))
-    # print("{} Processsed: ".format(len(processed)))
-    print("{} pairs matched".format(matched))
-    # print("Deleting {} empty tracks".format(len(empty_id)))
-    # df = df.groupby("ID").filter(lambda x: (x["ID"].iloc[0] not in empty_id))
-    end = time.time()
-    print('run time online stitching:', end-start)
-    # for debugging only
-    o.path = path
-    # o.C = C
-    # o.X = X
-    o.groupList = ids
-    o.past_tracks = past_tracks.keys()
-    # replace IDs
-    newids = [v for _,v in path.items()]
-    m = dict(zip(path.keys(), newids))
-    df = df.replace({'ID': m})
-    df = df.sort_values(by=['Frame #','ID']).reset_index(drop=True)         
+
+        # check if current track reaches the boundary, if yes, write its path to database 
+        if (track.dir == 1 and track.x[-1] > x_bound_max) or (track.dir == -1 and track.x[-1] < x_bound_min):
+            # TODO: put to queue
+            key = track.id
+            fragment_ids = [key]
+            while key != path[key]:
+                fragment_ids.append(path[key])
+                key = path[key]
+            data_q.put(fragment_ids)
+        else:
+            curr_tracks.append(track)        
+        # running_tracks.pop(track.id) # remove tracks that ended
     
-    print("Before DA: {} unique IDs".format(len(ids))) 
-    print("After DA: {} unique IDs".format(df.groupby("ID").ngroups))
-    print("True: {} unique IDs".format(len([id for id in ids if id<1000])))
-    
-    o.df = df
-    return data_q, log_q
+    return 
