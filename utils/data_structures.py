@@ -201,6 +201,7 @@ class Fragment:
         self.t = t
         self.x = x
         self.y = y
+        self.dir = np.sign(x[-1]-x[0])
         self.suc = [] # tail matches to [(cost, Fragment_obj)] - minheap
         self.pre = [] # head matches to [(cost, Fragment_obj)] - minheap
         self.conflicts_with = set() # keep track of conflicts - bi-directional
