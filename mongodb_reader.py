@@ -15,22 +15,23 @@ import urllib.parse
 
 class DataReader():
     
-    def __init__(self, login_info, mode, collection_name=None, vis=False):
+    def __init__(self, LOGIN, MODE, DB, vis=False):
         '''
         mode: 'test', 'dev' or 'deploy'
         collection_name: 'raw_trajectories' if in 'data association' mode, or all trajectories if in 'vis' mode
         '''
         # connect to MongoDB with MongoDB URL
-        username = urllib.parse.quote_plus(login_info['username'])
-        password = urllib.parse.quote_plus(login_info['password'])
+        username = urllib.parse.quote_plus(LOGIN['username'])
+        password = urllib.parse.quote_plus(LOGIN['password'])
         client = MongoClient('mongodb://%s:%s@10.2.218.56' % (username, password))
         
         # get a database
         self.db = client.trajectories
         self.gt_mode = False
+        self.collection = getattr(self.db, DB)
         
-        if mode == 'test':
-            self.collection = getattr(self.db, collection_name)
+        # get ground truth for test mode
+        if MODE == 'test':
             if hasattr(self.db, 'ground_truth_trajectories'):
                 self.gt_collection = self.db.ground_truth_trajectories
                 self.gt_mode = True

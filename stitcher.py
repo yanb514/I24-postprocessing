@@ -14,10 +14,12 @@ import logging
 import pymongo
 import pymongo.errors
 
+from mongodb_reader import DataReader
+from stitcher_module import spatial_temporal_match_online
+
 
 def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multiprocessing.Queue) -> None:
     """
-
     :param fragment_queue:
     :param log_queue:
     :return:
@@ -30,8 +32,12 @@ def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multipro
     while True:
         try:
             # TODO: not sure how correct any of this DB connection is
-            client = pymongo.MongoClient(parameters.DATABASE_URL)
-            db = client.trajectories
+            # client = pymongo.MongoClient(parameters.DATABASE_URL)
+            # db = client.trajectories
+            dr = DataReader(**parameters.DB_PARAMS, vis=False)
+            # dr.db -> get a database
+            # dr.collection -> get a collection
+            
         except pymongo.errors.ConnectionFailure:
             log_queue.put((logging.ERROR, "..."))
             # Go past the change stream loop and try the connection again.
@@ -43,7 +49,7 @@ def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multipro
             try:
                 # TODO: fix corner case where resume_token is stuck at a value but won't work
                 watch_for = [{'$match': {'operationType': 'insert'}}]
-                with db.raw_trajectories.watch(watch_for, resume_after=resume_token) as stream:
+                with dr.collection.watch(watch_for, resume_after=resume_token) as stream:
                     for insert_change in stream:
                         # TODO: parse the change in whatever way needed to properly organize `fragment_queue`
                         fragment_queue.put(insert_change)
@@ -64,7 +70,6 @@ def stitch_raw_trajectory_fragments(fragment_queue: multiprocessing.Queue,
                                     stitched_trajectory_queue: multiprocessing.Queue,
                                     log_queue: multiprocessing.Queue) -> None:
     """
-
     :param fragment_queue:
     :param stitched_trajectory_queue:
     :param log_queue:
