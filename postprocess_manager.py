@@ -64,9 +64,9 @@ if __name__ == '__main__':
     processes_to_spawn = {'raw_data_feed': (stitcher.get_raw_fragments,
                                             (raw_fragment_queue, log_message_queue)),
                           'stitcher': (stitcher.stitch_raw_trajectory_fragments,
-                                       (raw_fragment_queue, stitched_trajectory_queue, log_message_queue)),
+                                       (**parameters.STITCHER_PARAMS, **parameters.STITCHER_INIT, raw_fragment_queue, stitched_trajectory_queue, log_message_queue)),
                           'reconciliation': (reconciliation.reconciliation_pool,
-                                             (stitched_trajectory_queue, log_message_queue, pid_tracker)),
+                                             (**parameters.RECONCILIATION_PARAMS, stitched_trajectory_queue, log_message_queue, pid_tracker)),
                           'log_handler': (logging_handler.message_handler, (log_message_queue,)),
                           }
 

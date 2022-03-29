@@ -246,10 +246,10 @@ def receding_horizon_2d(car,args):
     TODO: parallelize x and y?
     '''
     # get data
-    lam2x, lam2y, PH, IH = args
+    lam2_x, lam2_y, PH, IH = args
     
-    xhat = receding_horizon_1d(car, (lam2x, PH, IH), "x")
-    yhat = receding_horizon_1d(car, (lam2y, PH, IH), "y")
+    xhat = receding_horizon_1d(car, (lam2_x, PH, IH), "x")
+    yhat = receding_horizon_1d(car, (lam2_y, PH, IH), "y")
     
     car['x_position'] = xhat
     car['y_position'] = yhat
@@ -315,13 +315,12 @@ def receding_horizon_1d_l1(car, args, axis):
     return xfinal
 
 
-def receding_horizon_2d_l1(car, args):
+def receding_horizon_2d_l1(car, lam1_x, lam1_y, lam2_x, lam2_y, PH, IH):
     '''
     car: stitched fragments from data_q
     TODO: parallelize x and y?
     '''
     # get data
-    lam1_x, lam1_y, lam2_x, lam2_y, PH, IH = args
     
     xhat = receding_horizon_1d_l1(car, (lam1_x, lam2_x, PH, IH), "x")
     yhat = receding_horizon_1d_l1(car, (lam1_y, lam2_y, PH, IH), "y")
@@ -335,7 +334,7 @@ def receding_horizon_2d_l1(car, args):
 
 
 
-# =============== may be depleted =================
+# =============== need to be moved =================
 def nan_helper(y):
     """Helper to handle indices and logical indices of NaNs.
 

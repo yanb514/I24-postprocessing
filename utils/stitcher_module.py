@@ -8,12 +8,12 @@ import numpy as np
 import torch
 from collections import defaultdict, deque, OrderedDict
 import heapq
-from data_structures import DoublyLinkedList, UndirectedGraph, Fragment
+from data_structures import Fragment
 import time
 import sys
 
 loss = torch.nn.GaussianNLLLoss() 
-# TODO: confirm these  
+# TODO: confirm these, put them in parameters
 x_bound_max = 31680
 x_bound_min = 0
    

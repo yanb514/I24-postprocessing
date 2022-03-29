@@ -25,7 +25,7 @@ df.iloc[10:50] = np.nan
 df = df.dropna()
 df = df.set_index('timestamp') 
 df = df.resample('0.033333333S').mean() # this is 33.33Hz
-
+# df = df.resample('0.1S').mean() # this is 25Hz
 df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
 
 #%%
@@ -35,3 +35,4 @@ ax.scatter(df.index, df.x_position, label='resampled signal')
 fig.autofmt_xdate()
 ax.legend()
 ax.set_xlim([min(t), max(t)])
+
