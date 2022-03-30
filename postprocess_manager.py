@@ -30,7 +30,7 @@ if __name__ == '__main__':
     # ----------------------------------
     # ----------------------------------
     print("Post-processing manager creating shared data structures")
-
+    print(parameters.STITCHER_PARAMS)
     # Raw trajectory fragment queue
     # -- populated by database connector that listens for updates
     # TODO: specify the format of raw data as it will be stored in the queue (JSON, dict, etc?)
@@ -62,11 +62,13 @@ if __name__ == '__main__':
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {'raw_data_feed': (stitcher.get_raw_fragments,
-                                            (raw_fragment_queue, log_message_queue)),
+                                            (raw_fragment_queue, log_message_queue,)),
                           'stitcher': (stitcher.stitch_raw_trajectory_fragments,
-                                       (**parameters.STITCHER_PARAMS, **parameters.STITCHER_INIT, raw_fragment_queue, stitched_trajectory_queue, log_message_queue)),
+                                       (**parameters.STITCHER_PARAMS, **parameters.STITCHER_INIT, 
+                                        raw_fragment_queue, stitched_trajectory_queue, log_message_queue,)),
                           'reconciliation': (reconciliation.reconciliation_pool,
-                                             (**parameters.RECONCILIATION_PARAMS, stitched_trajectory_queue, log_message_queue, pid_tracker)),
+                                             (**parameters.RECONCILIATION_PARAMS, 
+                                              stitched_trajectory_queue, log_message_queue, pid_tracker,)),
                           'log_handler': (logging_handler.message_handler, (log_message_queue,)),
                           }
 
