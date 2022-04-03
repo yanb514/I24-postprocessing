@@ -16,11 +16,51 @@ import pymongo.errors
 
 from mongodb_reader import DataReader
 from utils.stitcher_module import *
+import heapq
+from utils.data_structures import Fragment
 
 
 
+def get_raw_fragments_naive(fragment_queue: multiprocessing.Queue, log_queue: multiprocessing.Queue) -> None:
+    """
+    :param fragment_queue:
+    :param log_queue:
+    :return:
+    """
+    # no change stream
+    # try getting the first fragment
+
+    print("Raw fragment ingester started.")
+    log_queue.put((logging.INFO, "Raw fragment ingester started."))
+    try:
+        dr = DataReader(**parameters.DB_PARAMS, vis=False)
+        print('database connected')
+        
+    except pymongo.errors.ConnectionFailure:
+        log_queue.put((logging.ERROR, "MongoDB connection failed"))
+        # Go past the change stream loop and try the connection again.
+#        continue
+    t1 = 0
+    t2 = 50
+    while True:
+        if fragment_queue.qsize() < 10:
+            docs = dr.collection.find({
+                "last_timestamp" : { "$in" : [t1,t2] }
+            }).sort('last_timestamp', pymongo.ASCENDING)
+            
+            for doc in docs:
+                fragment_queue.put(doc)
+            t1 = t2
+            t2 += parameters.TIME_RANGE
+            print(t1,t2)
+        else:
+            time.sleep(2)
+        
+            
+                
 def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multiprocessing.Queue) -> None:
     """
+    read from database with watch
     :param fragment_queue:
     :param log_queue:
     :return:
@@ -41,7 +81,7 @@ def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multipro
             # dr.collection -> get a collection
             
         except pymongo.errors.ConnectionFailure:
-            log_queue.put((logging.ERROR, "..."))
+            log_queue.put((logging.ERROR, "MongoDB connection failed"))
             # Go past the change stream loop and try the connection again.
             continue
 
@@ -60,7 +100,7 @@ def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multipro
                 # The ChangeStream encountered an unrecoverable error or the resume attempt failed.
                 if resume_token is None:
                     # There is no usable resume token because there was a failure during ChangeStream initialization.
-                    log_queue.put((logging.ERROR, "..."))
+                    log_queue.put((logging.ERROR, "MongoDB error in get_raw_fragments"))
                     # Break out of this secondary WHILE loop so that the connection can be restarted
                     break
                 # We have a resume token, so let's go back and try to use it.
@@ -68,11 +108,11 @@ def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multipro
                     continue
 
 
-def stitch_raw_trajectory_fragments(TIME_WIN, THRESH, VARX, VARY, 
-                                    curr_fragments, past_fragments, path,
-                                    fragment_queue: multiprocessing.Queue,
-                                    stitched_trajectory_queue: multiprocessing.Queue,
-                                    log_queue: multiprocessing.Queue) -> None:
+def stitch_raw_trajectory_fragments(PARAMS, 
+                                    INIT,
+                                    fragment_queue,
+                                    stitched_trajectory_queue,
+                                    log_queue):
     """
     :param TIME_WIN:
     :param THRESH:
@@ -86,20 +126,27 @@ def stitch_raw_trajectory_fragments(TIME_WIN, THRESH, VARX, VARY,
     :param log_queue:
     :return:
     """
+    # unpack variables
+    TIME_WIN = PARAMS['TIME_WIN']
+    VARX = PARAMS['VARX']
+    VARY = PARAMS['VARY']
+    THRESH = PARAMS['THRESH']
+    curr_fragments = INIT['curr_fragments']
+    past_fragments = INIT['past_fragments']
+    path = INIT['path']
     
     while True: # keep grabbing fragments from queue TODO: add wait time
         # Get next fragment and wait until one is available if necessary.
         fragment = fragment_queue.get(block=True) # fragment = dr._get_first('last_timestamp') # get the earliest ended fragment
-        
         # DO THE PROCESSING ON THE FRAGMENT  
-        curr_id = fragment._id # last_fragment = fragment['id']
+        curr_id = fragment['_id'] # last_fragment = fragment['id']
         fragment = Fragment(curr_id, fragment['timestamp'], fragment['x_position'], fragment['y_position'])
-        
+        print(path)
         path[curr_id] = curr_id
         right = fragment.t[-1] # right pointer: current end time
         left = right-1
         while left < right: # get all fragments that started but not ended at "right"
-            start_fragment = dr._get_first('first_timestamp')
+            start_fragment = fragment_queue[0] # dr._get_first('first_timestamp')
             start_time = start_fragment['first_timestamp']
             if start_fragment['last_timestamp'] >= right:
                 heapq.heappush(start_times_heap,  start_time) # TODO: check for processed documents on database side, avoid repeatedly reading

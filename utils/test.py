@@ -8,7 +8,7 @@ Created on Fri Mar 25 13:06:23 2022
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import time
+import parameters
 
 # Generate some non-uniformly sampled data with missing values removed
 N = 100
@@ -35,4 +35,12 @@ ax.scatter(df.index, df.x_position, label='resampled signal')
 fig.autofmt_xdate()
 ax.legend()
 ax.set_xlim([min(t), max(t)])
+
+#%%
+import parameters
+def add(others, TIME_WIN, VARX, VARY, THRESH):
+    return TIME_WIN + THRESH + others
+
+add(**parameters.STITCHER_PARAMS, others=5)
+
 

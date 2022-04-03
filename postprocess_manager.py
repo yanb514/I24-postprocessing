@@ -13,7 +13,6 @@ import signal
 
 # TODO: do this within-package import correctly
 import time
-
 import parameters
 import stitcher
 import reconciliation
@@ -30,7 +29,6 @@ if __name__ == '__main__':
     # ----------------------------------
     # ----------------------------------
     print("Post-processing manager creating shared data structures")
-    print(parameters.STITCHER_PARAMS)
     # Raw trajectory fragment queue
     # -- populated by database connector that listens for updates
     # TODO: specify the format of raw data as it will be stored in the queue (JSON, dict, etc?)
@@ -51,6 +49,7 @@ if __name__ == '__main__':
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     pid_tracker = mp_manager.dict()
 
+#%%
     # ASSISTANT/CHILD PROCESSES
     # ----------------------------------
     # References to subsystem processes that will get spawned so that these can be recalled
@@ -61,14 +60,13 @@ if __name__ == '__main__':
     # -- stitcher: constantly runs trajectory stitching and puts completed trajectories in `stitched_trajectory_queue`
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
-    processes_to_spawn = {'raw_data_feed': (stitcher.get_raw_fragments,
+    processes_to_spawn = {'raw_data_feed': (stitcher.get_raw_fragments_naive,
                                             (raw_fragment_queue, log_message_queue,)),
                           'stitcher': (stitcher.stitch_raw_trajectory_fragments,
-                                       (**parameters.STITCHER_PARAMS, **parameters.STITCHER_INIT, 
+                                       (parameters.STITCHER_PARAMS, parameters.STITCHER_INIT, 
                                         raw_fragment_queue, stitched_trajectory_queue, log_message_queue,)),
                           'reconciliation': (reconciliation.reconciliation_pool,
-                                             (**parameters.RECONCILIATION_PARAMS, 
-                                              stitched_trajectory_queue, log_message_queue, pid_tracker,)),
+                                             (stitched_trajectory_queue, log_message_queue, pid_tracker,)),
                           'log_handler': (logging_handler.message_handler, (log_message_queue,)),
                           }
 

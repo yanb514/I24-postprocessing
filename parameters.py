@@ -6,8 +6,8 @@ Including initialized data structures
 """
 # -----------------------------
 import utils.data_structures
-
-RAW_TRAJECTORY_QUEUE_SIZE = 10000
+from collections import defaultdict, deque, OrderedDict
+RAW_TRAJECTORY_QUEUE_SIZE = 1000
 STITCHED_TRAJECTORY_QUEUE_SIZE = 10000
 RECONCILED_TRAJECTORY_QUEUE_SIZE = 1000
 LOG_MESSAGE_QUEUE_SIZE = 10000
@@ -24,6 +24,7 @@ LOG_URL = ""
 
 ## specify parameters
 MODE = 'test'
+TIME_RANGE = 50 # A moving window range in sec for raw-data-feed
 TIME_OUT = 50 # gracefully shutdown if db has not been updated in TIME_OUT seconds
 
 # database parameters
@@ -48,18 +49,17 @@ STITCHER_PARAMS = {
 
 # Initialize data structures for bookkeeping
 STITCHER_INIT = {
-        "curr_fragments" = deque() # fragments in view. list of fragments. should be sorted by end_time
-        "past_fragments" = OrderedDict() # set of ids indicate end of fragment ready to be matched
-        "path" = {} # latest_fragment_id: previous_id. to store matching assignment
-        "start_times_heap" = [] # a heap to order start times of fragments in current TIME_WIN
+        "curr_fragments": deque(),  # fragments in view. list of fragments. should be sorted by end_time
+        "past_fragments": OrderedDict(),  # set of ids indicate end of fragment ready to be matched
+        "path": {} # latest_fragment_id: previous_id. to store matching assignment
         }
 
 # rectification parameters
 RECONCILIATION_PARAMS = { # TODO fill in those numbers
-        'lam1_x':XX,
-        'lam1_Y':XX,
-        'lam2_x':XX,
-        'lam2_y':XX,
-        'PH': xx,
-        'IH': xx
+        'lam1_x':0.0012,
+        'lam1_Y':0.0012,
+        'lam2_x':1.67e-2,
+        'lam2_y':1.67e-2,
+        'PH': 100,
+        'IH': 5
         }

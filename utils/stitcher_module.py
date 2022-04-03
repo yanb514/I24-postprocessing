@@ -6,11 +6,10 @@ data_association module connected with database
 '''
 import numpy as np
 import torch
-from collections import defaultdict, deque, OrderedDict
+
 import heapq
-from data_structures import Fragment
-import time
-import sys
+from utils.data_structures import Fragment
+
 
 loss = torch.nn.GaussianNLLLoss() 
 # TODO: confirm these, put them in parameters

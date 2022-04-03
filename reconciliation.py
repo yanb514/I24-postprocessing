@@ -10,7 +10,7 @@ import multiprocessing
 import parameters
 import pymongo
 import logging
-from utils.reconciliation_module import receding_horizon_2d_l2, resample
+from utils.reconciliation_module import receding_horizon_2d_l1, resample
 
 
 def reconcile_single_trajectory(trajectory_data, result_queue: multiprocessing.Queue,
