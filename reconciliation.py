@@ -22,6 +22,7 @@ def reconcile_single_trajectory(trajectory_data, result_queue: multiprocessing.Q
     :param log_queue:
     :return:
     """
+    
     log_queue.put((logging.DEBUG, "Reconciling on trajectory {}.".format('0')))
 
     # DO THE RECONCILIATION
@@ -55,6 +56,7 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     :param pid_tracker:
     :return:
     """
+    print("** reconciliation starts...")
     # TODO: decide about tasks per child
     worker_pool = multiprocessing.pool.Pool(processes=parameters.RECONCILIATION_POOL_SIZE)
     reconciliation_results_queue = multiprocessing.Queue(maxsize=parameters.RECONCILED_TRAJECTORY_QUEUE_SIZE)

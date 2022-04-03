@@ -28,7 +28,6 @@ class DataReader():
         
         # get a database
         self.db = client.trajectories
-        # list collection names:
         
         self.raw = getattr(self.db, "raw_trajectories")
         self.gt = getattr(self.db, "ground_truth_trajectories")
@@ -86,8 +85,39 @@ class DataReader():
         for key in oneKey:
             return key.keys()
         
+    def _get_range(self, collection_name, index_name, start, end):
+        collection = getattr(self, collection_name)
+        return collection.find({
+            index_name : { "$in" : [start, end]}}).sort('last_timestamp', pymongo.ASCENDING)
+        
     
+ 
+class DataWriter():
     
+    def __init__(self, LOGIN, MODE, vis=False):
+        '''
+        mode: 'test', 'dev' or 'deploy'
+        collection_name: 'raw_trajectories' if in 'data association' mode, or all trajectories if in 'vis' mode
+        '''
+        # connect to MongoDB with MongoDB URL
+        username = urllib.parse.quote_plus(LOGIN['username'])
+        password = urllib.parse.quote_plus(LOGIN['password'])
+        client = MongoClient('mongodb://%s:%s@10.2.218.56' % (username, password))
+        
+        # get a database
+        self.db = client.trajectories
+        
+    def _create_collection(self, collection_name):
+        if not hasattr(self.db, collection_name):
+            collection = self.db[collection_name] # TODO: not tested
+        else:
+            return
+        
+    def _insert(self, collection_name, doc):
+        collection = self.db[collection_name]
+        collection.insert_one(doc) #inserts traj, which is a dictionary, into col
+        
+        
 if __name__ == "__main__":
     # connect to MongoDB with MongoDB URL
     login_info = {'username': 'i24-data',

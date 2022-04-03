@@ -8,6 +8,7 @@ Spawns and manages child processes for trajectory fragment stitching and traject
 # -----------------------------
 
 import multiprocessing as mp
+from multiprocessing import Value, Lock
 import os
 import signal
 
@@ -33,7 +34,8 @@ if __name__ == '__main__':
     # -- populated by database connector that listens for updates
     # TODO: specify the format of raw data as it will be stored in the queue (JSON, dict, etc?)
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    raw_fragment_queue = mp_manager.Queue(maxsize=parameters.RAW_TRAJECTORY_QUEUE_SIZE)
+    raw_fragment_queue_e = mp_manager.Queue(maxsize=parameters.RAW_TRAJECTORY_QUEUE_SIZE) # east direction
+    raw_fragment_queue_w = mp_manager.Queue(maxsize=parameters.RAW_TRAJECTORY_QUEUE_SIZE) # west direction
     # Stitched trajectory queue
     # -- populated by stitcher and consumed by reconciliation pool
     # TODO: specify the format of raw data as it will be stored in the queue
@@ -48,6 +50,10 @@ if __name__ == '__main__':
     # PID tracker is a single dictionary of format {processName: PID}
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     pid_tracker = mp_manager.dict()
+    
+    # Shared values
+    BOOKMARK = Value('d', parameters.START)
+    lock = Lock()
 
 #%%
     # ASSISTANT/CHILD PROCESSES
@@ -61,10 +67,13 @@ if __name__ == '__main__':
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {'raw_data_feed': (stitcher.get_raw_fragments_naive,
-                                            (raw_fragment_queue, log_message_queue,)),
-                          'stitcher': (stitcher.stitch_raw_trajectory_fragments,
+                                            (BOOKMARK, lock, raw_fragment_queue_e,raw_fragment_queue_w, log_message_queue,)),
+                          'stitcher_e': (stitcher.stitch_raw_trajectory_fragments,
                                        (parameters.STITCHER_PARAMS, parameters.STITCHER_INIT, 
-                                        raw_fragment_queue, stitched_trajectory_queue, log_message_queue,)),
+                                        raw_fragment_queue_e, stitched_trajectory_queue, log_message_queue,)),
+                          'stitcher_w': (stitcher.stitch_raw_trajectory_fragments,
+                                       (parameters.STITCHER_PARAMS, parameters.STITCHER_INIT, 
+                                        raw_fragment_queue_w, stitched_trajectory_queue, log_message_queue,)),
                           'reconciliation': (reconciliation.reconciliation_pool,
                                              (stitched_trajectory_queue, log_message_queue, pid_tracker,)),
                           'log_handler': (logging_handler.message_handler, (log_message_queue,)),
@@ -113,7 +122,8 @@ if __name__ == '__main__':
                     # Re-write the process object in the dictionary and update its PID.
                     subsystem_process_objects[child_key] = subsys_process
                     pid_tracker[process_name] = subsys_process.pid
-                    
+      
+            
     except KeyboardInterrupt:
         # Catch KeyboardInterrupt, which is the same thing as a SIGINT
         # The command `kill -INT [PID]` with the AIDSS_manager PID, executed on the command line, will gracefully

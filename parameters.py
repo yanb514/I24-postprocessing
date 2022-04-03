@@ -7,7 +7,7 @@ Including initialized data structures
 # -----------------------------
 import utils.data_structures
 from collections import defaultdict, deque, OrderedDict
-RAW_TRAJECTORY_QUEUE_SIZE = 1000
+RAW_TRAJECTORY_QUEUE_SIZE = 10000
 STITCHED_TRAJECTORY_QUEUE_SIZE = 10000
 RECONCILED_TRAJECTORY_QUEUE_SIZE = 1000
 LOG_MESSAGE_QUEUE_SIZE = 10000
@@ -25,6 +25,8 @@ LOG_URL = ""
 ## specify parameters
 MODE = 'test'
 TIME_RANGE = 50 # A moving window range in sec for raw-data-feed
+START = 0
+END = 4800
 TIME_OUT = 50 # gracefully shutdown if db has not been updated in TIME_OUT seconds
 
 # database parameters
@@ -36,7 +38,6 @@ db_name = 'raw_trajectories'
 DB_PARAMS = {
         'LOGIN': login_info,
         'MODE': MODE,
-        'DB': db_name
         }
 
 # stitcher parameters
@@ -45,13 +46,16 @@ STITCHER_PARAMS = {
         'THRESH': 3,
         'VARX': 0.05, # TODO: unit conversion
         'VARY': 0.03,
+        "X_MAX": 20000,
+        "X_MIN": 0
         }
 
 # Initialize data structures for bookkeeping
 STITCHER_INIT = {
         "curr_fragments": deque(),  # fragments in view. list of fragments. should be sorted by end_time
         "past_fragments": OrderedDict(),  # set of ids indicate end of fragment ready to be matched
-        "path": {} # latest_fragment_id: previous_id. to store matching assignment
+        "path": {}, # latest_fragment_id: previous_id. to store matching assignment
+        "start_times_heap": []
         }
 
 # rectification parameters
