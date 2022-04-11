@@ -27,11 +27,14 @@ def reconcile_single_trajectory(trajectory_data, result_queue: multiprocessing.Q
 
     # DO THE RECONCILIATION
     resampled_trajectory = resample(trajectory_data)
-    finished_trajectory = receding_horizon_2d_l2(resampled_trajectory,**parameters.RECONCILIATION_PARAMS)
+    finished_trajectory = receding_horizon_2d_l1(resampled_trajectory,**parameters.RECONCILIATION_PARAMS)
     result_queue.put(finished_trajectory)
 
 
 def reconciled_results_handler(reconciled_queue: multiprocessing.Queue):
+    '''
+    keep grabbing trajectories from reconciled_queue and write to database
+    '''
     client = pymongo.MongoClient(parameters.DATABASE_URL)
     db = client.trajectories
     collection = db.processed_trajectories

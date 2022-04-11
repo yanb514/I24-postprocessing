@@ -368,6 +368,7 @@ def stitch_objects_tsmn_online_3(o, THRESHOLD_MAX=3, VARX=0.03, VARY=0.03, time_
             try: 
                 left = max(0,_first(running_tracks) - time_out)
             except: left = 0
+            
             # print("window size :", right-left)
             # remove out of sight tracks 
             while curr_tracks and curr_tracks[0].t[-1] < left: 

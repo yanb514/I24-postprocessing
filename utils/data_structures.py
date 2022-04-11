@@ -1,6 +1,7 @@
 import heapq
 from collections import defaultdict,OrderedDict
 import numpy as np
+#from time import sleep
 
 # A linked list node
 class Node:
@@ -195,16 +196,19 @@ class UndirectedGraph(defaultdict):
  
 class Fragment:
     # Constructor to create a new fragment
-    def __init__(self, id,t,x,y):
-        self.ready = False # if tail is ready to be matched
-        self.id = id
-        self.t = t
-        self.x = x
-        self.y = y
-        self.dir = np.sign(x[-1]-x[0])
+    def __init__(self, doc):
+        '''
+        doc is a record from raw_trajectories database collection
+        '''
+        self.id = doc["_id"]
+        self.t = np.array(doc["timestamp"])
+        self.x = np.array(doc["x_position"])
+        self.y = np.array(doc["y_position"])
+        self.dir = np.array(doc["direction"])
         self.suc = [] # tail matches to [(cost, Fragment_obj)] - minheap
         self.pre = [] # head matches to [(cost, Fragment_obj)] - minheap
         self.conflicts_with = set() # keep track of conflicts - bi-directional
+        self.ready = False # if tail is ready to be matched
     
     def _computeStats(self):
         t,x,y = self.t, self.x, self.y
@@ -295,6 +299,22 @@ class Fragment:
     #         self[v].remove(u)
     #     self.pop(u)
 
+class LRUCache:
+    def __init__(self, Capacity):
+        self.size = Capacity
+        self.cache = OrderedDict()
+
+    def get(self, key):
+        if key not in self.cache: return -1
+        val = self.cache[key]
+        self.cache.move_to_end(key)
+        return val
+
+    def put(self, key, val):
+        if key in self.cache: del self.cache[key]
+        self.cache[key] = val
+        if len(self.cache) > self.size:
+            self.cache.popitem(last=False)
 
         
 if __name__ == "__main__":

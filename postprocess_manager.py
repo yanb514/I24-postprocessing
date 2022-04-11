@@ -51,9 +51,11 @@ if __name__ == '__main__':
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     pid_tracker = mp_manager.dict()
     
-    # Shared values
-    BOOKMARK = Value('d', parameters.START)
-    lock = Lock()
+    # Initialize shared values
+    bookmark_e = Value('d', parameters.START)
+    bookmark_w = Value('d', parameters.START)
+    
+    lock = Lock() # unclear if lock can be shared
 
 #%%
     # ASSISTANT/CHILD PROCESSES
@@ -66,16 +68,19 @@ if __name__ == '__main__':
     # -- stitcher: constantly runs trajectory stitching and puts completed trajectories in `stitched_trajectory_queue`
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
-    processes_to_spawn = {'raw_data_feed': (stitcher.get_raw_fragments_naive,
-                                            (BOOKMARK, lock, raw_fragment_queue_e,raw_fragment_queue_w, log_message_queue,)),
-                          'stitcher_e': (stitcher.stitch_raw_trajectory_fragments,
-                                       (parameters.STITCHER_PARAMS, parameters.STITCHER_INIT, 
-                                        raw_fragment_queue_e, stitched_trajectory_queue, log_message_queue,)),
+    processes_to_spawn = {
+#                          'raw_data_feed_e': (stitcher.get_raw_fragments_naive,
+#                                            (bookmark_e, lock, raw_fragment_queue_e, log_message_queue,)),
+                          'raw_data_feed_w': (stitcher.get_raw_fragments_naive,
+                                            (bookmark_w, lock, raw_fragment_queue_w, log_message_queue,)),
+#                          'stitcher_e': (stitcher.stitch_raw_trajectory_fragments,
+#                                       (parameters.STITCHER_PARAMS, parameters.STITCHER_INIT_E, 
+#                                        raw_fragment_queue_e, stitched_trajectory_queue, log_message_queue,)),
                           'stitcher_w': (stitcher.stitch_raw_trajectory_fragments,
-                                       (parameters.STITCHER_PARAMS, parameters.STITCHER_INIT, 
+                                       (parameters.STITCHER_PARAMS, parameters.STITCHER_INIT_W, 
                                         raw_fragment_queue_w, stitched_trajectory_queue, log_message_queue,)),
-                          'reconciliation': (reconciliation.reconciliation_pool,
-                                             (stitched_trajectory_queue, log_message_queue, pid_tracker,)),
+#                          'reconciliation': (reconciliation.reconciliation_pool,
+#                                             (stitched_trajectory_queue, log_message_queue, pid_tracker,)),
                           'log_handler': (logging_handler.message_handler, (log_message_queue,)),
                           }
 

@@ -8,21 +8,26 @@ written to the database.
 # -----------------------------
 import multiprocessing
 import parameters
-import time
 import logging
 # TODO: check and test database implementation
 import pymongo
 import pymongo.errors
+from data_handler import DataReader, DataWriter
 
-from mongodb_handler import DataReader
 from utils.stitcher_module import _getCost
-import heapq
 from utils.data_structures import Fragment
 
+# for debugging
+from time import sleep
+import queue
 
 
-def get_raw_fragments_naive(BOOKMARK, lock, fragment_queue_e: multiprocessing.Queue,fragment_queue_w: multiprocessing.Queue, log_queue: multiprocessing.Queue) -> None:
+def get_raw_fragments_naive(BOOKMARK, lock, fragment_queue: multiprocessing.Queue, log_queue: multiprocessing.Queue) -> None:
     """
+    no change stream
+    read fragments in batch (static database)
+    put (start_timestamp, _id) into start_time_heap
+    put (end_timestamp, _id) into end_time_heap
     :param BOOKMARK: timestamp such that the next X framgnets are read and put to queue #TODO: keep a bookmark "cursor", and only get the next X fragments
     :param fragment_queue:
     :param log_queue:
@@ -32,44 +37,38 @@ def get_raw_fragments_naive(BOOKMARK, lock, fragment_queue_e: multiprocessing.Qu
     # try getting the first fragment
     print("** get raw fragment starts...")
     try:
-        dr = DataReader(**parameters.DB_PARAMS, vis=False)
+        dr = DataReader(parameters.RAW_COLLECTION)
         print('database connected')
     
     except pymongo.errors.ConnectionFailure:
         log_queue.put((logging.ERROR, "MongoDB connection failed"))
-            
-#    while True:
+     
+    while True:
+#        print("check if queue empty", fragment_queue.empty())
+        if fragment_queue.empty() and BOOKMARK.value < parameters.END: # start refilling the queue
     
-    if not fragment_queue_e.empty and not fragment_queue_w.empty: # if both queues are not empty
-        return
-    else: # if either queue is empty, refill
-        print("Raw fragment ingester started.")
-        log_queue.put((logging.INFO, "Raw fragment ingester started."))
-        
-        # Grab the next batch of fragments whose last_timestamps fall between BOOKMARK and BOOKMARK + 50
-        print("*********",BOOKMARK.value,BOOKMARK.value+parameters.TIME_RANGE)
-        docs = dr._get_range("raw", "last_timestamp", BOOKMARK.value,BOOKMARK.value+parameters.TIME_RANGE)
-        print(len(list(docs)))
-        
-        for doc in list(docs):
-            print("*** insert to queue")
-            if doc['direction'] == 1:
-                fragment_queue_e.put(doc)
-            else:
-                fragment_queue_w.put(doc)
-                
-        with lock:
+            print("Raw fragment ingester started.")
+            log_queue.put((logging.INFO, "Raw fragment ingester started."))
             
-            BOOKMARK.value += parameters.TIME_RANGE
-        
+            # Grab the next batch of fragments whose last_timestamps fall between BOOKMARK and BOOKMARK + 50
+            print("********* reading from time ",BOOKMARK.value,BOOKMARK.value+parameters.TIME_RANGE)
+            docs = dr.get_range("last_timestamp", BOOKMARK.value,BOOKMARK.value+parameters.TIME_RANGE)
+            docs = list(docs)
 
-        print("Final queue size (east/west)", fragment_queue_e.qsize(), "/", fragment_queue_e.qsize())
-        
+            print(len(docs), "documents writing to queue")
+            
+            for doc in docs:
+                fragment_queue.put(doc)
+                    
+            with lock:  
+                BOOKMARK.value += parameters.TIME_RANGE
+            
+            print("Current queue size (east/west)", fragment_queue.qsize())
             
                 
 def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multiprocessing.Queue) -> None:
     """
-    read from database with watch
+    read from database with change stream
     :param fragment_queue:
     :param log_queue:
     :return:
@@ -81,8 +80,9 @@ def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multipro
     log_queue.put((logging.INFO, "Raw fragment ingester started."))
     
     while True:
+        # Make a connection to database for reading
         try:
-            dr = DataReader(**parameters.DB_PARAMS, vis=False)
+            dh = DataHandler(**parameters.DB_PARAMS)
             
         except pymongo.errors.ConnectionFailure:
             log_queue.put((logging.ERROR, "MongoDB connection failed"))
@@ -95,7 +95,7 @@ def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multipro
             try:
                 # TODO: fix corner case where resume_token is stuck at a value but won't work
                 watch_for = [{'$match': {'operationType': 'insert'}}]
-                with dr.collection.watch(watch_for, resume_after=resume_token) as stream:
+                with dh.collection.watch(watch_for, resume_after=resume_token) as stream:
                     for insert_change in stream:
                         # TODO: parse the change in whatever way needed to properly organize `fragment_queue`
                         fragment_queue.put(insert_change)
@@ -118,6 +118,7 @@ def stitch_raw_trajectory_fragments(PARAMS,
                                     stitched_trajectory_queue,
                                     log_queue):
     """
+    fragment_queue is sorted by last_timestamp
     :param TIME_WIN:
     :param THRESH:
     :param VARX:
@@ -138,45 +139,37 @@ def stitch_raw_trajectory_fragments(PARAMS,
     X_MAX = PARAMS['X_MAX']
     X_MIN = PARAMS['X_MIN']
     
-    curr_fragments = INIT['curr_fragments']
-    past_fragments = INIT['past_fragments']
-    path = INIT['path']
-    start_times_heap = INIT['start_times_heap']
+    # TODO: take these data structure as input of the function
+    curr_fragments = INIT['curr_fragments'] # fragments that are in current window (left, right)
+    past_fragments = INIT['past_fragments'] # fragments whose tails are ready to be matched
+    path = INIT['path'] # assignment list
+#    start_times_heap = INIT['start_times_heap']
+    
+    # Make database connection for writing
+    dw = DataWriter("stitched_trajectories")
     
     print("** Stitching starts. fragment_queue size: ", fragment_queue.qsize())
     while True: # keep grabbing fragments from queue TODO: add wait time
-        # Get next fragment and wait until one is available if necessary.
-        print("*** in while loop")
-        fragment = fragment_queue.get(block=True) # fragment = dr._get_first('last_timestamp') # get the earliest ended fragment
+
+        current_fragment = fragment_queue.get(block=True) # fragment = dh._get_first('last_timestamp') # get the earliest ended fragment
+        print("*** getting fragment")
         # DO THE PROCESSING ON THE FRAGMENT  
-        curr_id = fragment['_id'] # last_fragment = fragment['id']
-        fragment = Fragment(curr_id, fragment['timestamp'], fragment['x_position'], fragment['y_position'])
+        curr_id = current_fragment['_id'] # last_fragment = fragment['id']
+        fragment = Fragment(current_fragment)
         path[curr_id] = curr_id
         right = fragment.t[-1] # right pointer: current end time
-        left = right-1
-        while left < right: # get all fragments that started but not ended at "right"
-            start_fragment = fragment_queue.get(block=True) # dr._get_first('first_timestamp')
-            start_time = start_fragment['first_timestamp']
-            if start_fragment['last_timestamp'] >= right:
-                heapq.heappush(start_times_heap,  start_time) # TODO: check for processed documents on database side, avoid repeatedly reading    
-        print("start_Times_heap size:",len(start_times_heap))
-        # start_times_heap[0] is the left pointer of the moving window
-        try: 
-            left = max(0, start_times_heap[0] - TIME_WIN)
-        except: left = 0
+        left = right - TIME_WIN
         print("left, right: ", left, right)
+        
         # compute fragment statistics (1d motion model)
         fragment._computeStats()
 
-        # print("window size :", right-left)
         # remove out of sight fragments 
         while curr_fragments and curr_fragments[0].t[-1] < left: 
             past_fragment = curr_fragments.popleft()
             past_fragments[past_fragment.id] = past_fragment
         
-        print("past_fragments size:",len(past_fragments))
-        # print("Curr_fragments ", [i.id for i in curr_fragments])
-        # print("past_fragments ", past_fragments.keys())
+
         # compute score from every fragment in curr to fragment, update Cost
         for curr_fragment in curr_fragments:
             cost = _getCost(curr_fragment, fragment, TIME_WIN, VARX, VARY)
@@ -188,6 +181,8 @@ def stitch_raw_trajectory_fragments(PARAMS,
                         
         prev_size = 0
         curr_size = len(past_fragments)
+        
+        # start iterative matching
         while curr_size > 0 and curr_size != prev_size:
             prev_size = len(past_fragments)
             remove_keys = set()
@@ -209,15 +204,24 @@ def stitch_raw_trajectory_fragments(PARAMS,
             [past_fragments.pop(key) for key in remove_keys]
             curr_size = len(past_fragments)
 
+
         # check if current fragment reaches the boundary, if yes, write its path to queue 
+        # TODO: keep a cache for "cold" fragments?
         if (fragment.dir == 1 and fragment.x[-1] > X_MAX) or (fragment.dir == -1 and fragment.x[-1] < X_MIN):
             key = fragment.id
             stitched_ids = [key]
             while key != path[key]:
                 stitched_ids.append(path[key])
                 key = path[key]
-            stitched_trajectory_queue.put(stitched_ids)
-            print("Stitched: ", len(stitched_trajectory_queue))
+            for id in stitched_ids:
+                path.remove(id)
+            # put to queue and write to database print(record.get('_id').generation_time)
+            doc = {
+                    "fragment_ids": stitched_ids,
+                    }
+            stitched_trajectory_queue.put(doc)
+            dw.insert(doc)
+            print("Stitched: ", stitched_trajectory_queue.qsize())
         else:
             curr_fragments.append(fragment)        
         # running_fragments.pop(fragment.id) # remove fragments that ended
@@ -229,4 +233,16 @@ def stitch_raw_trajectory_fragments(PARAMS,
 
 
 if __name__ == '__main__':
-    print("NO CODE TO RUN")
+    print("run main")
+    q = queue.Queue()
+    print("got queue")
+    dr = DataReader(parameters.RAW_COLLECTION)
+    print("connected to database")
+    docs = dr.get_range("last_timestamp", 10,11)
+    print("get range")
+    docs = list(docs)
+    print(len(docs))
+#    for doc in docs:
+#        q.put(doc)
+#    print(q.qsize())
+    

@@ -18,16 +18,22 @@ RECONCILIATION_TIMEOUT = 15
 DATABASE_URL = ""
 LOG_URL = ""
 
-
-
-
+## specify collection names
+GT_COLLECTION = "ground_truth_trajectories"
+RAW_COLLECTION = "raw_trajectories_one" # specify raw trajectories collection name that is used for reading
+STITCHED_COLLECTION = "stitched_trajectories"
+RECONCILED_COLLECTION = "reconciled_trajectories"
 
 ## specify parameters
 MODE = 'test'
 TIME_RANGE = 50 # A moving window range in sec for raw-data-feed
 START = 0
-END = 4800
+END = 480
 TIME_OUT = 50 # gracefully shutdown if db has not been updated in TIME_OUT seconds
+
+## roadway parameters
+X_MAX = 10000
+X_MIN = 0
 
 # database parameters
 login_info = {
@@ -36,22 +42,28 @@ login_info = {
         }
 db_name = 'raw_trajectories'
 DB_PARAMS = {
-        'LOGIN': login_info,
-        'MODE': MODE,
+        'LOGIN': login_info
         }
 
 # stitcher parameters
 STITCHER_PARAMS = {
-        'TIME_WIN': 300,
+        'TIME_WIN': 300, # TODO: change to the seconds, now in # frames
         'THRESH': 3,
         'VARX': 0.05, # TODO: unit conversion
         'VARY': 0.03,
-        "X_MAX": 20000,
-        "X_MIN": 0
+        "X_MAX": X_MAX,
+        "X_MIN": X_MIN
         }
 
 # Initialize data structures for bookkeeping
-STITCHER_INIT = {
+STITCHER_INIT_E = {
+        "curr_fragments": deque(),  # fragments in view. list of fragments. should be sorted by end_time
+        "past_fragments": OrderedDict(),  # set of ids indicate end of fragment ready to be matched
+        "path": {}, # latest_fragment_id: previous_id. to store matching assignment
+        "start_times_heap": []
+        }
+
+STITCHER_INIT_W = {
         "curr_fragments": deque(),  # fragments in view. list of fragments. should be sorted by end_time
         "past_fragments": OrderedDict(),  # set of ids indicate end of fragment ready to be matched
         "path": {}, # latest_fragment_id: previous_id. to store matching assignment
@@ -59,7 +71,7 @@ STITCHER_INIT = {
         }
 
 # rectification parameters
-RECONCILIATION_PARAMS = { # TODO fill in those numbers
+RECONCILIATION_PARAMS = { # TODO fill in those numbers, unit convert in feet
         'lam1_x':0.0012,
         'lam1_Y':0.0012,
         'lam2_x':1.67e-2,
@@ -67,3 +79,5 @@ RECONCILIATION_PARAMS = { # TODO fill in those numbers
         'PH': 100,
         'IH': 5
         }
+
+

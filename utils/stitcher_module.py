@@ -9,6 +9,7 @@ import torch
 
 import heapq
 from utils.data_structures import Fragment
+from time import sleep
 
 
 loss = torch.nn.GaussianNLLLoss() 
@@ -52,6 +53,8 @@ def _getCost(track1, track2, TIME_WIN, VARX, VARY):
     pt1 = track1.t[-1]
     varx = (track2.t-pt1) * VARX 
     vary = (track2.t-pt1) * VARY
+    print(track2.id, track2.t)
+    sleep(5)
     input = torch.transpose(torch.tensor([track2.x,track2.y]),0,1)
     target = torch.transpose(torch.tensor([targetx, targety]),0,1)
     var = torch.transpose(torch.tensor([varx,vary]),0,1)
@@ -63,7 +66,7 @@ def _getCost(track1, track2, TIME_WIN, VARX, VARY):
     targety = np.matmul(xx, track2.fity)
     pt1 = track2.t[-1]
     varx = (track1.t-pt1) * VARX 
-    vary = (track1.t-pt1) * VAR
+    vary = (track1.t-pt1) * VARY
     input = torch.transpose(torch.tensor([track1.x,track1.y]),0,1)
     target = torch.transpose(torch.tensor([targetx, targety]),0,1)
     var = torch.transpose(torch.tensor([varx,vary]),0,1)
