@@ -18,11 +18,7 @@ RECONCILIATION_TIMEOUT = 15
 DATABASE_URL = ""
 LOG_URL = ""
 
-## specify collection names
-GT_COLLECTION = "ground_truth_trajectories"
-RAW_COLLECTION = "raw_trajectories_one" # specify raw trajectories collection name that is used for reading
-STITCHED_COLLECTION = "stitched_trajectories"
-RECONCILED_COLLECTION = "reconciled_trajectories"
+
 
 ## specify parameters
 MODE = 'test'
@@ -32,22 +28,26 @@ END = 480
 TIME_OUT = 50 # gracefully shutdown if db has not been updated in TIME_OUT seconds
 
 ## roadway parameters
-X_MAX = 10000
-X_MIN = 0
+X_MAX = 32800 # in feet
+X_MIN = 1000
 
 # database parameters
+## specify collection names
+GT_COLLECTION = "ground_truth_trajectories"
+RAW_COLLECTION = "raw_trajectories_one" # specify raw trajectories collection name that is used for reading
+STITCHED_COLLECTION = "stitched_trajectories"
+RECONCILED_COLLECTION = "reconciled_trajectories"
 login_info = {
         'username': 'i24-data',
         'password': 'mongodb@i24'
         }
-db_name = 'raw_trajectories'
-DB_PARAMS = {
-        'LOGIN': login_info
-        }
+#DB_PARAMS = {
+#        'LOGIN': login_info
+#        }
 
 # stitcher parameters
 STITCHER_PARAMS = {
-        'TIME_WIN': 300, # TODO: change to the seconds, now in # frames
+        'TIME_WIN': 10, 
         'THRESH': 3,
         'VARX': 0.05, # TODO: unit conversion
         'VARY': 0.03,

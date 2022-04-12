@@ -39,14 +39,12 @@ class DataReader:
     def get_first(self, index_name):
         '''
         get the first document from MongoDB by index_name
-        TODO: make this code easier using find_one()
         '''
         return self.col.find_one(sort=[(index_name, pymongo.ASCENDING)])
         
     def get_last(self, index_name):
         '''
-        get the last document from MongoDB by index_name
-        TODO: make this code easier using find_one()
+        get the last document from MongoDB by index_name        
         '''
         return self.col.find_one(sort=[(index_name, pymongo.DESCENDING)])
     
@@ -83,6 +81,8 @@ class DataReader:
     def get_max(self, index_name):
         return self.get_last(index_name)[index_name]
     
+    def exists(self, index_name, value):
+        return self.col.count_documents({index_name: value }, limit = 1) != 0
    
         
 
@@ -127,17 +127,36 @@ class DataWriter:
 if __name__ == "__main__":
     # connect to MongoDB with MongoDB URL
     
-    dr = DataReader("raw_trajectories_one")
-#    dr = DataReader("ground_truth_one")
-    dr.create_index(["first_timestamp","last_timestamp","starting_x","ending_x", "ID"])
+    raw = DataReader("raw_trajectories_one")
+    gt = DataReader("ground_truth_one")
+    raw.create_index(["first_timestamp","last_timestamp","starting_x","ending_x", "ID"])
+    gt.create_index(["first_timestamp","last_timestamp","starting_x","ending_x", "ID"])
     
-    print("# trajectories: ", dr.count())
-    print("Time: {:.2f} - {:.2f}".format( dr.get_min("first_timestamp"), dr.get_max("last_timestamp")))
+    # get stats
+    print("# trajectories (raw): {}".format(raw.count()))
+    print("Time range (raw): {:.2f}-{:.2f}".format(raw.get_min("first_timestamp"), raw.get_max("last_timestamp")))
+    print("ID range (raw): {}-{}".format(raw.get_min("ID"), raw.get_max("ID")))
+    print("Start x range (raw): {:.2f}-{:.2f}".format(raw.get_min("starting_x"), raw.get_max("starting_x")))
+    print("End x range (raw): {:.2f}-{:.2f}".format(raw.get_min("ending_x"), raw.get_max("ending_x")))
+    
+    print("# trajectories (gt): {}".format(gt.count()))
+    print("Time range (gt): {:.2f}-{:.2f}".format(gt.get_min("first_timestamp"), gt.get_max("last_timestamp")))
+    print("ID range (gt): {}-{}".format(gt.get_min("ID"), gt.get_max("ID")))
+    print("Start x range (gt): {:.2f}-{:.2f}".format(gt.get_min("starting_x"), gt.get_max("starting_x")))
+    print("End x range (gt): {:.2f}-{:.2f}".format(gt.get_min("ending_x"), gt.get_max("ending_x")))
+    
+    
+    # check for fragment id
+#    gt_doc = gt.find_one("ID",102)
+#    for raw_id in gt_doc["fragment_ids"]:
+#        raw_doc = raw.find_one("_id", raw_id)
+#        print(raw_doc["ID"])
+    
 #    car = dr.find_one("_id", ObjectId("6243e7cf734f2333efbab466"))
-    cur = dr.col.find({}).limit(5)
+#    cur = dr.col.find({}).limit(5)
     
-    for doc in cur:
-        print(doc["ID"])
+#    for doc in cur:
+#        print(doc["ID"])
 #        plt.figure()
 #        plt.scatter(doc["timestamp"], doc["x_position"])
  

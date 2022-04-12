@@ -50,8 +50,6 @@ traj['coarse_vehicle_class']= 0
 traj['fine_vehicle_class']=1
                 
                 
-                
-                
 for file in files1:
     print("In file {}".format(file))
     line = 0
@@ -61,7 +59,6 @@ for file in files1:
         
         for row in reader:
             line += 1
-            
             ID = int(float(row[4]))
             curr_time = float(row[3])
             curr_x = float(row[41])
@@ -73,18 +70,15 @@ for file in files1:
                 print("line: {}, curr_time: {:.2f}, x:{:.2f},  gtID: {} ".format(line, curr_time, curr_x, ID))
 #                break
             
-            if ID!=prevID and prevID!=-1: # write ID to database
+            if ID!=prevID and prevID!=-1: 
+                # write prevID to database
                 traj['db_write_timestamp'] = 0
                 traj['first_timestamp']=traj['timestamp'][0]
                 traj['last_timestamp']=traj['timestamp'][-1]
                 traj['starting_x']=traj['x_position'][0]
                 traj['ending_x']=traj['x_position'][-1]
                 traj['flags'] = ['gt']
-                traj['direction']=int(float(row[37]))
-                traj['ID']=ID
-                traj['length']=[3.2808*float(row[45])]
-                traj['width']=[3.2808*float(row[44])]
-                traj['height']=[3.2808*float(row[46])]
+                traj['ID']=prevID
                 
 #                print("** write {} to db".format(ID))
                 col.insert_one(traj)
@@ -100,6 +94,9 @@ for file in files1:
                 traj['road_segment_id']=[int(row[49])]
                 traj['x_position']=[3.2808*float(row[41])]
                 traj['y_position']=[3.2808*float(row[42])]
+                traj['direction']=int(float(row[37]))
+                traj['ID']=ID
+                
                 
             
             else: #  keep augmenting trajectory
@@ -108,6 +105,9 @@ for file in files1:
                 traj['road_segment_id'].extend([float(row[49])])
                 traj['x_position'].extend([3.2808*float(row[41])])
                 traj['y_position'].extend([3.2808*float(row[42])])
+                traj['length']=[3.2808*float(row[45])]
+                traj['width']=[3.2808*float(row[44])]
+                traj['height']=[3.2808*float(row[46])]
             
             prevID = ID
             
@@ -137,6 +137,12 @@ col.insert_one(traj)
 
 
 #%%
+#import sys
+#sys.path.append('../')
+#from data_handler import DataReader
+
+print("Adding fragment IDs")
+
 colraw = db["raw_trajectories_one"]
 colgt = db['ground_truth_one']
 
@@ -144,9 +150,10 @@ for rawdoc in colraw.find({}):
     _id = rawdoc.get('_id')
     raw_ID=rawdoc.get('ID')
     gt_ID=raw_ID//100000
-    colgt.update_one({'ID':gt_ID},{'$push':{'fragment_ids':_id}},upsert=True)
-       # print(docgt)
-    #print(gt_ID) update fragment id
+    if colgt.count_documents({ 'ID': gt_ID }, limit = 1) != 0: # if gt_ID exists in colgt
+        # update
+        colgt.update_one({'ID':gt_ID},{'$push':{'fragment_ids':_id}},upsert=True)
+
     
     
     

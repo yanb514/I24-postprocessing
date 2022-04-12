@@ -110,9 +110,9 @@ for file in files1:
         
     f.close()
     
-# flush out all fragmentes in cache
+#%% flush out all fragmentes in cache
 print("flush out all the rest of LRU of size {}".format(len(lru)))
-for ID, traj in lru:
+for ID, traj in lru.items():
     traj['db_write_timestamp'] = 0
     traj['first_timestamp']=traj['timestamp'][0]
     traj['last_timestamp']=traj['timestamp'][-1]

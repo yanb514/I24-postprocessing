@@ -63,7 +63,7 @@ def get_raw_fragments_naive(BOOKMARK, lock, fragment_queue: multiprocessing.Queu
             with lock:  
                 BOOKMARK.value += parameters.TIME_RANGE
             
-            print("Current queue size (east/west)", fragment_queue.qsize())
+            print("Current queue size ", fragment_queue.qsize())
             
                 
 def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multiprocessing.Queue) -> None:
@@ -146,7 +146,7 @@ def stitch_raw_trajectory_fragments(PARAMS,
 #    start_times_heap = INIT['start_times_heap']
     
     # Make database connection for writing
-    dw = DataWriter("stitched_trajectories")
+    dw = DataWriter(parameters.STITCHED_COLLECTION)
     
     print("** Stitching starts. fragment_queue size: ", fragment_queue.qsize())
     while True: # keep grabbing fragments from queue TODO: add wait time
@@ -206,7 +206,7 @@ def stitch_raw_trajectory_fragments(PARAMS,
 
 
         # check if current fragment reaches the boundary, if yes, write its path to queue 
-        # TODO: keep a cache for "cold" fragments?
+        # TODO: keep a cache for "cold" fragments? Yes LRU style
         if (fragment.dir == 1 and fragment.x[-1] > X_MAX) or (fragment.dir == -1 and fragment.x[-1] < X_MIN):
             key = fragment.id
             stitched_ids = [key]
