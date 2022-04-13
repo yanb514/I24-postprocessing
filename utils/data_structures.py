@@ -3,196 +3,25 @@ from collections import defaultdict,OrderedDict
 import numpy as np
 #from time import sleep
 
-# A linked list node
-class Node:
-
-    # Constructor to create a new node
-    def __init__(self, data):
-        self.data = data
-        self.next = None
-        self.prev = None
-
-# Class to create a Doubly Linked List
-class DoublyLinkedList:
-
-    # Constructor for empty Doubly Linked List
-    def __init__(self):
-        self.head = None
-        self.size = 0
-
-    # Given a reference to the head of a list and an
-    # integer, inserts a new node on the front of list
-    def push(self, new_data):
-
-        # 1. Allocates node
-        # 2. Put the data in it
-        new_node = Node(new_data)
-
-        # 3. Make next of new node as head and
-        # previous as None (already None)
-        new_node.next = self.head
-
-        # 4. change prev of head node to new_node
-        if self.head is not None:
-            self.head.prev = new_node
-
-        # 5. move the head to point to the new node
-        self.head = new_node
-        self.size += 1
-        
-    # Given a node as prev_node, insert a new node after
-    # the given node
-    def insertAfter(self, prev_node, new_data):
-
-        # 1. Check if the given prev_node is None
-        if prev_node is None:
-            print("the given previous node cannot be NULL")
-            return
-
-        # 2. allocate new node
-        # 3. put in the data
-        new_node = Node(new_data)
-
-        # 4. Make net of new node as next of prev node
-        new_node.next = prev_node.next
-
-        # 5. Make prev_node as previous of new_node
-        prev_node.next = new_node
-
-        # 6. Make prev_node ass previous of new_node
-        new_node.prev = prev_node
-
-        # 7. Change previous of new_nodes's next node
-        if new_node.next:
-            new_node.next.prev = new_node
-
-        self.size+=1
-        
-    # Given a reference to the head of DLL and integer,
-    # appends a new node at the end
-    def append(self, new_data):
-
-        # 1. Allocates node
-        # 2. Put in the data
-        new_node = Node(new_data)
-
-        # 3. This new node is going to be the last node,
-        # so make next of it as None
-        # (It already is initialized as None)
-
-        # 4. If the Linked List is empty, then make the
-        # new node as head
-        if self.head is None:
-            self.head = new_node
-            self.size += 1
-            return
-
-        # 5. Else traverse till the last node
-        last = self.head
-        while last.next:
-            last = last.next
-
-        # 6. Change the next of last node
-        last.next = new_node
-
-        # 7. Make last node as previous of new node
-        new_node.prev = last
-        self.size += 1
-        return
-
-    def delete_element(self, x):
-        # TODO: make it more efficient if input is a node pointer
-        if self.head is None:
-            # print("The list has no element to delete")
-            return 
-        if self.head.next is None:
-            if self.head.data == x:
-                self.head = None
-                self.size = 0
-            # else:
-            #     print("Item not found")
-            return 
-
-        if self.head.data == x:
-            self.head = self.head.next
-            self.head.prev = None
-            self.size -= 1
-            return
-
-        n = self.head
-        while n.next is not None:
-            if n.data == x:
-                break
-            n = n.next
-        if n.next is not None:
-            n.prev.next = n.next
-            n.next.prev = n.prev
-            self.size -= 1
-        else:
-            if n.data == x:
-                n.prev.next = None
-                self.size -= 1
-            # else:
-            #     print("Element not found")
-        
-    # This function prints contents of linked list
-    # starting from the given node
-    def printList(self):
-
-        node = self.head
-        temp = []
-        while node:
-            temp.append(node.data)
-            # print(" {}".format(node.data))
-            # last = node
-            node = node.next
-        print(temp)
-
-    def convert_to_set(self):
-
-        node = self.head
-        s = set()
-        while node:
-            s.add(node.data)
-            # print(" {}".format(node.data))
-            # last = node
-            node = node.next
-        return s
 
 
+class LRUCache:
+    def __init__(self, Capacity):
+        self.size = Capacity
+        self.cache = OrderedDict()
 
-class UndirectedGraph(defaultdict):
-    def __init__(self):
-        super().__init__(set)
-        
-    # add two-way edge
-    def _addEdge(self,u,v):
-        self[u].add(v)
-        self[v].add(u)
-        
-    # remove node u and all edges to/from it
-    def _remove(self, u):
-        neighbors = self[u]
-        for v in neighbors:
-            self[v].remove(u)
-        self.pop(u)
-        
-    # make u and v's neighbors the union of their neighbors
-    def _union(self, u, v):
-        nei_u = self[u]
-        nei_v = self[v]
-        
-        u_v = nei_u-nei_v
-        for w in u_v:
-            self._addEdge(w,v)
-            
-        v_u = nei_v-nei_u
-        for w in v_u:
-            self._addEdge(w,u)
-            
-    def _printGraph(self):
-        for key,val in self.items():
-            print(key, val)
+    def get(self, key):
+        if key not in self.cache: return -1
+        val = self.cache[key]
+        self.cache.move_to_end(key)
+        return val
+
+    def put(self, key, val):
+        if key in self.cache: del self.cache[key]
+        self.cache[key] = val
+        if len(self.cache) > self.size:
+            self.cache.popitem(last=False)
+
  
 class Fragment:
     # Constructor to create a new fragment
@@ -211,6 +40,10 @@ class Fragment:
         self.ready = False # if tail is ready to be matched
     
     def _computeStats(self):
+        '''
+        compute statistics for matching cost
+        based on linear vehicle motion (least squares fit constant velocity)
+        '''
         t,x,y = self.t, self.x, self.y
         ct = np.nanmean(t)
         if len(t)<2:
@@ -229,6 +62,7 @@ class Fragment:
     # add successor to fragment with matching cost
     def _addSuc(self, cost, fragment):
         heapq.heappush(self.suc, (cost, fragment))
+    
     # add predecessor
     def _addPre(self, cost, fragment):
         heapq.heappush(self.pre, (cost, fragment))
@@ -275,6 +109,7 @@ class Fragment:
     # union conflicted neighbors, set head's pre to [], delete self
     @classmethod
     def _matchTailHead(cls, u,v):
+        # by the call, u = v._getFirstPre and u._getFirstSuc = v
         # match u's tail to v's head
         # 1. add u's conflicts to v -> contagious conflicts!
         nei_u = u.conflicts_with
@@ -282,50 +117,259 @@ class Fragment:
         u_v = nei_u-nei_v
         for w in u_v:
             v._addConflict(w)      
-        # v_u = nei_v-nei_u
-        # for w in v_u:
-        #     u._addEdge(u)
             
         # 2. remove all u's succ from u -> remove all from v's pre
-        v.pre = None
-        # 3. delete u
+        # 4/13/22 modified from v.pre = None to heapq.heappop(v.pre), because v's head can still be matched to others
+        # v.pre = None 
+        #TODO: not tested
+        heapq.heappop(v.pre)
+        
+        # 3. delete u 
+        #TODO: completely delete u from memorys
         u._delete()
         return
-    
-    # remove node u and all edges to/from it
-    # def _remove(self, u):
-    #     neighbors = self[u]
-    #     for v in neighbors:
-    #         self[v].remove(u)
-    #     self.pop(u)
 
-class LRUCache:
-    def __init__(self, Capacity):
-        self.size = Capacity
-        self.cache = OrderedDict()
 
-    def get(self, key):
-        if key not in self.cache: return -1
-        val = self.cache[key]
-        self.cache.move_to_end(key)
-        return val
 
-    def put(self, key, val):
-        if key in self.cache: del self.cache[key]
-        self.cache[key] = val
-        if len(self.cache) > self.size:
-            self.cache.popitem(last=False)
+
+# A node in DisjointSet1
+class Node:
+
+    # Constructor to create a new node
+    def __init__(self, doc=None):
+        if not doc: # for dummy node
+            self.parent = None
+            self.root = self
+            self.child = None
+        else:
+            self.id = doc["_id"]
+            self.parent = None
+            self.last_timestamp = doc["last_timestamp"] # for sorting children
+            self.last_modified = doc["last_timestamp"] # for cache
+            # TODO: for now children is a list, when printing, sort the list in the end
+            # could optimize this
+            self.child = None # for printing path from root 
+            self.root = self
+
+    def __repr__(self):
+        return 'Node({!r})'.format(self.id)
 
         
-if __name__ == "__main__":
-    ug = UndirectedGraph()
-    ug._addEdge(1,2)
-    ug._addEdge(3,4)
-    ug._addEdge(4,5)
+# A class to represent a disjoint set
+class PathCache:
+    '''
+    This class combines a union-find data structure and an LRU data structure
+    Purpose:
+        - keep track of root (as the first-appeared fragments) and their successors in paths
+        - output paths to stitched_trajectories database if time out
+    # TODO:
+        - how to utilize cache? what to keep track of?
+        - stress test
+        - can it replace / integrate with Fragment object?
+        - parent = NOne to initialize
+    '''
     
-    # ug._printGraph()
-    ug._union(2,4)
-    ug._printGraph()
+    def __init__(self):
+        # store a LRU cache (key: root_id, val: last_timestamp in assignment)
+        # why OderedDict(): support "least recently used" cache.
+        # items at the front of the cache are less recently used, and therefore is more likely to be outputted
+        # why keep last_timestamp? to compare with current_time and idle_time to detetermine if output is ready
+        # why not heap? cannot query and remove items in constant time
+        self.cache = OrderedDict()
+        self.path = {} # just a collection for all the Nodes' memory locations(key: id, val: Node object)
     
-    ug._remove(4)
-    ug._printGraph()
+    def _makeSet(self, docs):
+        for doc in docs:
+            self._addNode(doc)
+            
+    def _addNode(self, doc):
+        node = Node(doc) # create a new node
+        self.cache[node.id] = node
+        self.path[node.id] = node
+
+    # Find the root of the set in which element `k` belongs
+    def _find(self, node):
+        # # if `node` is not the root
+        # if node.root != node:
+        #     # dfs path compression
+        #     node.root = self._find(node.root)
+        # return node.root
+    
+        if not node.parent: # if node is the root
+            return node
+        # path compression
+        node.root = node.parent.root
+        return self._find(node.parent)
+
+        
+    # Perform Union of two subsets
+    def _union(self, id1, id2):
+        print("Union {} {}".format(id1, id2))
+        # assumes id2 comes after id1
+        
+        # find the root of the sets in which Nodes `id1` and `id2` belong
+        node1, node2 = self.path[id1], self.path[id2]
+        root1 = self._find(node1)
+        root2 = self._find(node2)
+        
+        # if `id1` and `id2` are present in the same set, only move to the end of cache
+        if root1 == root2:
+            self.cache[root1.id].last_modified = max(self.cache[root1.id].last_modified, node2.last_timestamp)
+            self.cache.move_to_end(root1.id)
+            return
+        
+        # compress path: update parent and child pointers for node1 and node2
+        # they should be on the same path from the shared root
+        # by matching logic, node1 has no child
+        
+        p1,p2 = node1, node2
+        if node2.child:
+            node2_is_leaf = False
+            head = node2.child
+        else:
+            node2_is_leaf = True
+            head = Node() # create dummy 
+
+        while p1 and p2:
+            if p1.last_timestamp < p2.last_timestamp:
+                head.parent = p2
+                p2.child = head
+                p2 = p2.parent
+            else:
+                head.parent = p1
+                p1.child = head
+                p1 = p1.parent
+            head = head.parent
+            
+        if node2_is_leaf:
+            node2.child = None
+                
+
+        # TODO update root along the path, by now they should have a shared root
+        # root2.parent = root1
+        
+        # # update LRU cache
+        # self.cache[root1.id].last_modified = max(self.cache[root1.id].last_modified, node2.last_timestamp)
+        # self.cache.move_to_end(root1.id)
+        # # delete root2 from cache
+        try:
+            self.cache.pop(node2.id)
+        except:
+            pass
+
+
+    def _printSets(self):
+        
+        print([self._find(val).id for key,val in self.path.items()])
+        return
+
+    def _dfs(self, node, path):      
+        if node:
+            path.append(node.id) 
+            self._dfs(node.child, path)
+            # for child in node.children:
+            #     self._dfs(child, path)
+ 
+    # def _getPath(self, root):
+    #     '''
+    #     get all the paths from roots, whatever remains in self.cache.keys are roots!
+    #     DFS
+    #     '''
+    #     # TODO: use try catch, test this
+    #     if root.id not in self.cache:
+    #         print("root not in cache")
+    #         returnall_paths = [] # nested lists
+
+    #     path = []
+    #     self._dfs(root, path)
+            
+    #     return path 
+          
+
+    def _getAllPaths(self):
+        '''
+        get all the paths from roots, whatever remains in self.cache.keys are roots!
+        DFS
+        # TODO: sort paths by last_timestamp
+        '''
+        all_paths = [] # nested lists
+        
+        for node in self.cache.values():
+            # print(node.last_timestamp)
+            path = []
+            self._dfs(node, path)
+            all_paths.append(path)
+            
+        return all_paths
+    
+    def _printParents(self):
+        for node in self.path.values():
+            try:
+                print("Node {}: parent: {}".format(node.id, node.parent.id))
+            except:
+                print("Node {} has no parent".format(node.id))
+    
+    def _printChildren(self):
+        for node in self.path.values():
+            try:
+                print("Node {}: parent: {}".format(node.id, node.child.id))
+            except:
+                print("Node {} has no child".format(node.id))
+                
+    def _outputPath(self, curr_time, idle_time):
+        # TODO
+        return
+        
+        
+        
+    
+ 
+
+if __name__ == '__main__':
+ 
+    # universe of items
+    # create synthetic docs
+    docs = []
+    ids = list("abcdefghi")
+    last_timestamps = np.arange(len(ids))
+    
+    for i in range(len(ids)):
+        docs.append({
+            "_id": ids[i],
+            "last_timestamp": last_timestamps[i]})
+            
+    
+ 
+    # initialize `DisjointSet` class
+    ds = PathCache()
+ 
+    # create a singleton set for each element of the universe
+    ds._makeSet(docs)
+    
+    ds._union("d", "i")  
+    # print(ds.cache)     
+    # print(ds._getAllPaths())
+    # print(ds.cache.keys())
+    ds._printParents()
+    
+    ds._union("a", "g") 
+    # print(ds._getAllPaths())
+    # print(ds.cache.keys())
+    
+    ds._union("c", "g")
+    # print(ds._getAllPaths())
+    # print(ds.cache.keys())
+    
+    ds._union("b", "e") 
+    # print(ds.cache.keys())
+
+    # print(ds.cache)
+    # ds._printSets()
+    # print(ds.path)
+    
+    ds._printParents()
+    ds._printChildren()
+    all_paths = ds._getAllPaths()
+    
+    print(all_paths)
+    

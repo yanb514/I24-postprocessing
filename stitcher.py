@@ -15,7 +15,7 @@ import pymongo.errors
 from data_handler import DataReader, DataWriter
 
 from utils.stitcher_module import _getCost
-from utils.data_structures import Fragment
+from utils.data_structures import Fragment, Path
 
 # for debugging
 from time import sleep
@@ -142,7 +142,7 @@ def stitch_raw_trajectory_fragments(PARAMS,
     # TODO: take these data structure as input of the function
     curr_fragments = INIT['curr_fragments'] # fragments that are in current window (left, right)
     past_fragments = INIT['past_fragments'] # fragments whose tails are ready to be matched
-    path = INIT['path'] # assignment list
+    path_cache = INIT['path_cache'] # an LRU cache of path object (see utils.data_structures). key: root_ID, val: Path_obj
 #    start_times_heap = INIT['start_times_heap']
     
     # Make database connection for writing
@@ -156,7 +156,7 @@ def stitch_raw_trajectory_fragments(PARAMS,
         # DO THE PROCESSING ON THE FRAGMENT  
         curr_id = current_fragment['_id'] # last_fragment = fragment['id']
         fragment = Fragment(current_fragment)
-        path[curr_id] = curr_id
+        path_cache[curr_id] = curr_id
         right = fragment.t[-1] # right pointer: current end time
         left = right - TIME_WIN
         print("left, right: ", left, right)
