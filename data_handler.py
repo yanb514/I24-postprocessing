@@ -128,22 +128,22 @@ if __name__ == "__main__":
     # connect to MongoDB with MongoDB URL
     
     raw = DataReader("raw_trajectories_one")
-    gt = DataReader("ground_truth_one")
+#    gt = DataReader("ground_truth_one")
     raw.create_index(["first_timestamp","last_timestamp","starting_x","ending_x", "ID"])
-    gt.create_index(["first_timestamp","last_timestamp","starting_x","ending_x", "ID"])
+#    gt.create_index(["first_timestamp","last_timestamp","starting_x","ending_x", "ID"])
     
     # get stats
     print("# trajectories (raw): {}".format(raw.count()))
-    print("Time range (raw): {:.2f}-{:.2f}".format(raw.get_min("first_timestamp"), raw.get_max("last_timestamp")))
-    print("ID range (raw): {}-{}".format(raw.get_min("ID"), raw.get_max("ID")))
-    print("Start x range (raw): {:.2f}-{:.2f}".format(raw.get_min("starting_x"), raw.get_max("starting_x")))
-    print("End x range (raw): {:.2f}-{:.2f}".format(raw.get_min("ending_x"), raw.get_max("ending_x")))
-    
-    print("# trajectories (gt): {}".format(gt.count()))
-    print("Time range (gt): {:.2f}-{:.2f}".format(gt.get_min("first_timestamp"), gt.get_max("last_timestamp")))
-    print("ID range (gt): {}-{}".format(gt.get_min("ID"), gt.get_max("ID")))
-    print("Start x range (gt): {:.2f}-{:.2f}".format(gt.get_min("starting_x"), gt.get_max("starting_x")))
-    print("End x range (gt): {:.2f}-{:.2f}".format(gt.get_min("ending_x"), gt.get_max("ending_x")))
+#    print("Time range (raw): {:.2f}-{:.2f}".format(raw.get_min("first_timestamp"), raw.get_max("last_timestamp")))
+#    print("ID range (raw): {}-{}".format(raw.get_min("ID"), raw.get_max("ID")))
+#    print("Start x range (raw): {:.2f}-{:.2f}".format(raw.get_min("starting_x"), raw.get_max("starting_x")))
+#    print("End x range (raw): {:.2f}-{:.2f}".format(raw.get_min("ending_x"), raw.get_max("ending_x")))
+#    
+#    print("# trajectories (gt): {}".format(gt.count()))
+#    print("Time range (gt): {:.2f}-{:.2f}".format(gt.get_min("first_timestamp"), gt.get_max("last_timestamp")))
+#    print("ID range (gt): {}-{}".format(gt.get_min("ID"), gt.get_max("ID")))
+#    print("Start x range (gt): {:.2f}-{:.2f}".format(gt.get_min("starting_x"), gt.get_max("starting_x")))
+#    print("End x range (gt): {:.2f}-{:.2f}".format(gt.get_min("ending_x"), gt.get_max("ending_x")))
     
     
     # check for fragment id
