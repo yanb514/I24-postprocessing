@@ -39,16 +39,16 @@ class Fragment:
         self.parent = None
             
         if doc:   
-            field_names = ["_id","timestamp","x_position","y_position","direction","last_timestamp"]
-            attr_names = ["id","t","x","y","dir","last_timestamp"]
+            field_names = ["_id","timestamp","x_position","y_position","direction","last_timestamp","last_timestamp" ]
+            attr_names = ["id","t","x","y","dir","last_timestamp","last_modified_timestamp"]
             for i in range(len(field_names)): # set as many attributes as possible
                 try:
                     setattr(self, attr_names[i], doc[field_names[i]])
                 except:
                     pass
             
-#    def __repr__(self):
-#        return 'Fragment({!r})'.format(self.id)
+    def __repr__(self):
+        return 'Fragment({!r})'.format(self.id)
     
     def _computeStats(self):
         '''
@@ -185,7 +185,10 @@ class PathCache:
         except:
             pass
         # path compression
-        node.root = node.parent.root
+#        if node.parent.root.last_timestamp <= node.parent.last_timestamp:
+        node.root = node.parent.root 
+        
+        node.last_modified_timestamp = max(node.last_modified_timestamp, node.root.last_modified_timestamp)
         return self._find(node.parent)
 
         
@@ -201,7 +204,7 @@ class PathCache:
         
         # if `id1` and `id2` are present in the same set, only move to the end of cache
         if root1 == root2:
-            self.cache[root1.id].last_timestamp = max(self.cache[root1.id].last_timestamp, node2.last_timestamp)
+            self.cache[root1.id].last_modified_timestamp = max(self.cache[root1.id].last_modified_timestamp, node2.last_timestamp)
             self.cache.move_to_end(root1.id)
             return
         
@@ -238,13 +241,13 @@ class PathCache:
                 
         # update roots along the path
         root1 = self._find(node1)
-        root2 = self._find(node2)
         node1.root = root1
+        root2 = self._find(node2)
         node2.root = root2
 
 #        assert root1 == root2
-        # update LRU cache
-        self.cache[root2.id].last_timestamp = max(self.cache[root2.id].last_timestamp, node2.last_timestamp)
+#         update LRU cache
+        self.cache[root2.id].last_modified_timestamp = max(self.cache[root2.id].last_modified_timestamp, node2.last_timestamp)
         self.cache.move_to_end(root2.id)
 
 
@@ -289,6 +292,13 @@ class PathCache:
                 print("Node {}: root: {}".format(node.id, node.root.id))
             except:
                 print("Node {} has no root".format(node.id))
+         
+    def _printLastTimestamps(self):
+        for node in self.path.values():
+            try:
+                print("Node {}: last_timestamp: {}".format(node.id, node.last_timestamp))
+            except:
+                print("Node {} has no last_timestamp".format(node.id))
                 
     def _getAllRoots(self):
         return self.cache.values()
@@ -297,7 +307,14 @@ class PathCache:
         roots = self._getAllRoots()
         for root in roots:
             print("Root {}: last_modified is {}".format(root.id, root.last_modified))
-            
+        
+    def _printAttr(self, attr_name):
+        for node in self.path.values():
+            try:
+                print("Node {}: {}: {}".format(node.id, attr_name, getattr(node, attr_name)))
+            except:
+                print("Node {} has no {}".format(node.id, attr_name))
+                
     def _popFirstPath(self):
         '''
         pop the first node (root) from cache if cache is not empty
@@ -350,45 +367,43 @@ if __name__ == '__main__':
     
  
     # initialize `DisjointSet` class
-    ds = PathCache()
+    pc = PathCache()
  
     # create a singleton set for each element of the universe
-    ds._makeSet(docs)
+    pc._makeSet(docs)
     
-    ds._union("a", "f")  
-    # print(ds.cache)     
-#    print(ds._getAllPaths())
-    # print(ds.cache.keys())
-#    ds._printParents()
+    pc._union("a", "f")  
+    # print(pc.cache)     
+#    print(pc._getAllPaths())
+    # print(pc.cache.keys())
+#    pc._printParents()
     
-    ds._union("b", "e") 
-#    ds._printRoots()
-#    print(ds._getAllPaths())
-    # print(ds.cache.keys())
+    pc._union("b", "e") 
+#    pc._printRoots()
+#    print(pc._getAllPaths())
+    # print(pc.cache.keys())
     
-    ds._union("e", "f")
-#    ds._printRoots()
-#    print(ds._getAllPaths())
-    # print(ds.cache.keys())
+    pc._union("e", "f")
+#    pc._printRoots()
+#    print(pc._getAllPaths())
+    # print(pc.cache.keys())
     
-    ds._union("c", "d") 
-#    ds._printRoots()
-#    print(ds._getAllPaths())
-#    ds._printRoots()
-    ds._union("d", "f") 
-    # print(ds.cache.keys())
+    pc._union("c", "d") 
+#    pc._printRoots()
+#    print(pc._getAllPaths())
+#    pc._printRoots()
 
-    # print(ds.cache)
-    # ds._printSets()
-    # print(ds.path)
+    pc._union("d", "f") 
+    # print(pc.cache.keys())
+
+    # print(pc.cache)
+    # pc._printSets()
+    # print(pc.path)
     
-#    ds._printParents()
-#    ds._printRoots()
-#    ds._printCache()
-#    ds._printChildren()
-#    all_paths = ds._getAllPaths()
+    pc._printAttr("root")
+    all_paths = pc._getAllPaths()
     
-#    print(all_paths)
-    print(ds._popFirstPath())
-    print(ds._popFirstPath())
+    print(all_paths)
+#    print(pc._popFirstPath())
+#    print(pc._popFirstPath())
     

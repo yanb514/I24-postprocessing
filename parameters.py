@@ -7,6 +7,7 @@ Including initialized data structures
 # -----------------------------
 import utils.data_structures
 from collections import defaultdict, deque, OrderedDict
+
 RAW_TRAJECTORY_QUEUE_SIZE = 10000
 STITCHED_TRAJECTORY_QUEUE_SIZE = 10000
 RECONCILED_TRAJECTORY_QUEUE_SIZE = 1000
@@ -50,9 +51,9 @@ STITCHER_PARAMS = {
         'TIME_WIN': 10, 
         'THRESH': 3,
         'VARX': 0.05, # TODO: unit conversion
-        'VARY': 0.03,
-        "X_MAX": X_MAX,
-        "X_MIN": X_MIN
+        'VARY': 0.03
+#        "X_MAX": X_MAX,
+#        "X_MIN": X_MIN
         }
 
 # Initialize data structures for bookkeeping

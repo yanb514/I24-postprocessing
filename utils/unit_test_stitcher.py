@@ -10,11 +10,11 @@ import numpy as np
 import unittest
 
 
-class TestPathCache(unittest.TestCase):
+class T(unittest.TestCase):
 
     # creating test data
     docs = []
-    ids = list("abcdef")
+    ids = list("abcdefghij")
     last_timestamps = np.arange(len(ids))
     
     for i in range(len(ids)):
@@ -27,17 +27,18 @@ class TestPathCache(unittest.TestCase):
     # create a singleton set for each element of the universe
     pc._makeSet(docs)
 
-    pc._union("a", "f") 
-#    pc._union("b", "e") 
-#    pc._union("e", "f") 
-#    pc._union("c", "d") 
-#    pc._union("d", "f") 
+    pc._union("a", "c") 
+    pc._union("c", "f") 
+    pc._union("h", "j") 
+    pc._union("d", "j") 
+    pc._union("b", "i")
+    pc._union("e", "i")
 
     # store ground truth values
-    real_roots = list("abcdea")
-    num_paths = 5
-    paths = [list("b"),list("c"),list("d"),list("e"),list("af")]
-    roots = list("bcdea")
+    real_roots = list("abadbagdbd")
+    paths = [list("g"), list("acf"),list("dhj"),list("bei")]
+    roots = [l[0] for l in paths]
+
 
     
     def test_all_roots(self):
@@ -46,10 +47,12 @@ class TestPathCache(unittest.TestCase):
             
     def test_final_paths(self):
         # number of roots
-        self.assertEqual(len(self.pc._getAllRoots()), self.num_paths, "Should be {} roots".format(self.num_paths))
+        self.assertEqual(len(self.pc._getAllRoots()), len(self.roots), "Should be {} roots".format(len(self.roots)))
         # number of paths
         paths = self.pc._getAllPaths()
-        self.assertEqual(len(paths), self.num_paths, "Should be {} roots".format(self.num_paths))
+        print(paths)
+        print(self.paths)
+        self.assertEqual(len(paths), len(self.roots), "Should be {} roots".format(len(self.roots)))
 
         for i, path in enumerate(paths):
             self.assertEqual(path, self.paths[i], "{}th path is incorrect".format(i))

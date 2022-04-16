@@ -22,8 +22,8 @@ class DataReader:
     A DataReader object for query
     '''
     def __init__(self, collection_name, login_info=parameters.login_info):
-        client = self.get_client(login_info)
-        self.col = client.trajectories[collection_name]
+        self.client = self.get_client(login_info)
+        self.col = self.client.trajectories[collection_name]
         
     def get_client(self, login_info):
         '''
@@ -128,12 +128,13 @@ if __name__ == "__main__":
     # connect to MongoDB with MongoDB URL
     
     raw = DataReader("raw_trajectories_one")
+
 #    gt = DataReader("ground_truth_one")
-    raw.create_index(["first_timestamp","last_timestamp","starting_x","ending_x", "ID"])
+#    raw.create_index(["first_timestamp","last_timestamp","starting_x","ending_x", "ID"])
 #    gt.create_index(["first_timestamp","last_timestamp","starting_x","ending_x", "ID"])
     
     # get stats
-    print("# trajectories (raw): {}".format(raw.count()))
+#    print("# trajectories (raw): {}".format(raw.count()))
 #    print("Time range (raw): {:.2f}-{:.2f}".format(raw.get_min("first_timestamp"), raw.get_max("last_timestamp")))
 #    print("ID range (raw): {}-{}".format(raw.get_min("ID"), raw.get_max("ID")))
 #    print("Start x range (raw): {:.2f}-{:.2f}".format(raw.get_min("starting_x"), raw.get_max("starting_x")))

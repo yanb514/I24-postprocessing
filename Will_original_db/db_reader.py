@@ -1,11 +1,9 @@
 import multiprocessing
-import urllib.parse
+
 import pymongo
 import pymongo.errors
-import db_parameters
 
 from collections.abc import Iterable
-from collections import defaultdict
 from typing import Union
 Numeric = Union[int, float]
 
@@ -23,89 +21,83 @@ def format_flat(columns, document, impute_none_for_missing=False):
     return []
 
 
-def read_query_once(host, port, username, password, database_name, collection_name,
-                    query_filter, query_sort = None, limit = 0):
-    """
-    Executes a single database read query using the DBReader object, which is destroyed immediately upon completion.
-    :param host: Database connection host name.
-    :param port: Database connection port number.
-    :param username: Database authentication username.
-    :param password: Database authentication password.
-    :param database_name: Name of database to connect (do not confuse with collection name).
-    :param collection_name: Name of database collection from which to query.
-    :param query_filter: Currently a dict following pymongo convention (need to abstract this).
-    :param query_sort: List of tuples: (field_to_sort, sort_direction); direction is ASC/ASCENDING or DSC/DESCENDING.
-    :param limit: Numerical limit for number of documents returned by query.
-    :return:
-    """
-    dbr = DBReader(host=host, port=port, username=username, password=password,
-                   database_name=database_name, collection_name=collection_name)
-    result = dbr.read_query(query_filter=query_filter, query_sort=query_sort, limit=limit)
-    return result
+#def read_query_once(host: str, port: int, username: str, password: str, database_name: str, collection_name: str,
+#                    query_filter: Union[dict, None], query_sort: Iterable[tuple[str, str]] = None, limit: int = 0):
+#    """
+#    Executes a single database read query using the DBReader object, which is destroyed immediately upon completion.
+#    :param host: Database connection host name.
+#    :param port: Database connection port number.
+#    :param username: Database authentication username.
+#    :param password: Database authentication password.
+#    :param database_name: Name of database to connect (do not confuse with collection name).
+#    :param collection_name: Name of database collection from which to query.
+#    :param query_filter: Currently a dict following pymongo convention (need to abstract this).
+#    :param query_sort: List of tuples: (field_to_sort, sort_direction); direction is ASC/ASCENDING or DSC/DESCENDING.
+#    :param limit: Numerical limit for number of documents returned by query.
+#    :return:
+#    """
+#    dbr = DBReader(host=host, port=port, username=username, password=password,
+#                   database_name=database_name, collection_name=collection_name)
+#    result = dbr.read_query(query_filter=query_filter, query_sort=query_sort, limit=limit)
+#    return result
 
 
-def read_data_into_csv(host, port, username, password, database_name, collection_name,
-                       csv_file_path, query_filter,
-                       query_sort = None, limit = 0):
-    """
-    Executes a single database read query and writes the results to a CSV file with pre-defined format.l
-    :param host: Database connection host name.
-    :param port: Database connection port number.
-    :param username: Database authentication username.
-    :param password: Database authentication password.
-    :param database_name: Name of database to connect to (do not confuse with collection name).
-    :param collection_name: Name of database collection from which to query.
-    :param csv_file_path: Absolute or relative file path at which to save CSV file; directories must exist already.
-    :param query_filter: Currently a dict following pymongo convention (need to abstract this).
-    :param query_sort: List of tuples: (field_to_sort, sort_direction); direction is ASC/ASCENDING or DSC/DESCENDING.
-    :param limit: Numerical limit for number of documents returned by query.
-    :return:
-    """
-    # TODO: fill these in; they should probably be stored elsewhere in some configuration file
-    if collection_name == db_parameters.RAW_COLLECTION:
-        csv_columns = []
-    elif collection_name == db_parameters.STITCHED_COLLECTION:
-        csv_columns = []
-    elif collection_name == db_parameters.RECONCILED_COLLECTION:
-        csv_columns = []
-    elif collection_name == 'metadata':
-        csv_columns = []
-    else:
-        raise ValueError("Invalid database collection name.")
+#def read_data_into_csv(host: str, port: int, username: str, password: str, database_name: str, collection_name: str,
+#                       csv_file_path: str, query_filter: Union[dict, None],
+#                       query_sort: Iterable[tuple[str, str]] = None, limit: int = 0):
+#    """
+#    Executes a single database read query and writes the results to a CSV file with pre-defined format.l
+#    :param host: Database connection host name.
+#    :param port: Database connection port number.
+#    :param username: Database authentication username.
+#    :param password: Database authentication password.
+#    :param database_name: Name of database to connect to (do not confuse with collection name).
+#    :param collection_name: Name of database collection from which to query.
+#    :param csv_file_path: Absolute or relative file path at which to save CSV file; directories must exist already.
+#    :param query_filter: Currently a dict following pymongo convention (need to abstract this).
+#    :param query_sort: List of tuples: (field_to_sort, sort_direction); direction is ASC/ASCENDING or DSC/DESCENDING.
+#    :param limit: Numerical limit for number of documents returned by query.
+#    :return:
+#    """
+#    # TODO: fill these in; they should probably be stored elsewhere in some configuration file
+#    if collection_name == 'raw':
+#        csv_columns = []
+#    elif collection_name == 'stitched':
+#        csv_columns = []
+#    elif collection_name == 'reconciled':
+#        csv_columns = []
+#    elif collection_name == 'metadata':
+#        csv_columns = []
+#    else:
+#        raise ValueError("Invalid database collection name.")
+#
+#    dbr = DBReader(host=host, port=port, username=username, password=password,
+#                   database_name=database_name, collection_name=collection_name)
+#    result = dbr.read_query(query_filter=query_filter, query_sort=query_sort, limit=limit)
+#    import csv
+#    with open(csv_file_path, 'w') as wf:
+#        writer = csv.writer(csvfile=wf, delimiter=';', quoting=csv.QUOTE_NONNUMERIC)
+#        for document in result:
+#            doc_fmt = format_flat(columns=csv_columns, document=document)
+#            writer.writerow(doc_fmt)
 
-    dbr = DBReader(host=host, port=port, username=username, password=password,
-                   database_name=database_name, collection_name=collection_name)
-    result = dbr.read_query(query_filter=query_filter, query_sort=query_sort, limit=limit)
-    import csv
-    with open(csv_file_path, 'w') as wf:
-        writer = csv.writer(csvfile=wf, delimiter=';', quoting=csv.QUOTE_NONNUMERIC)
-        for document in result:
-            doc_fmt = format_flat(columns=csv_columns, document=document)
-            writer.writerow(doc_fmt)
 
-
-def live_data_reader(host, port, username, password, database_name, db_collection,
-                     ready_queue):
+def live_data_reader(host: str, port: int, username: str, password: str, database_name: str, db_collection: str,
+                     ready_queue: multiprocessing.Queue):
     """
     Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
         that it can be assured to be time-ordered.
     ** THIS PROCEDURE AND FUNCTION IS STILL UNDER DEVELOPMENT **
-    ** NEEDS TO DETERMINE **
-    t_buffer
-    
     :param host: Database connection host name.
     :param port: Database connection port number.
     :param username: Database authentication username.
     :param password: Database authentication password.
     :param database_name: Name of database to connect to (do not confuse with collection name).
     :param db_collection: Name of database collection from which to query.
-    :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
+    :param ready_queue: Process-safe queue to which records that are "ready" are written.
     :return:
     """
     # TODO: determine the strategy to use here
-    dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-               password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
     pass
 
 
@@ -115,7 +107,7 @@ class DBReader:
         sticks around for a while to execute multiple queries.
     """
 
-    def __init__(self, host, port, username, password, database_name, collection_name):
+    def __init__(self, host: str, port: int, username: str, password: str, database_name: str, collection_name: str):
         """
         Connect to the specified MongoDB instance, test the connection, then set the specific database and collection.
         :param host: Database connection host name.
@@ -126,12 +118,8 @@ class DBReader:
         :param collection_name: Name of database collection from which to query.
         """
         # Connect immediately upon instantiation.
-#        self.client = pymongo.MongoClient(host=host, port=port, username=username, password=password,
-#                                          connect=True, connectTimeoutMS=5000)
-        username = urllib.parse.quote_plus(username)
-        password = urllib.parse.quote_plus(password)
-        self.client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
-        # TODO: add connect=True and connectTimeoutMS=5000
+        self.client = pymongo.MongoClient(host=host, port=port, username=username, password=password,
+                                          connect=True, connectTimeoutMS=5000)
         # Test out the connection with a ping and raise a ConnectionError if it isn't available.
         # Connection timeout specified during creation of self.client.
         try:
@@ -162,8 +150,8 @@ class DBReader:
         except pymongo.errors.PyMongoError:
             pass
 
-    def read_query(self, query_filter, query_sort = None,
-                   limit = 0):
+    def read_query(self, query_filter: Union[dict, None], query_sort: Iterable[tuple] = None,
+                   limit: int = 0) -> pymongo.cursor.Cursor:
         """
         Executes a read query against the database collection.
         :param query_filter: Currently a dict following pymongo convention (need to abstract this).
@@ -189,19 +177,20 @@ class DBReader:
         else:
             filter_field = query_filter
 
+        # TODO: check this is the desired/correct syntax and doesn't need more options
         result = self.collection.find(filter=filter_field, limit=limit, sort=sort_fields)
-        # return the pymongo.cursor.Cursor
+        # TODO: document the return types and interaction
         return result
 
     # TODO: also datetime for range bounds??
-    def read_query_range(self, range_parameter,
-                         range_greater_than = None,
-                         range_greater_equal= None,
-                         range_less_than = None,
-                         range_less_equal = None,
-                         range_increment = None,
-                         query_sort = None,
-                         limit = 0):
+    def read_query_range(self, range_parameter: str,
+                         range_greater_than: Union[Numeric, None] = None,
+                         range_greater_equal: Union[Numeric, None] = None,
+                         range_less_than: Union[Numeric, None] = None,
+                         range_less_equal: Union[Numeric, None] = None,
+                         range_increment: Union[Numeric, None] = None,
+                         query_sort: Iterable[tuple[str, str]] = None,
+                         limit: int = 0) -> Union[pymongo.cursor.Cursor, Iterable]:
         """
         Iterate across a query range in portions.
         Usage:
@@ -210,13 +199,12 @@ class DBReader:
             for result in dbr.read_query_range(range_parameter='t', range_greater_than=0, range_less_equal=100,
                                                 range_increment=10):
                 print(result)
-                
             # Method 2: WHILE loop with next(...)
             rqr = dbr.read_query_range(range_parameter='t', range_greater_equal=0, range_less_than=100,
                                         range_increment=10)
             while True:
                 try:
-                    result = next(rqr)
+                    result = next(rri)
                     print(result)
                 except StopIteration:
                     print("END OF ITERATION")
@@ -233,46 +221,38 @@ class DBReader:
         :param limit: Numerical limit for number of documents returned by query.
         :return: iterator across range-segmented queries (each query executes when __next__() is called in iteration)
         """
-        # no bounds: rawe error
         if range_greater_than is None and range_greater_equal is None and range_less_than is None \
                 and range_less_equal is None:
             raise ValueError("Must specify lower and or upper bound (inclusive or exlusive) for range query.")
-            
-        # only bounded on one side: currently not supported
         if (range_greater_than is None and range_greater_equal is None) or \
                 (range_less_than is None and range_less_equal is None):
             raise NotImplementedError("Infinite ranges not currently supported.")
 
         if range_increment is None:
             # TODO: construct this filter with the right lt/lte/gt/gte syntax based on inputs
-            range_filter = defaultdict(dict)            
-            # more operations: https://www.mongodb.com/docs/manual/reference/operator/query/
-            operators = ["$gt","$gte","$lt","$lte"]  
-            values = [range_greater_than, range_greater_equal, range_less_than, range_less_equal]
-            for i, operator in enumerate(operators):
-                if values[i]: 
-                    range_filter[range_parameter][operator] = values[i]
+            range_filter = None
+            return 'param: {}'.format(range_parameter), '>{}'.format(range_greater_than), \
+                   '≥{}'.format(range_greater_equal), '<{}'.format(range_less_than), '≤{}'.format(range_less_equal)
             return self.read_query(query_filter=range_filter, query_sort=query_sort, limit=limit)
-        
         else:
             self.range_iter_parameter = range_parameter
             self.range_iter_increment = range_increment
             self.range_iter_sort = query_sort
 
-            if range_greater_equal is not None: # left closed [a, b
+            if range_greater_equal is not None:
                 self.range_iter_start = range_greater_equal
                 self.range_iter_start_closed_interval = True
-            elif range_greater_than is not None: # left open (a, b
+            elif range_greater_than is not None:
                 self.range_iter_start = range_greater_than
                 self.range_iter_start_closed_interval = False
             else:
                 # Currently, this point should not be reachable, given the check against infinite ranges.
                 pass
 
-            if range_less_equal is not None: # right closed a, b]
+            if range_less_equal is not None:
                 self.range_iter_stop = range_less_equal
                 self.range_iter_stop_closed_interval = True
-            elif range_less_than is not None: # right open a, b)
+            elif range_less_than is not None:
                 self.range_iter_stop = range_less_than
                 self.range_iter_stop_closed_interval = False
             else:
@@ -282,9 +262,6 @@ class DBReader:
         return iter(self)
 
     def read_stream(self):
-        '''
-        Listen to change stream, update bookmark
-        '''
         pass
 
     def __iter__(self):
@@ -294,58 +271,6 @@ class DBReader:
             raise AttributeError("Iterable DBReader only supported via `read_query_range(...).")
         return DBReadRangeIterator(self)
 
-    # simple query functions
-    def get_first(self, index_name):
-        '''
-        get the first document from MongoDB by index_name
-        '''
-        return self.collection.find_one(sort=[(index_name, pymongo.ASCENDING)])
-        
-    def get_last(self, index_name):
-        '''
-        get the last document from MongoDB by index_name        
-        '''
-        return self.collection.find_one(sort=[(index_name, pymongo.DESCENDING)])
-    
-    def find_one(self, index_name, index_value):
-        return self.collection.find_one({index_name: index_value})
-        
-    def is_empty(self):
-        return self.count() == 0
-        
-    def get_keys(self): 
-        oneKey = self.collection.find().limit(1)
-        for key in oneKey:
-            return key.keys()
-        
-    def create_index(self, indices):
-        all_field_names = self.collection.find_one({}).keys()
-        existing_indices = self.collection.index_information().keys()
-        for index in indices:
-            if index in all_field_names:
-                if index+"_1" not in existing_indices and index+"_-1" not in existing_indices:
-                    self.collection.create_index(index)     
-        return
-    
-    def get_range(self, index_name, start, end): 
-#        return self.collection.find({
-#            index_name : { "$in" : [start, end]}}).sort(index_name, pymongo.ASCENDING)
-        return self.collection.find({
-            index_name : { "$gte" : start, "$lt" : end}}).sort(index_name, pymongo.ASCENDING)
-    
-    def count(self):
-        return self.collection.count_documents({})
-    
-    def get_min(self, index_name):
-        return self.get_first(index_name)[index_name]
-    
-    def get_max(self, index_name):
-        return self.get_last(index_name)[index_name]
-    
-    def exists(self, index_name, value):
-        return self.collection.count_documents({index_name: value }, limit = 1) != 0
-    
-    
 
 class DBReadRangeIterator:
     """
@@ -353,7 +278,7 @@ class DBReadRangeIterator:
         DBReader before instantiating this object. They will be set back to None upon the end of iteration.
     """
 
-    def __init__(self, db_reader):
+    def __init__(self, db_reader: DBReader):
         self._reader = db_reader
         self._current_lower_value = self._reader.range_iter_start
         self._current_upper_value = self._current_lower_value + self._reader.range_iter_increment
@@ -410,7 +335,7 @@ class DBReadRangeIterator:
                 gt, gte = None, self._current_lower_value
             else:
                 gt, gte = self._current_lower_value, None
-        # After first iteration, always do closed interval on greater-than side. [lower, upper)
+        # After first iteration, always do closed interval on greater-than side.
         else:
             gt, gte = None, self._current_lower_value
 
@@ -422,7 +347,7 @@ class DBReadRangeIterator:
                 lt, lte = None, query_upper_value
             else:
                 lt, lte = query_upper_value, None
-        # Before last iteration, always do open interval on less-than side. [lower, upper)
+        # Before last iteration, always do open interval on less-than side.
         else:
             lt, lte = query_upper_value, None
 
