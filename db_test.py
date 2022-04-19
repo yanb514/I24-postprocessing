@@ -1,5 +1,5 @@
 from db_reader import DBReader
-from db_writer import DBWriter
+#from db_writer import DBWriter
 import db_parameters
 
 # %% Test connection Done
