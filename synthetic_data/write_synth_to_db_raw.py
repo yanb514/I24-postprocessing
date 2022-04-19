@@ -27,7 +27,7 @@ col=db["raw_trajectories_one"]
 #GTFilePath='/isis/home/teohz/Desktop/data_for_mongo/GT_sort_by_ID/'
 TMFilePath='/isis/home/teohz/Desktop/data_for_mongo/pollute/'
 
-X_MAX = 10000
+X_MAX = 10000 # a cutoff threshold
 
 #%%
 #files=['0-12min.csv','12-23min.csv','23-34min.csv','34-45min.csv','45-56min.csv','56-66min.csv','66-74min.csv','74-82min.csv','82-89min.csv']

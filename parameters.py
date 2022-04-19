@@ -5,8 +5,7 @@ Contains the code-centric relatively static parameters read and used by the syst
 Including initialized data structures
 """
 # -----------------------------
-import utils.data_structures
-from collections import defaultdict, deque, OrderedDict
+
 
 RAW_TRAJECTORY_QUEUE_SIZE = 10000
 STITCHED_TRAJECTORY_QUEUE_SIZE = 10000
@@ -16,8 +15,6 @@ LOG_MESSAGE_QUEUE_SIZE = 10000
 RECONCILIATION_POOL_SIZE = 10
 RECONCILIATION_TIMEOUT = 15
 
-DATABASE_URL = ""
-LOG_URL = ""
 
 
 
@@ -32,19 +29,6 @@ TIME_OUT = 50 # gracefully shutdown if db has not been updated in TIME_OUT secon
 X_MAX = 32800 # in feet
 X_MIN = 1000
 
-# database parameters
-## specify collection names
-GT_COLLECTION = "ground_truth_trajectories"
-RAW_COLLECTION = "raw_trajectories_one" # specify raw trajectories collection name that is used for reading
-STITCHED_COLLECTION = "stitched_trajectories"
-RECONCILED_COLLECTION = "reconciled_trajectories"
-login_info = {
-        'username': 'i24-data',
-        'password': 'mongodb@i24'
-        }
-#DB_PARAMS = {
-#        'LOGIN': login_info
-#        }
 
 # stitcher parameters
 STITCHER_PARAMS = {

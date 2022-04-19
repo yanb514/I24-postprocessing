@@ -37,10 +37,11 @@ ax.legend()
 ax.set_xlim([min(t), max(t)])
 
 #%%
-import parameters
-def add(others, TIME_WIN, VARX, VARY, THRESH):
-    return TIME_WIN + THRESH + others
 
-add(**parameters.STITCHER_PARAMS, others=5)
+def add(others, a,b,c):
+    return a+b+c
 
+kwargs = {"b":1, "a":2,"c":3}
+res = add(**kwargs, others=5)
+print(res)
 

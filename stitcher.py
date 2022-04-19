@@ -7,66 +7,20 @@ written to the database.
 
 # -----------------------------
 import multiprocessing
-import parameters
+import stitcher_parameters
 import logging
 # TODO: check and test database implementation
 import pymongo
 import pymongo.errors
-from data_handler import DataReader, DataWriter
-
+from db_reader import DBReader
+from db_writer import DBWriter
+from collections import deque, OrderedDict
 from utils.stitcher_module import _getCost
-from utils.data_structures import Fragment, Path
+from utils.data_structures import Fragment, PathCache
 
 # for debugging
 from time import sleep
 import queue
-
-
-def get_raw_fragments_naive(BOOKMARK, lock, fragment_queue: multiprocessing.Queue, log_queue: multiprocessing.Queue) -> None:
-    """
-    no change stream
-    read fragments in batch (static database)
-    put (start_timestamp, _id) into start_time_heap
-    put (end_timestamp, _id) into end_time_heap
-    :param BOOKMARK: timestamp such that the next X framgnets are read and put to queue #TODO: keep a bookmark "cursor", and only get the next X fragments
-    :param fragment_queue:
-    :param log_queue:
-    :return:
-    """
-    # no change stream
-    # try getting the first fragment
-    print("** get raw fragment starts...")
-    try:
-        dr = DataReader(parameters.RAW_COLLECTION)
-        print('database connected')
-    
-    except pymongo.errors.ConnectionFailure:
-        log_queue.put((logging.ERROR, "MongoDB connection failed"))
-     
-    while True:
-#        print("check if queue empty", fragment_queue.empty())
-        if fragment_queue.empty() and BOOKMARK.value < parameters.END: # start refilling the queue
-    
-            print("Raw fragment ingester started.")
-            log_queue.put((logging.INFO, "Raw fragment ingester started."))
-            
-            # Grab the next batch of fragments whose last_timestamps fall between BOOKMARK and BOOKMARK + 50
-            print("********* reading from time ",BOOKMARK.value,BOOKMARK.value+parameters.TIME_RANGE)
-            docs = dr.get_range("last_timestamp", BOOKMARK.value,BOOKMARK.value+parameters.TIME_RANGE)
-            docs = list(docs)
-
-            print(len(docs), "documents writing to queue")
-            
-            for doc in docs:
-                fragment_queue.put(doc)
-                    
-            with lock:  
-                BOOKMARK.value += parameters.TIME_RANGE
-            
-            print("Current queue size ", fragment_queue.qsize())
-            
-                
-def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multiprocessing.Queue) -> None:
     """
     read from database with change stream
     :param fragment_queue:
@@ -112,44 +66,35 @@ def get_raw_fragments(fragment_queue: multiprocessing.Queue, log_queue: multipro
                     continue
 
 
-def stitch_raw_trajectory_fragments(PARAMS, 
-                                    INIT,
-                                    fragment_queue,
+def stitch_raw_trajectory_fragments(fragment_queue,
                                     stitched_trajectory_queue,
                                     log_queue):
     """
     fragment_queue is sorted by last_timestamp
-    :param TIME_WIN:
-    :param THRESH:
-    :param VARX:
-    :param VARY:
-    :param curr_fragments:
-    :param past_fragments:
-    :param path:
-    :param fragment_queue:
-    :param stitched_trajectory_queue:
+    :param fragment_queue: fragments sorted in last_timestamp
+    :param stitched_trajectory_queue: to store stitched trajectories result
     :param log_queue:
-    :return:
+    :return: None
     """
-    # unpack variables
-    TIME_WIN = PARAMS['TIME_WIN']
-    VARX = PARAMS['VARX']
-    VARY = PARAMS['VARY']
-    THRESH = PARAMS['THRESH']
-    X_MAX = PARAMS['X_MAX']
-    X_MIN = PARAMS['X_MIN']
+    # Get parameters
+    TIME_WIN = stitcher_parameters.TIME_WIN
+    VARX = stitcher_parameters.VARX
+    VARY = stitcher_parameters.VARY
+    THRESH = stitcher_parameters.THRESH
+    X_MAX = stitcher_parameters.X_MAX
+    X_MIN = stitcher_parameters.X_MIN
+    IDLE_TIME = stitcher_parameters.IDLE_TIME
     
-    # TODO: take these data structure as input of the function
-    curr_fragments = INIT['curr_fragments'] # fragments that are in current window (left, right)
-    past_fragments = INIT['past_fragments'] # fragments whose tails are ready to be matched
-    path_cache = INIT['path_cache'] # an LRU cache of path object (see utils.data_structures). key: root_ID, val: Path_obj
-#    start_times_heap = INIT['start_times_heap']
-    
+    # Initialize some data structures
+    curr_fragments = deque()  # fragments that are in current window (left, right), sorted by last_timestamp
+    past_fragments = OrderedDict()  # set of ids indicate end of fragment ready to be matched
+    path_cache = PathCache() # an LRU cache of Fragment object (see utils.data_structures)
+
     # Make database connection for writing
-    dw = DataWriter(parameters.STITCHED_COLLECTION)
+    dw = DBWriter(parameters.STITCHED_COLLECTION)
     
     print("** Stitching starts. fragment_queue size: ", fragment_queue.qsize())
-    while True: # keep grabbing fragments from queue TODO: add wait time
+    while True: 
 
         current_fragment = fragment_queue.get(block=True) # fragment = dh._get_first('last_timestamp') # get the earliest ended fragment
         print("*** getting fragment")
@@ -162,7 +107,7 @@ def stitch_raw_trajectory_fragments(PARAMS,
         print("left, right: ", left, right)
         
         # compute fragment statistics (1d motion model)
-        fragment._computeStats()
+        fragment.compute_stats()
 
         # remove out of sight fragments 
         while curr_fragments and curr_fragments[0].t[-1] < left: 
@@ -174,10 +119,10 @@ def stitch_raw_trajectory_fragments(PARAMS,
         for curr_fragment in curr_fragments:
             cost = _getCost(curr_fragment, fragment, TIME_WIN, VARX, VARY)
             if cost > THRESH:
-                curr_fragment._addConflict(fragment)
+                curr_fragment.add_conflict(fragment)
             elif cost > 0:
-                curr_fragment._addSuc(cost, fragment)
-                fragment._addPre(cost, curr_fragment)
+                curr_fragment.add_suc(cost, fragment)
+                fragment.add_pre(cost, curr_fragment)
                         
         prev_size = 0
         curr_size = len(past_fragments)
@@ -187,62 +132,38 @@ def stitch_raw_trajectory_fragments(PARAMS,
             prev_size = len(past_fragments)
             remove_keys = set()
             for _, ready in past_fragments.items(): # all fragments in past_fragments are ready to be matched to tail
-                best_head = ready._getFirstSuc()
+                best_head = ready.get_first_suc()
                 if not best_head or not best_head.pre: # if ready has no match or best head already matched to other fragments# go to the next ready
                     # past_fragments.pop(ready.id)
                     remove_keys.add(ready.id)
                 
                 else:
-                    try: best_tail = best_head._getFirstPre()
+                    try: best_tail = best_head.get_first_pre()
                     except: best_tail = None
                     if best_head and best_tail and best_tail.id == ready.id and best_tail.id not in ready.conflicts_with:
                         # print("** match tail of {} to head of {}".format(best_tail.id, best_head.id))
-                        path[best_head.id] = path[best_tail.id]
+                        # path[best_head.id] = path[best_tail.id]
+                        path_cache.union(best_head.id, best_tail.id)
                         remove_keys.add(ready.id)
-                        Fragment._matchTailHead(best_tail, best_head)
+                        Fragment.match_tail_head(best_tail, best_head)
 
             [past_fragments.pop(key) for key in remove_keys]
             curr_size = len(past_fragments)
 
+        curr_fragments.append(fragment)    
+        
+        # write paths from path_cache if 
+        while next(iter(path_cache.cache)).last_modified_time < curr_fragment["last_timestamp"] - IDLE_TIME:
+            try:
+                path = path_cache.pop_first_path()
+                
+                stitched_trajectory_queue.put(path) # doesn't know ObjectId
+                dw.write_stitch(path)
+            except: # no path ready to be written
+                pass
 
-        # check if current fragment reaches the boundary, if yes, write its path to queue 
-        # TODO: keep a cache for "cold" fragments? Yes LRU style
-        if (fragment.dir == 1 and fragment.x[-1] > X_MAX) or (fragment.dir == -1 and fragment.x[-1] < X_MIN):
-            key = fragment.id
-            stitched_ids = [key]
-            while key != path[key]:
-                stitched_ids.append(path[key])
-                key = path[key]
-            for id in stitched_ids:
-                path.remove(id)
-            # put to queue and write to database print(record.get('_id').generation_time)
-            doc = {
-                    "fragment_ids": stitched_ids,
-                    }
-            stitched_trajectory_queue.put(doc)
-            dw.insert(doc)
-            print("Stitched: ", stitched_trajectory_queue.qsize())
-        else:
-            curr_fragments.append(fragment)        
-        # running_fragments.pop(fragment.id) # remove fragments that ended
-            
-        
-        
+
         
             
-
-
-if __name__ == '__main__':
-    print("run main")
-    q = queue.Queue()
-    print("got queue")
-    dr = DataReader(parameters.RAW_COLLECTION)
-    print("connected to database")
-    docs = dr.get_range("last_timestamp", 10,11)
-    print("get range")
-    docs = list(docs)
-    print(len(docs))
-#    for doc in docs:
-#        q.put(doc)
-#    print(q.qsize())
+            
     

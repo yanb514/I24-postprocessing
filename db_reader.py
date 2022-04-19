@@ -84,14 +84,14 @@ def read_data_into_csv(host, port, username, password, database_name, collection
             writer.writerow(doc_fmt)
 
 
-def live_data_reader(host, port, username, password, database_name, db_collection,
+def live_data_reader(host, port, username, password, database_name, db_collection, range_increment,
                      ready_queue):
     """
     Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
-        that it can be assured to be time-ordered.
+        that it can be assured to be time-ordered. Refill data queue if the queue size is below a threshold AND the next query range is before change_stream t_max - t_buffer
     ** THIS PROCEDURE AND FUNCTION IS STILL UNDER DEVELOPMENT **
     ** NEEDS TO DETERMINE **
-    t_buffer
+    t_buffer: buffer time (in sec) such that no new fragment will be inserted before t_max - t_buffer   
     
     :param host: Database connection host name.
     :param port: Database connection port number.
@@ -102,12 +102,43 @@ def live_data_reader(host, port, username, password, database_name, db_collectio
     :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
     :return:
     """
-    # TODO: determine the strategy to use here
-    dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-               password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
-    pass
-
+    # TODO: not tested
+    dbr = DBReader(host=host, port=port, username=username, password=password,
+                   database_name=database_name, collection_name=db_collection)
+    # TODO: currently read_query_range doesn't support unbounded range
+    rri = dbr.read_query_range(range_parameter='last_timestamp', range_greater_equal=None, range_less_than=None, range_increment=range_increment)
+    t_max = 0
+    pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
+    
+    while True:
+        try:
+            if ready_queue.qsize() <= db_parameters.MIN_QUEUE_SIZE: # only move to the next query range if queue is low in stock
+                stream = dbr.collection.watch(pipeline)
+                first_insert_change = next(stream)
+                t_max = max(first_insert_change["fullDocument"]["last_timestamp"], t_max)
+                if t_max > rri._current_upper_value:
+                    next_batch = next(rri)
+                    for doc in next_batch:
+                        ready_queue.put(doc)
+                        
+        except pymongo.errors.PyMongoError:
+            # The ChangeStream encountered an unrecoverable error or the
+            # resume attempt failed to recreate the cursor.
+            print("live_data_reader encounters an error")
+            pass
+            # if resume_token is None:
+            #     # There is no usable resume token because there was a
+            #     # failure during ChangeStream initialization.
+            #     logging.error('...')
+            # else:
+            #     # Use the interrupted ChangeStream's resume token to create
+            #     # a new ChangeStream. The new stream will continue from the
+            #     # last seen insert change without missing any events.
+            #     with db.collection.watch(
+            #             pipeline, resume_after=resume_token) as stream:
+            #         for insert_change in stream:
+            #             print(insert_change)
+    
 
 class DBReader:
     """
@@ -130,16 +161,18 @@ class DBReader:
 #                                          connect=True, connectTimeoutMS=5000)
         username = urllib.parse.quote_plus(username)
         password = urllib.parse.quote_plus(password)
+
         self.client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
         # TODO: add connect=True and connectTimeoutMS=5000
         # Test out the connection with a ping and raise a ConnectionError if it isn't available.
         # Connection timeout specified during creation of self.client.
+        # print("try...")
         try:
             self.client.admin.command('ping')
         except pymongo.errors.ConnectionFailure:
             print("Server not available")
             raise ConnectionError("Could not connect to MongoDB.")
-
+        # print("db...")
         self.db = self.client[database_name]
         self.collection = self.db[collection_name]
 
@@ -151,6 +184,9 @@ class DBReader:
         self.range_iter_increment = None
         self.range_iter_stop = None
         self.range_iter_stop_closed_interval = None
+        
+        # For live read
+        self.change_stream_cursor = None
 
     def __del__(self):
         """
@@ -233,7 +269,7 @@ class DBReader:
         :param limit: Numerical limit for number of documents returned by query.
         :return: iterator across range-segmented queries (each query executes when __next__() is called in iteration)
         """
-        # no bounds: rawe error
+        # no bounds: raise error
         if range_greater_than is None and range_greater_equal is None and range_less_than is None \
                 and range_less_equal is None:
             raise ValueError("Must specify lower and or upper bound (inclusive or exlusive) for range query.")
@@ -244,7 +280,6 @@ class DBReader:
             raise NotImplementedError("Infinite ranges not currently supported.")
 
         if range_increment is None:
-            # TODO: construct this filter with the right lt/lte/gt/gte syntax based on inputs
             range_filter = defaultdict(dict)            
             # more operations: https://www.mongodb.com/docs/manual/reference/operator/query/
             operators = ["$gt","$gte","$lt","$lte"]  
@@ -281,11 +316,13 @@ class DBReader:
 
         return iter(self)
 
-    def read_stream(self):
+    def read_stream(self, pipeline):
         '''
-        Listen to change stream, update bookmark
+        TODO: may not need this function
         '''
-        pass
+        cursor = self.collection.watch(pipeline=pipeline)
+        self.change_stream_cursor = cursor
+        return 
 
     def __iter__(self):
         if self.range_iter_parameter is None or self.range_iter_start is None or self.range_iter_increment is None \
@@ -328,8 +365,6 @@ class DBReader:
         return
     
     def get_range(self, index_name, start, end): 
-#        return self.collection.find({
-#            index_name : { "$in" : [start, end]}}).sort(index_name, pymongo.ASCENDING)
         return self.collection.find({
             index_name : { "$gte" : start, "$lt" : end}}).sort(index_name, pymongo.ASCENDING)
     
