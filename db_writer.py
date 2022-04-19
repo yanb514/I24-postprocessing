@@ -294,10 +294,10 @@ class DBWriter:
         # TODO: figure out if there are resiliency checks that we can do for async writes -- callbacks?
         # self.client = motor.motor_asyncio.AsyncIOMotorClient(host=self.host, port=self.port,
                                                              # username=self.username, password=self.password)
-        self.pymongo_client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
-        self.pymongo_db = self.pymongo_client[database_name]
+        self.client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
+        self.db = self.client[database_name]
         try:
-            self.pymongo_client.admin.command('ping')
+            self.client.admin.command('ping')
         except pymongo.errors.ConnectionFailure:
             print("Server not available")
             raise ConnectionError("Could not connect to MongoDB using pymongo.")
@@ -359,7 +359,7 @@ class DBWriter:
         :return: None
         """
         collection_name = db_parameters.STITCHED_COLLECTION
-        col = self.pymongo_client.db[collection_name]
+        col = self.client.db[collection_name]
         doc = {
                 "fragment_ids": fragment_ids,
                 "configuration_id": self.session_config_id

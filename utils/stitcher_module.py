@@ -34,7 +34,7 @@ def _compute_stats(track):
     return track
    
 # define cost
-def _getCost(track1, track2, TIME_WIN, VARX, VARY):
+def min_nll_cost(track1, track2, TIME_WIN, VARX, VARY):
     '''
     track1 always ends before track2 ends
     999: mark as conflict
@@ -51,8 +51,8 @@ def _getCost(track1, track2, TIME_WIN, VARX, VARY):
     targetx = np.matmul(xx, track1.fitx)
     targety = np.matmul(xx, track1.fity)
     pt1 = track1.t[-1]
-    varx = (track2.t-pt1) * VARX 
-    vary = (track2.t-pt1) * VARY
+    varx = (np.array(track2.t)-pt1) * VARX 
+    vary = (np.array(track2.t)-pt1) * VARY
 
     input = torch.transpose(torch.tensor([track2.x,track2.y]),0,1)
     target = torch.transpose(torch.tensor([targetx, targety]),0,1)
@@ -64,8 +64,8 @@ def _getCost(track1, track2, TIME_WIN, VARX, VARY):
     targetx = np.matmul(xx, track2.fitx)
     targety = np.matmul(xx, track2.fity)
     pt1 = track2.t[-1]
-    varx = (track1.t-pt1) * VARX 
-    vary = (track1.t-pt1) * VARY
+    varx = (np.array(track1.t)-pt1) * VARX 
+    vary = (np.array(track1.t)-pt1) * VARY
     input = torch.transpose(torch.tensor([track1.x,track1.y]),0,1)
     target = torch.transpose(torch.tensor([targetx, targety]),0,1)
     var = torch.transpose(torch.tensor([varx,vary]),0,1)

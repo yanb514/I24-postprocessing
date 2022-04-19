@@ -32,7 +32,7 @@ class Fragment:
         self.suc = [] # tail matches to [(cost, Fragment_obj)] - minheap
         self.pre = [] # head matches to [(cost, Fragment_obj)] - minheap
         self.conflicts_with = set() # keep track of conflicts - bi-directional
-        self.ready = False # if tail is ready to be matched
+        # self.ready = False # if tail is ready to be matched
     
         self.child = None # for printing path from root 
         self.root = self # 
@@ -40,14 +40,22 @@ class Fragment:
         self.tail_matched = False # flip to true when its tail matches to another fragment's head
             
         if doc:   
-            field_names = ["_id","timestamp","x_position","y_position","direction","last_timestamp","last_timestamp" ]
-            attr_names = ["id","t","x","y","dir","last_timestamp","last_modified_timestamp"]
+            field_names = ["_id","ID", "timestamp","x_position","y_position","direction","last_timestamp","last_timestamp" ]
+            attr_names = ["id","ID","t","x","y","dir","last_timestamp","last_modified_timestamp"]
             for i in range(len(field_names)): # set as many attributes as possible
                 try:
                     setattr(self, attr_names[i], doc[field_names[i]])
                 except:
                     pass
-            
+                
+        # TODO: parameters needs to change if unit conversion. convert x/y_position from feet to meter
+        try:
+            self.x = np.array(self.x)*0.3048
+            self.y = np.array(self.y)*0.3048
+        except:
+            pass
+        
+        
     def __repr__(self):
         return 'Fragment({!r})'.format(self.id)
     
@@ -196,8 +204,7 @@ class PathCache:
         
     # Perform Union of two subsets
     def union(self, id1, id2):
-#        print("Union {} {}".format(id1, id2))
-        # assumes id2 comes after id1
+        # id2 comes after id1
         
         # find the root of the sets in which Nodes `id1` and `id2` belong
         node1, node2 = self.path[id1], self.path[id2]
@@ -298,10 +305,13 @@ class PathCache:
             root_id, root_node = self.cache.popitem()
             path = self.path_down(root_node)
             for p in path:
-                self.path.pop(p)
+                try: self.path.pop(p)
+                except: pass
+                try: self.cache.pop(p)
+                except: pass
             return path
         except StopIteration:
-            raise Exception
+            raise StopIteration
         
     def path_up(self, node):
         path = []

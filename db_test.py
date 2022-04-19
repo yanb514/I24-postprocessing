@@ -54,7 +54,7 @@ while True:
 #         print(doc["ID"])
 # print("END OF ITERATION")
 
-#%% Test DBWriter write_stitch
+#%% Test DBWriter write_stitch Done
 # query some test data to write to a new collection
 print("Connect to DBReader")
 test_dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
@@ -70,13 +70,14 @@ dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT,
                database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
 print("Writing {} documents...".format(len(test_res)))
 
-dbw.db[db_parameters.STITCHED_COLLECTION].drop()
+col = dbw.db[db_parameters.STITCHED_COLLECTION]
+col.drop()
 for doc in test_res:
     dbw.write_stitch(doc, collection_name = db_parameters.STITCHED_COLLECTION)
 
 
-for doc in dbw.db[db_parameters.STITCHED_COLLECTION].find({}):
-    print(doc["ID"], doc["last_timestamp"])
+for doc in col.find({}):
+    print(doc["ID"], doc["last_timestamp"]
     
 #%% Async insert_many using motor
 import asyncio
