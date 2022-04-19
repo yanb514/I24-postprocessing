@@ -166,13 +166,13 @@ class DBReader:
         # TODO: add connect=True and connectTimeoutMS=5000
         # Test out the connection with a ping and raise a ConnectionError if it isn't available.
         # Connection timeout specified during creation of self.client.
-        # print("try...")
+
         try:
             self.client.admin.command('ping')
         except pymongo.errors.ConnectionFailure:
             print("Server not available")
             raise ConnectionError("Could not connect to MongoDB.")
-        # print("db...")
+
         self.db = self.client[database_name]
         self.collection = self.db[collection_name]
 

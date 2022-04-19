@@ -1,6 +1,7 @@
 from db_reader import DBReader
-#from db_writer import DBWriter
+from db_writer import DBWriter
 import db_parameters
+import time
 
 # %% Test connection Done
 dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
@@ -53,20 +54,54 @@ while True:
 #         print(doc["ID"])
 # print("END OF ITERATION")
 
-#%% Test DBWriter
+#%% Test DBWriter write_stitch
 # query some test data to write to a new collection
 print("Connect to DBReader")
 test_dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
+               database_name=db_parameters.DB_NAME, collection_name=db_parameters.GT_COLLECTION)
 print("Query...")
-test_res = test_dbr.read_query(query_filter = {"last_timestamp": {"$gt": 5, "$lt":500}}, query_sort = [("last_timestamp", "ASC"), ("starting_x", "ASC")],
+test_res = test_dbr.read_query(query_filter = {"last_timestamp": {"$gt": 5, "$lt":600}}, query_sort = [("last_timestamp", "ASC"), ("starting_x", "ASC")],
                    limit = 0)
+test_res = list(test_res)
 print("Connect to DBWriter")
 dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                password=db_parameters.DEFAULT_PASSWORD,
                database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
-print("Writing...")
+print("Writing {} documents...".format(len(test_res)))
+
+dbw.db[db_parameters.STITCHED_COLLECTION].drop()
 for doc in test_res:
     dbw.write_stitch(doc, collection_name = db_parameters.STITCHED_COLLECTION)
+
+
+for doc in dbw.db[db_parameters.STITCHED_COLLECTION].find({}):
+    print(doc["ID"], doc["last_timestamp"])
+    
+#%% Async insert_many using motor
+import asyncio
+
+dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
+               password=db_parameters.DEFAULT_PASSWORD,
+               database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
+
+# dbw.motor_db[db_parameters.STITCHED_COLLECTION].drop()
+
+print("start inserting")
+t1 = time.time()
+col = dbw.motor_db[db_parameters.STITCHED_COLLECTION]
+async def f():
+    await col.insert_many(({'i': i} for i in range(1000)))
+    count = await col.count_documents({})
+    print("Final count: %d" % count)
+  
+# loop = asyncio.get_event_loop()
+# loop.run_until_complete(f())
+t2 = time.time()
+print("Elapsed time: ", t2-t1)
+count = col.count_documents({})
+print(count)
+
+
+
 

@@ -1,4 +1,4 @@
-# import motor.motor_asyncio
+import motor.motor_asyncio
 import pymongo
 import db_parameters
 import csv
@@ -275,7 +275,7 @@ class DBWriter:
         """
         username = urllib.parse.quote_plus(username)
         password = urllib.parse.quote_plus(password)
-        self.pymongo_client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
+        
         self.host, self.port = host, port
         self.username, self.password = username, password
         self.db_name = database_name
@@ -285,11 +285,22 @@ class DBWriter:
         self.session_config_id = session_config_id
 
         # Connect immediately upon instantiation.
+        # print("motor client")
+        # self.motor_client = motor.motor_tornado.MotorClient('mongodb://%s:%s@%s' % (username, password, host))
+        # print("motor db")
+        # self.motor_db = self.motor_client[database_name]
+        
         # TODO: consider adding a PyMongo version as well for one-off writes
         # TODO: figure out if there are resiliency checks that we can do for async writes -- callbacks?
         # self.client = motor.motor_asyncio.AsyncIOMotorClient(host=self.host, port=self.port,
                                                              # username=self.username, password=self.password)
-        self.db = self.pymongo_client[database_name]
+        self.pymongo_client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
+        self.pymongo_db = self.pymongo_client[database_name]
+        try:
+            self.pymongo_client.admin.command('ping')
+        except pymongo.errors.ConnectionFailure:
+            print("Server not available")
+            raise ConnectionError("Could not connect to MongoDB using pymongo.")
 
     def __del__(self):
         """
@@ -357,6 +368,12 @@ class DBWriter:
         col.insert(doc)
         return
 
+    async def do_insert(self):
+        result = await self.db[db_parameters.STITCHED_COLLECTION].insert_many(
+            [{'i': i} for i in range(2000)])
+        print('inserted %d docs' % (len(result.inserted_ids),))
+    
+    
     def write_reconciled_trajectory(self, vehicle_id: int, coarse_vehicle_class: int, fine_vehicle_class: int,
                                     timestamps: list[float], road_segment_id: int,
                                     x_positions: list[float], y_positions: list[float],
