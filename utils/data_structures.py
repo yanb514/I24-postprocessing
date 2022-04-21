@@ -4,31 +4,212 @@ import numpy as np
 #from time import sleep
 
 
+class Node:
+    def __init__(self, data):
+        # TODO: make data type more generic
+        # if not isinstance(data, Fragment):
+        #     fragment = Fragment(data) # create a new node
+        #     self.data = fragment # Fragment object
+        # else:
+        if data:
+            for key, val in data.items():
+                setattr(self, key, val)
+        # self.data = data
+        self.next = None
+        self.prev = None
+        
+    def __repr__(self):
+        try:
+            return 'Node({!r})'.format(self.ID)
+        except:
+            try:
+                return 'Node({!r})'.format(self.id)
+            except:
+                return 'Sentinel Node'
+    
+# Create the doubly linked list class
+class SortedDLL:
+    '''
+    Sorted dll, for root information, sorted by tail_time of roots
+    original code from  http://projectpython.net/chapter17/
+    
+    Hierarchy:
+        SortedDll()
+            - Node()
+                - Fragment()
+    append: 
+    
+    '''
+    def __init__(self):
+      self.sentinel = Node(None)
+      self.sentinel.next = self.sentinel
+      self.sentinel.prev = self.sentinel
+      self.cache = {} # key: fragment_id, val: Node address with that fragment in it, keep the address of pointers
 
-class LRUCache:
-    def __init__(self, Capacity):
-        self.size = Capacity
-        self.cache = OrderedDict()
+    def count(self):
+        return len(self.cache)
+    
+    # Return a reference to the first node in the list, if there is one.
+    # If the list is empty, return None.
+    def first_node(self):
+        if self.sentinel.next == self.sentinel:
+            return None
+        else:
+            return self.sentinel.next
+        
+    # Insert a new node with data after node pivot.
+    def insert_after(self, pivot, node):
+        if isinstance(node, dict):
+            node = Node(node)
 
-    def get(self, key):
-        if key not in self.cache: return -1
-        val = self.cache[key]
-        self.cache.move_to_end(key)
-        return val
-
-    def put(self, key, val):
-        if key in self.cache: del self.cache[key]
-        self.cache[key] = val
-        if len(self.cache) > self.size:
-            self.cache.popitem(last=False)
-
- 
-class Fragment:
+        self.cache[node.id] = node 
+        # Fix up the links in the new node.
+        node.prev = pivot
+        node.next = pivot.next
+        # The new node follows x.
+        pivot.next = node
+        # And it's the previous node of its next node.
+        node.next.prev = node
+        
+        
+    # Insert a new node with data after node pivot.
+    def insert_before(self, pivot, node):
+        if isinstance(node, dict):
+            node = Node(node)
+        self.cache[node.id] = node 
+        # Fix up the links in the new node.
+        node.next = pivot
+        node.prev = pivot.prev
+        # The new node suceeds pivot.
+        pivot.prev = node
+        # And it's the previous node of its next node.
+        node.prev.next = node
+            
+    # Insert a new node at the end of the list.
+    def append(self, node):
+        if not isinstance(node, Node):
+            node = Node(node) 
+        last_node = self.sentinel.prev
+        self.insert_after(last_node, node)
+        self.swim_up(node) # insert to the correct order
+    
+    # Delete node x from the list.
+    def delete(self, node):
+        if not isinstance(node, Node):
+            try:
+                node = self.cache[node]
+            except:
+                # no id's available in cache
+                return None
+        # Splice out node x by making its next and previous
+        # reference each other.
+        node.prev.next = node.next
+        node.next.prev = node.prev
+        self.cache.pop(node.id)
+        return node
+      
+    # def find(self, data):
+    #     return self.cache[data.id]  
+    # def get_node(self, id):
+    #     return self.cache[id] # KeyError if not in cache
+    
+    def update(self, key, attr_val, attr_name = "tail_time"):
+        # update the position where data lives in DLL
+        # move up if data.tail_time less than its prev
+        # move down if data.tail_time is larger than its next
+        if key not in self.cache:
+            print("key doesn't exists in update() SortedDll")
+            return
+        
+        node = self.cache[key]
+        setattr(node, attr_name, attr_val)
+        
+        # check if needs to move down
+        if node == self.sentinel.next: # if node is head
+            self.swim_down(node)
+            
+        elif node == self.sentinel.prev: # if node is tail
+            self.swim_up(node)
+            
+        elif getattr(node, attr_name) >= getattr(node.next, attr_name): # node is in-between head and tail, compare
+            self.swim_down(node)
+        
+        elif getattr(node, attr_name) < getattr(node.prev, attr_name):
+            self.swim_up(node)
+            
+        return
+        
+    def get_attr(self, attr_name="tail_time"):
+        arr = []
+        head = self.sentinel.next
+        if attr_name == "self":
+           while head != self.sentinel:
+               arr.append(head)
+               head = head.next 
+        else:
+            while head != self.sentinel:
+                arr.append(getattr(head, attr_name))
+                head = head.next
+        return arr
+    
+    def swim_down(self, node, attr_name="tail_time"):
+        pointer = node
+        val = getattr(node, attr_name)
+        
+        while pointer.next != self.sentinel and val >= getattr(pointer.next, attr_name):
+            pointer = pointer.next
+        if pointer == node:
+            return # node is already at the correct position
+        
+        # insert node right after pointer
+        # delete node and insert node after pointer
+        node = self.delete(node)
+        self.insert_after(pointer, node)
+        return
+    
+    def swim_up(self, node, attr_name="tail_time"):
+        pointer = node
+        val = getattr(node, attr_name)
+        
+        while pointer.prev != self.sentinel and val < getattr(pointer.prev, attr_name):
+            pointer = pointer.prev
+        if pointer == node:
+            return # node is already at the correct position
+        
+        # move node right before pointer
+        node = self.delete(node)
+        self.insert_before(pointer, node)
+        return
+    
+    # Return the string representation of a circular, doubly linked
+    # list with a sentinel, just as if it were a Python list.
+    def __repr__(self):
+        return self.print_list("id")
+    
+    def print_list(self, attr_name="id"):
+        s = "["
+        x = self.sentinel.next
+        while x != self.sentinel:  # look at each node in the list
+            try:
+                s += getattr(x, attr_name)
+            except:
+                s += "x"
+            if x.next != self.sentinel:
+                s += ", "   # if not the last node, add the comma and space
+            x = x.next
+        s += "]"
+        return s      
+        
+    
+    
+    
+class Fragment(Node):
     # Constructor to create a new fragment
-    def __init__(self, doc = None):
+    def __init__(self, traj_doc):
         '''
-        doc is a record from raw_trajectories database collection
+        traj_doc is a record from raw_trajectories database collection
         '''
+        super().__init__(traj_doc)
         self.suc = [] # tail matches to [(cost, Fragment_obj)] - minheap
         self.pre = [] # head matches to [(cost, Fragment_obj)] - minheap
         self.conflicts_with = set() # keep track of conflicts - bi-directional
@@ -38,13 +219,18 @@ class Fragment:
         self.root = self # 
         self.parent = None
         self.tail_matched = False # flip to true when its tail matches to another fragment's head
+        
+        # only one of the following is true when first entering the process
+        self.curr = False # in current view of time window?
+        self.past = False # in left time window and tail is ready to be matched?
+        self.gone = False # left past view because already matched or no match exists, ready to be popped out
             
-        if doc:   
-            field_names = ["_id","ID", "timestamp","x_position","y_position","direction","last_timestamp","last_timestamp" ]
-            attr_names = ["id","ID","t","x","y","dir","last_timestamp","last_modified_timestamp"]
+        if traj_doc:   
+            field_names = ["_id","ID", "timestamp","x_position","y_position","direction","last_timestamp","tail_time"]
+            attr_names = ["id","ID","t","x","y","dir","tail_time","tail_time"]
             for i in range(len(field_names)): # set as many attributes as possible
                 try:
-                    setattr(self, attr_names[i], doc[field_names[i]])
+                    setattr(self, attr_names[i], traj_doc[field_names[i]])
                 except:
                     pass
                 
@@ -57,7 +243,10 @@ class Fragment:
         
         
     def __repr__(self):
-        return 'Fragment({!r})'.format(self.id)
+        try:
+            return 'Fragment({!r})'.format(self.ID)
+        except:
+            return 'Fragment({!r})'.format(self.id)
     
     def compute_stats(self):
         '''
@@ -109,16 +298,16 @@ class Fragment:
     
     # clear the reference once out of sight or matched
     # TODO: call a destructor? - a Fragment object will be permanently deleted if the path it belongs to is written to the stitched_trajectories database
-    def delete(self):
-        self.ready = False # if tail is ready to be matched
-        self.id = None
-        self.t = None
-        self.x = None
-        self.y = None
-        self.suc = None # tail matches to [(cost, Fragment_obj)] - minheap
-        self.pre = None # head matches to [(cost, Fragment_obj)] - minheap
-        self.conflicts_with = None
-        # del self.id, self.t, self.x
+    # def delete(self):
+    #     self.ready = False # if tail is ready to be matched
+    #     self.id = None
+    #     self.t = None
+    #     self.x = None
+    #     self.y = None
+    #     self.suc = None # tail matches to [(cost, Fragment_obj)] - minheap
+    #     self.pre = None # head matches to [(cost, Fragment_obj)] - minheap
+    #     self.conflicts_with = None
+    #     # del self.id, self.t, self.x
        
     # add bi-directional conflicts
     def add_conflict(self, fragment):
@@ -147,13 +336,13 @@ class Fragment:
         # 3. delete u 
         # 4/16/22 modifed from u.delete() to u.tail_matched = True. Reason: only delete when path_cache.popFirstPath(), to prevent data loss
         # TODO: not tested
-        u.delete()
+        # u.delete()
         u.tail_matched = True
         return
 
         
 # A class to represent a disjoint set
-class PathCache:
+class PathCache(SortedDLL):
     '''
     This class combines a union-find data structure and an LRU data structure
     Purpose:
@@ -165,25 +354,24 @@ class PathCache:
         - can it replace / integrate with Fragment object?
         - parent = None to initialize
     '''
-    
     def __init__(self):
-        # store a LRU cache (key: root_id, val: last_timestamp in assignment)
-        # why OderedDict(): support "least recently used" cache.
-        # items at the front of the cache are less recently used, and therefore is more likely to be outputted
-        # why keep last_timestamp? to compare with current_time and idle_time to detetermine if output is ready
-        # why not heap? cannot query and remove items in constant time
-        self.cache = OrderedDict()
-        self.path = {} # just a collection for all the Nodes' memory locations(key: id, val: Node object)
-    
+        super().__init__()
+        self.path = {} # keep pointers for all Fragments
+        
     def make_set(self, docs):
         for doc in docs:
             self.add_node(doc)
             
-    def add_node(self, doc):
-        node = Fragment(doc) # create a new node
-        self.cache[node.id] = node
+    def add_node(self, node):
+        if not isinstance(node, Fragment):
+            node = Fragment(node) # create a new node
+        # self.cache[node.id] = node
+        self.append(node)
         self.path[node.id] = node
 
+    def get_fragment(self, id):
+        return self.path[id]
+    
     # Find the root of the set in which element `k` belongs
     def find(self, node):
     
@@ -191,14 +379,13 @@ class PathCache:
             return node
         # delete node from cache, because node is not the root
         try:
-            self.cache.pop(node.id)
+            self.delete(node.id)
         except:
             pass
         # path compression
 #        if node.parent.root.last_timestamp <= node.parent.last_timestamp:
         node.root = node.parent.root 
-        
-        node.last_modified_timestamp = max(node.last_modified_timestamp, node.root.last_modified_timestamp)
+        # node.last_modified_timestamp = max(node.last_modified_timestamp, node.root.last_modified_timestamp)
         return self.find(node.parent)
 
         
@@ -213,8 +400,7 @@ class PathCache:
         
         # if `id1` and `id2` are present in the same set, only move to the end of cache
         if root1 == root2:
-            self.cache[root1.id].last_modified_timestamp = max(self.cache[root1.id].last_modified_timestamp, node2.last_timestamp)
-            self.cache.move_to_end(root1.id)
+            self.update(root1.id, max(root1.tail_time, node2.tail_time), attr_name = "tail_time")
             return
         
         # compress path: update parent and child pointers for node1 and node2
@@ -227,7 +413,7 @@ class PathCache:
             head = node2.child
         else:
             node2_is_leaf = True
-            head = Fragment() # create dummy 
+            head = Fragment(None) # create dummy 
             head.id = -1
 
         while p1 and p2:
@@ -249,44 +435,58 @@ class PathCache:
             node2.child = None
                 
         # update roots along the path
-        root1 = self.find(node1)
-        node1.root = root1
-        root2 = self.find(node2)
-        node2.root = root2
+        new_root1 = self.find(node1)
+        node1.root = new_root1
+        new_root2 = self.find(node2)
+        node2.root = new_root2
 
-        # update LRU cache
-        self.cache[root2.id].last_modified_timestamp = max(self.cache[root2.id].last_modified_timestamp, node2.last_timestamp)
-        self.cache.move_to_end(root2.id)
+        # update tail_time for all nodes along the path
+        self.path_down_update(new_root1) # TODO probably unnecessary
+        self.update(new_root1.id, max(new_root1.tail_time, node2.tail_time), attr_name = "tail_time")
 
-
+        
     def print_sets(self):
         
         print([self.find(val).id for key,val in self.path.items()])
         return
           
 
-    def get_all_paths(self):
+    def get_all_paths(self, attr_name="id"):
         '''
         get all the paths from roots, whatever remains in self.cache.keys are roots!
         DFS
         '''
         all_paths = [] # nested lists
         
-        for node in self.cache.values():
-            # print(node.last_timestamp)
-            path = self.path_down(node)
+        # for node in self.cache.values():
+        #     # print(node.last_timestamp)
+        #     path = self.path_down(node, attr_name)
+        #     all_paths.append(path)
+         
+        # for DLL cache
+        node = self.first_node()
+        while node != self.sentinel:
+            path = self.path_down(node, attr_name)
             all_paths.append(path)
-            
+            node = node.next
         return all_paths
     
                 
-    def get_all_roots(self):
-        return self.cache.values()
+    def get_all_roots(self, attr_name = "id"):
+        head = self.sentinel.next
+        roots = []
+        while head != self.sentinel:
+            try:
+                roots.append(getattr(head, attr_name))
+            except:
+                roots.append(head)
+            head = head.next
+        return roots
     
-    def print_cache(self):
-        roots = self.get_all_roots()
-        for root in roots:
-            print("Root {}: last_modified is {}".format(root.id, root.last_modified))
+    # def print_cache(self):
+        # roots = self.get_all_roots()
+        # for root in roots:
+        #     print("Root {}: last_modified is {}".format(root.id, root.last_modified_timestamp))
         
     def print_attr(self, attr_name):
         for node in self.path.values():
@@ -301,18 +501,18 @@ class PathCache:
         delete all nodes along the path in self.path
         return the path: a list of ids
         '''
-        try:
-            root_id, root_node = self.cache.popitem()
-            path = self.path_down(root_node)
+        # DLL cache
+        first_node = self.first_node()
+        if first_node: # if cache is not empty
+            path = self.path_down(first_node)
             for p in path:
-                try: self.path.pop(p)
-                except: pass
-                try: self.cache.pop(p)
-                except: pass
-            return path
-        except StopIteration:
-            raise StopIteration
-        
+                try:
+                    fragment = self.path.pop(p)
+                    fragment.gone = True
+                except:
+                    pass
+            self.delete(first_node)
+                
     def path_up(self, node):
         path = []
         def _dfs(node, path):
@@ -322,15 +522,26 @@ class PathCache:
         _dfs(node, path)
         return path
     
-    def path_down(self, node):
+    def path_down(self, node, attr_name="id"):
         path = []
+        # max_time = -1 # update tail_time to leaf's tail_fime for each node along the path
         def _dfs(node, path):
             if node:
-                path.append(node.id) 
+                path.append(getattr(node, attr_name)) 
                 _dfs(node.child, path)
         _dfs(node, path)
-        return path       
-        
+        return path  
+     
+    def path_down_update(self, node, attr_name = "tail_time"):
+        def _dfs(node):
+            if node: # if node is not leaf
+                _dfs(node.child)
+                try: # if node.child exists
+                    setattr(node, attr_name, max(getattr(node.child, attr_name), getattr(node, attr_name))) 
+                except:
+                    pass
+        _dfs(node)
+        return        
         
     
  
@@ -354,7 +565,7 @@ if __name__ == '__main__':
     pc = PathCache()
  
     # create a singleton set for each element of the universe
-    pc.makeSet(docs)
+    pc.make_set(docs)
     
     pc.union("a", "f")  
     # print(pc.cache)     
@@ -377,17 +588,22 @@ if __name__ == '__main__':
 #    print(pc._getAllPaths())
 #    pc._printRoots()
 
-    pc.union("d", "f") 
+    # pc.union("d", "f") 
     # print(pc.cache.keys())
 
     # print(pc.cache)
     # pc._printSets()
     # print(pc.path)
     
-    pc.printAttr("root")
-    all_paths = pc.getAllPaths()
     
-    print(all_paths)
+    
+   
 #    print(pc.popFirstPath())
 #    print(pc._popFirstPath())
+    for root in pc.get_all_roots():
+        path = pc.path_down_update(pc.path[root.id])
+    pc.print_attr("tail_time")
+    pc.print_attr("root")
+    all_paths = pc.get_all_paths(attr_name = "id")
+    print(all_paths)
     

@@ -47,7 +47,7 @@ def stitch_raw_trajectory_fragments(fragment_queue,
     
     # Initialize some data structures
     curr_fragments = deque()  # fragments that are in current window (left, right), sorted by last_timestamp
-    past_fragments = OrderedDict()  # set of ids indicate end of fragment ready to be matched
+    past_fragments = dict()  # set of ids indicate end of fragment ready to be matched, insertion ordered
     P = PathCache() # an LRU cache of Fragment object (see utils.data_structures)
 
     # Make database connection for writing
@@ -58,11 +58,13 @@ def stitch_raw_trajectory_fragments(fragment_queue,
     print("** Stitching starts. fragment_queue size: ", fragment_queue.qsize())
     # while True: 
     while fragment_queue.qsize() > 0:
-        current_fragment = fragment_queue.get() # fragment = dh._get_first('last_timestamp') # get the earliest ended fragment
         print("*** getting fragment")  
-        fragment = Fragment(current_fragment)
-        P.add_node(current_fragment)
-        right = fragment.t[-1] # right pointer: current end time
+        fragment = Fragment(fragment_queue.get()) # make object
+        fragment.curr = True
+        P.add_node(fragment)
+        
+        # specify time window for curr_fragments
+        right = fragment.last_timestamp # right pointer: current end time
         left = right - TIME_WIN
         print("left, right: ", left, right)
         
@@ -71,17 +73,22 @@ def stitch_raw_trajectory_fragments(fragment_queue,
         print("Curr_fragments size: ", len(curr_fragments))
         
         # remove out of sight fragments 
-        while curr_fragments and curr_fragments[0].t[-1] < left: 
-            past_fragment = curr_fragments.popleft()
-            past_fragments[past_fragment.id] = past_fragment
+        if curr_fragments:
+            while P.get_fragment(curr_fragments[0]).last_timestamp < left: 
+                past_id = curr_fragments.popleft()
+                past_fragment = P.get_fragment(past_id)
+                past_fragment.curr = False
+                past_fragment.past = True
+                past_fragments[past_id] = past_fragment # could use keys only: past_fragments[past_id] = None if memory is an issue 
         print("Past_fragments size: ", len(past_fragments))
         
         # compute score from every fragment in curr to fragment, update Cost
-        for curr_fragment in curr_fragments:
+        for curr_id in curr_fragments:
+            curr_fragment = P.get_fragment(curr_id)
             cost = min_nll_cost(curr_fragment, fragment, TIME_WIN, VARX, VARY)
             if cost > THRESH:
                 curr_fragment.add_conflict(fragment)
-            elif cost > 0:
+            elif cost > -999:
                 curr_fragment.add_suc(cost, fragment)
                 fragment.add_pre(cost, curr_fragment)
                         
@@ -91,34 +98,41 @@ def stitch_raw_trajectory_fragments(fragment_queue,
         # start iterative matching
         while curr_size > 0 and curr_size != prev_size:
             prev_size = len(past_fragments)
-            remove_keys = set()
-            for _, ready in past_fragments.items(): # all fragments in past_fragments are ready to be matched to tail
+            gone_ids = set()
+            for id, ready in past_fragments.items(): # all fragments in past_fragments are ready to be matched to tail
                 best_head = ready.get_first_suc()
-                if not best_head or not best_head.pre: # if ready has no match or best head already matched to other fragments# go to the next ready
+                if not best_head or not best_head.pre: # if ready has no match or best head already matched to other fragment-> go to the next ready
                     # past_fragments.pop(ready.id)
-                    remove_keys.add(ready.id)
+                    gone_ids.add(id)
                 
                 else:
                     try: best_tail = best_head.get_first_pre()
-                    except: best_tail = None
-                    if best_head and best_tail and best_tail.id == ready.id and best_tail.id not in ready.conflicts_with:
+                    except: 
+                        best_tail = None
+                        continue
+                    if not best_head.tail_matched and best_tail.id == ready.id and best_tail.id not in ready.conflicts_with:
                         print("** match tail of {} to head of {}".format(best_tail.ID, best_head.ID))
-                        # path[best_head.id] = path[best_tail.id]
-                        P.union(best_head.id, best_tail.id)
-                        remove_keys.add(ready.id)
+                        
+                        P.union(best_tail.id, best_head.id)
+                        gone_ids.add(ready.id)
                         Fragment.match_tail_head(best_tail, best_head)
 
-            [past_fragments.pop(key) for key in remove_keys]
+            # bookkeep cleanup
+            for gone_id in gone_ids:
+                past_fragment = past_fragments.pop(gone_id)
+                past_fragment.past = False
+                past_fragment.gone = True
+                
             curr_size = len(past_fragments)
 
-        curr_fragments.append(fragment)    
-        # cache_size_pre = len(P.cache)
+        curr_fragments.append(fragment.id)    
         
         # write paths from P if time out is reached
         while True:
             try:
                 _, root = _first(P.cache)
-                if root.last_modified_timestamp < left - IDLE_TIME:
+                print("Path length: {}".format(len(P.path_down(root))))
+                if root.gone and root.last_modified_timestamp < left - IDLE_TIME:
                     path = P.pop_first_path()
                     print("write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.last_modified_timestamp,len(path)))
                     stitched_trajectory_queue.put(path) # doesn't know ObjectId
@@ -130,6 +144,11 @@ def stitch_raw_trajectory_fragments(fragment_queue,
             
         cache_size_post = len(P.cache)    
         print("Cache size: ", cache_size_post)
+    
+    print("Total stitched trajectories: ", cache_size_post)
+    P.print_cache()
+    all_paths = P.get_all_paths("ID")
+    print(all_paths)
 
 
         

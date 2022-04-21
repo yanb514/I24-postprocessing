@@ -40,11 +40,11 @@ def min_nll_cost(track1, track2, TIME_WIN, VARX, VARY):
     999: mark as conflict
     -1: invalid
     '''
-
+    INF = 10e6
     if track2.t[0] < track1.t[-1]: # if track2 starts before track1 ends
-        return 999
+        return INF
     if track2.t[0] - track1.t[-1] > TIME_WIN: # if track2 starts TIME_WIN after track1 ends
-        return -1
+        return -INF
     
     # predict from track1 forward to time of track2
     xx = np.vstack([track2.t,np.ones(len(track2.t))]).T # N x 2
@@ -70,7 +70,9 @@ def min_nll_cost(track1, track2, TIME_WIN, VARX, VARY):
     target = torch.transpose(torch.tensor([targetx, targety]),0,1)
     var = torch.transpose(torch.tensor([varx,vary]),0,1)
     nll2 = loss(input,target,np.abs(var)).item()
-    return min(nll1, nll2)
+    cost = min(nll1, nll2)
+    # print(cost)
+    return cost
     # return nll1
     
 

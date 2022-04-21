@@ -35,20 +35,20 @@ raw_res = raw.read_query(query_filter = {"_id": {"$in": fragment_ids}},
 
 fragment_queue = queue.Queue()
 for doc in raw_res:
-    print(doc["ID"])
+    # print(doc["ID"])
     fragment_queue.put(doc)
     
 fragment_size = fragment_queue.qsize()
 print("Queue size: ", fragment_size)
 
-#%% plot fragment_queue
+# % plot fragment_queue
 # import matplotlib.pyplot as plt
 # plt.figure()
 # while not fragment_queue.empty():
 #     doc = fragment_queue.get()
 #     plt.scatter(doc["timestamp"], doc["x_position"], s=0.01)
     
-# %% Run stitcher with a pre-filled queue
+# % Run stitcher with a pre-filled queue
 stitched_trajectories_queue = queue.Queue()
 stitch_raw_trajectory_fragments(fragment_queue, stitched_trajectories_queue, log_queue=None)
 stitched = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
