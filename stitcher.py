@@ -18,6 +18,7 @@ from db_writer import DBWriter
 from collections import deque, OrderedDict
 from utils.stitcher_module import min_nll_cost
 from utils.data_structures import Fragment, PathCache
+import heapq
 
 # helper functions
 def _first(dict):
@@ -56,15 +57,20 @@ def stitch_raw_trajectory_fragments(fragment_queue,
                    database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
     
     print("** Stitching starts. fragment_queue size: ", fragment_queue.qsize())
+    p = None
     # while True: 
     while fragment_queue.qsize() > 0:
         # print("*** getting fragment")  
+        
         fragment = Fragment(fragment_queue.get()) # make object
+        print("\n")
+        print("current fragment: ", fragment.ID)
         fragment.curr = True
         P.add_node(fragment)
         
-        if fragment.ID == 100166:
+        if fragment.ID == 100165:
             print('here')
+            p = fragment
         
         # specify time window for curr_fragments
         right = fragment.last_timestamp # right pointer: current end time
@@ -95,7 +101,9 @@ def stitch_raw_trajectory_fragments(fragment_queue,
                 curr_fragment.add_suc(cost, fragment)
                 fragment.add_pre(cost, curr_fragment)
          
-        
+        # if p:
+        #     print(p.pre)
+        #     print(p.suc)
         prev_size = 0
         curr_size = len(past_fragments)
         
@@ -104,22 +112,26 @@ def stitch_raw_trajectory_fragments(fragment_queue,
             prev_size = len(past_fragments)
             gone_ids = set()
             for id, ready in past_fragments.items(): # all fragments in past_fragments are ready to be matched to tail
-                best_head = ready.get_first_suc()
+                best_head = ready.peek_first_suc() # TODO: peek the first "unmatched" successor
                 if not best_head or not best_head.pre: # if ready has no match or best head already matched to other fragment-> go to the next ready
                     # past_fragments.pop(ready.id)
                     gone_ids.add(id)
                 
                 else:
-                    try: best_tail = best_head.get_first_pre()
+                    try: best_tail = best_head.peek_first_pre() # peek, no pop
                     except: 
                         best_tail = None
                         continue
-                    if not best_head.tail_matched and best_tail.id == ready.id and best_tail.id not in ready.conflicts_with:
+                    # TODO: can tail_matched fragments be matched again? try no
+                    if best_head.ID == 100166:
+                        print("here")
+                    
+                    if best_tail.id == ready.id and best_tail.id not in ready.conflicts_with:
                         print("** match tail of {} to head of {}".format(best_tail.ID, best_head.ID))
                         
-                        P.union(best_tail.id, best_head.id)
-                        gone_ids.add(ready.id)
-                        Fragment.match_tail_head(best_tail, best_head)
+                        Fragment.match_tail_head(best_tail, best_head) # update both fragments
+                        P.union(best_tail.id, best_head.id) # update path cache
+                        gone_ids.add(ready.id) # 
 
             # bookkeep cleanup
             for gone_id in gone_ids:

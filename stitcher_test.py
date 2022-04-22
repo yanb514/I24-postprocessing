@@ -51,7 +51,7 @@ print("Queue size: ", fragment_size)
 #         print(doc["ID"],len(doc["timestamp"]))
 #         plt.scatter(doc["timestamp"], doc["x_position"], s=0.01)
     
-# %% Run stitcher with a pre-filled queue
+# % Run stitcher with a pre-filled queue
 stitched_trajectories_queue = queue.Queue()
 stitch_raw_trajectory_fragments(fragment_queue, stitched_trajectories_queue, log_queue=None)
 stitched = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
@@ -65,7 +65,7 @@ print("{} fragments stitched to {} trajectories".format(fragment_size,stitched_t
 stitched_paths = []
 while not stitched_trajectories_queue.empty():
     path = stitched_trajectories_queue.get()
-    print([raw.find_one("_id", raw_id)["ID"] for raw_id in path])
+    print([raw.find_one("ID", raw_id)["ID"] for raw_id in path])
     stitched_paths.append(path)
 
 # %% Check results

@@ -77,32 +77,30 @@ for doc in test_res:
 
 
 for doc in col.find({}):
-    print(doc["ID"], doc["last_timestamp"]
-    
-#%% Async insert_many using motor
-import asyncio
-
-dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
+    print(doc["ID"], doc["last_timestamp"])
+          
+          
+# %% Test change stream
+dbw = dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                password=db_parameters.DEFAULT_PASSWORD,
                database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
 
-# dbw.motor_db[db_parameters.STITCHED_COLLECTION].drop()
+pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
+test_collection = "test_cs_collection"
+# stream = dbw.collection.watch(pipeline)
 
-print("start inserting")
-t1 = time.time()
-col = dbw.motor_db[db_parameters.STITCHED_COLLECTION]
-async def f():
-    await col.insert_many(({'i': i} for i in range(1000)))
-    count = await col.count_documents({})
-    print("Final count: %d" % count)
-  
-# loop = asyncio.get_event_loop()
-# loop.run_until_complete(f())
-t2 = time.time()
-print("Elapsed time: ", t2-t1)
-count = col.count_documents({})
-print(count)
+# writing with 0.1 secs wait
+for i in range(100):
+    time.sleep(0.1)
+    dbw.write_one_document({"key" :str(i)}, test_collection)
+    if i % 10 == 0:
+        stream = dbw.db[test_collection].watch(pipeline)
+        first_insert_change = next(stream)
+        print("current change event: ", first_insert_change["fullDocument"]["key"])
+# watch every 1 sec
+# view change event after each watch
 
 
+#%% Test live data read
 
 

@@ -73,8 +73,8 @@ def min_nll_cost(track1, track2, TIME_WIN, VARX, VARY):
     cost = min(nll1, nll2)
     # cost = (nll1 + nll2)/2
     # print(cost)
-    if track1.ID == 100165 or track2.ID == 100165:
-        print("track1 {} track 2 {}, cost={:.2f}".format(track1.ID, track2.ID, cost))
+    # if track1.ID == 100165 or track2.ID == 100165:
+    #     print("track1 {} track 2 {}, cost={:.2f}".format(track1.ID, track2.ID, cost))
     return cost
     # return nll1
     

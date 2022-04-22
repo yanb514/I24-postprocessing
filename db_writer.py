@@ -248,11 +248,7 @@ def write_csv_to_db_by_time(dbwriter, collection_name, file_location, file_name,
 
     return
 
-def write_one_document(data_type, **kwargs):
-    '''
-    might not need this function
-    '''
-    pass
+
 
 
 class DBWriter:
@@ -313,6 +309,16 @@ class DBWriter:
         except:
             pass
 
+    def write_one_document(self, document, collection_name):
+        '''
+        For testing: write an arbitrary document to any collection name collection_name
+        :param document: A dictionary to be written
+        :param collection name: Collection to be written to
+        '''
+        col = self.client.db[collection_name]
+        col.insert(document)
+        return
+    
     def write_trajectory_fragment(self, local_fragment_id: int, coarse_vehicle_class: int, fine_vehicle_class: int,
                                   timestamps: list[float], raw_timestamps: list[float], road_segment_id: int,
                                   x_positions: list[float], y_positions: list[float],
@@ -368,10 +374,7 @@ class DBWriter:
         col.insert(doc)
         return
 
-    async def do_insert(self):
-        result = await self.db[db_parameters.STITCHED_COLLECTION].insert_many(
-            [{'i': i} for i in range(2000)])
-        print('inserted %d docs' % (len(result.inserted_ids),))
+
     
     
     def write_reconciled_trajectory(self, vehicle_id: int, coarse_vehicle_class: int, fine_vehicle_class: int,

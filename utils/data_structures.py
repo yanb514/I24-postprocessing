@@ -286,21 +286,22 @@ class Fragment(Node):
     def add_pre(self, cost, fragment):
         heapq.heappush(self.pre, (cost, fragment))
        
-    def get_first_suc(self):
+    def peek_first_suc(self):
         # return the best successor of self if exists
         # otherwise return None
         # heappop empty fragments from self.suc
-        while self.suc and self.suc[0][1].id is None: # get the first non-empty fragment
-            _, suc = heapq.heappop(self.suc)
+        # while self.suc and self.suc[0][1].id is None: # get the first non-empty fragment
+        #     _, suc = heapq.heappop(self.suc)
         try: suc = self.suc[0][1] # self.suc[0] is None
         except: suc = None
         return suc
     
-    def get_first_pre(self):
+    def peek_first_pre(self):
         # return the best successor of self if exists
         # otherwise return None
         # heappop empty fragments from self.suc
-        while self.pre and self.pre[0][1].id is None: # get the first non-empty fragment
+        # while self.pre and self.pre[0][1].id is None: # get the first non-empty fragment
+        while self.pre and self.pre[0][1].tail_matched: # get the first "unmatched" fragment
             _, pre = heapq.heappop(self.pre)
         try: pre = self.pre[0][1]
         except: pre = None
@@ -347,6 +348,7 @@ class Fragment(Node):
         # 4/16/22 modifed from u.delete() to u.tail_matched = True. Reason: only delete when path_cache.popFirstPath(), to prevent data loss
         # TODO: not tested
         # u.delete()
+        heapq.heappop(u.suc)
         u.tail_matched = True
         return
 
@@ -377,7 +379,10 @@ class PathCache(SortedDLL):
             node = Fragment(node) # create a new node
         # self.cache[node.id] = node
         self.append(node)
-        self.path[node.id] = node
+        try:
+            self.path[node.ID] = node
+        except:
+            self.path[node.id] = node
 
     def get_fragment(self, id):
         return self.path[id]
