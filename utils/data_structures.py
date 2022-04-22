@@ -1,20 +1,22 @@
 import heapq
-from collections import defaultdict,OrderedDict
 import numpy as np
 #from time import sleep
-
+import stitcher_parameters
 
 class Node:
+    '''
+    A generic Node object to use in linked list
+    '''
     def __init__(self, data):
-        # TODO: make data type more generic
-        # if not isinstance(data, Fragment):
-        #     fragment = Fragment(data) # create a new node
-        #     self.data = fragment # Fragment object
-        # else:
+        '''
+        :param data: a dictionary of {feature: values}
+        '''
+        # customized features
         if data:
             for key, val in data.items():
                 setattr(self, key, val)
-        # self.data = data
+                
+        # required features
         self.next = None
         self.prev = None
         
@@ -30,14 +32,11 @@ class Node:
 # Create the doubly linked list class
 class SortedDLL:
     '''
-    Sorted dll, for root information, sorted by tail_time of roots
-    original code from  http://projectpython.net/chapter17/
-    
+    Sorted dll by a specified node's attribute
+    original code (unsorted) from  http://projectpython.net/chapter17/
     Hierarchy:
         SortedDll()
             - Node()
-                - Fragment()
-    append: 
     
     '''
     def __init__(self):
@@ -209,7 +208,7 @@ class Fragment(Node):
         '''
         traj_doc is a record from raw_trajectories database collection
         '''
-        super().__init__(traj_doc)
+        
         self.suc = [] # tail matches to [(cost, Fragment_obj)] - minheap
         self.pre = [] # head matches to [(cost, Fragment_obj)] - minheap
         self.conflicts_with = set() # keep track of conflicts - bi-directional
@@ -225,21 +224,32 @@ class Fragment(Node):
         self.past = False # in left time window and tail is ready to be matched?
         self.gone = False # left past view because already matched or no match exists, ready to be popped out
             
-        if traj_doc:   
-            field_names = ["_id","ID", "timestamp","x_position","y_position","direction","last_timestamp","tail_time"]
-            attr_names = ["id","ID","t","x","y","dir","tail_time","tail_time"]
+        if traj_doc: 
+            # delete the unnucessary fields in traj_doc
+            try:
+                unwanted = set(traj_doc.keys()) - set(stitcher_parameters.WANTED_DOC_FIELDS)
+                for unwanted_key in unwanted: 
+                    try: del traj_doc[unwanted_key]
+                    except: pass
+            except:
+                pass
+            
+            field_names = stitcher_parameters.WANTED_DOC_FIELDS
+            attr_names = stitcher_parameters.FRAGMENT_ATTRIBUTES
             for i in range(len(field_names)): # set as many attributes as possible
-                try:
-                    setattr(self, attr_names[i], traj_doc[field_names[i]])
-                except:
-                    pass
+                try: setattr(self, attr_names[i], traj_doc[field_names[i]])
+                except: pass
                 
-        # TODO: parameters needs to change if unit conversion. convert x/y_position from feet to meter
-        try:
-            self.x = np.array(self.x)*0.3048
-            self.y = np.array(self.y)*0.3048
-        except:
-            pass
+            # TODO: parameters needs to change if unit conversion. convert x/y_position from feet to meter
+            try:
+                self.x = np.array(self.x)*0.3048
+                self.y = np.array(self.y)*0.3048
+            except:
+                pass
+            super().__init__(None)
+            
+        else:
+            super().__init__(traj_doc)
         
         
     def __repr__(self):
@@ -256,7 +266,7 @@ class Fragment(Node):
         t,x,y = self.t, self.x, self.y
         ct = np.nanmean(t)
         if len(t)<2:
-            v = np.sign(x[-1]-x[0]) # assume 1/-1 m/frame = 30m/s
+            v = 30 * self.dir # assume 30m/s
             b = x-v*ct # recalculate y-intercept
             fitx = np.array([v,b[0]])
             fity = np.array([0,y[0]])
@@ -383,9 +393,7 @@ class PathCache(SortedDLL):
         except:
             pass
         # path compression
-#        if node.parent.root.last_timestamp <= node.parent.last_timestamp:
         node.root = node.parent.root 
-        # node.last_modified_timestamp = max(node.last_modified_timestamp, node.root.last_modified_timestamp)
         return self.find(node.parent)
 
         
@@ -441,7 +449,7 @@ class PathCache(SortedDLL):
         node2.root = new_root2
 
         # update tail_time for all nodes along the path
-        self.path_down_update(new_root1) # TODO probably unnecessary
+        # self.path_down_update(new_root1) # TODO probably unnecessary
         self.update(new_root1.id, max(new_root1.tail_time, node2.tail_time), attr_name = "tail_time")
 
         
@@ -457,11 +465,6 @@ class PathCache(SortedDLL):
         DFS
         '''
         all_paths = [] # nested lists
-        
-        # for node in self.cache.values():
-        #     # print(node.last_timestamp)
-        #     path = self.path_down(node, attr_name)
-        #     all_paths.append(path)
          
         # for DLL cache
         node = self.first_node()
@@ -472,21 +475,20 @@ class PathCache(SortedDLL):
         return all_paths
     
                 
-    def get_all_roots(self, attr_name = "id"):
+    def get_all_roots(self, attr_name=None):
         head = self.sentinel.next
         roots = []
         while head != self.sentinel:
-            try:
-                roots.append(getattr(head, attr_name))
-            except:
-                roots.append(head)
+            roots.append(head)
             head = head.next
+        if attr_name:
+            roots = [getattr(head, attr_name) for head in roots]
         return roots
     
-    # def print_cache(self):
-        # roots = self.get_all_roots()
-        # for root in roots:
-        #     print("Root {}: last_modified is {}".format(root.id, root.last_modified_timestamp))
+    def print_cache(self):
+        roots = self.get_all_roots()
+        for root in roots:
+            print("Root {}: tail_time is {}".format(root.id, root.tail_time))
         
     def print_attr(self, attr_name):
         for node in self.path.values():
@@ -512,6 +514,7 @@ class PathCache(SortedDLL):
                 except:
                     pass
             self.delete(first_node)
+            return path
                 
     def path_up(self, node):
         path = []
@@ -524,7 +527,6 @@ class PathCache(SortedDLL):
     
     def path_down(self, node, attr_name="id"):
         path = []
-        # max_time = -1 # update tail_time to leaf's tail_fime for each node along the path
         def _dfs(node, path):
             if node:
                 path.append(getattr(node, attr_name)) 
@@ -568,32 +570,13 @@ if __name__ == '__main__':
     pc.make_set(docs)
     
     pc.union("a", "f")  
-    # print(pc.cache)     
-#    print(pc._getAllPaths())
-    # print(pc.cache.keys())
-#    pc.printParents()
     
     pc.union("b", "e") 
-#    pc.printRoots()
-#    print(pc._getAllPaths())
-    # print(pc.cache.keys())
-    
     pc.union("e", "f")
-#    pc._printRoots()
-#    print(pc._getAllPaths())
-    # print(pc.cache.keys())
+
     
     pc.union("c", "d") 
-#    pc._printRoots()
-#    print(pc._getAllPaths())
-#    pc._printRoots()
 
-    # pc.union("d", "f") 
-    # print(pc.cache.keys())
-
-    # print(pc.cache)
-    # pc._printSets()
-    # print(pc.path)
     
     
     

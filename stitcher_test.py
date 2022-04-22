@@ -36,6 +36,7 @@ raw_res = raw.read_query(query_filter = {"_id": {"$in": fragment_ids}},
 fragment_queue = queue.Queue()
 for doc in raw_res:
     # print(doc["ID"])
+    # if len(doc["timestamp"])>=2: # TODO: is this acceptable?
     fragment_queue.put(doc)
     
 fragment_size = fragment_queue.qsize()
@@ -46,9 +47,11 @@ print("Queue size: ", fragment_size)
 # plt.figure()
 # while not fragment_queue.empty():
 #     doc = fragment_queue.get()
-#     plt.scatter(doc["timestamp"], doc["x_position"], s=0.01)
+#     if doc["ID"] in [100165, 100166]:
+#         print(doc["ID"],len(doc["timestamp"]))
+#         plt.scatter(doc["timestamp"], doc["x_position"], s=0.01)
     
-# % Run stitcher with a pre-filled queue
+# %% Run stitcher with a pre-filled queue
 stitched_trajectories_queue = queue.Queue()
 stitch_raw_trajectory_fragments(fragment_queue, stitched_trajectories_queue, log_queue=None)
 stitched = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
@@ -56,6 +59,14 @@ stitched = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_
                database_name=db_parameters.DB_NAME, collection_name=db_parameters.STITCHED_COLLECTION)
 
 print("{} fragments stitched to {} trajectories".format(fragment_size,stitched_trajectories_queue.qsize()))
+
+
+#%% print stitched_trajectories_queue
+stitched_paths = []
+while not stitched_trajectories_queue.empty():
+    path = stitched_trajectories_queue.get()
+    print([raw.find_one("_id", raw_id)["ID"] for raw_id in path])
+    stitched_paths.append(path)
 
 # %% Check results
 

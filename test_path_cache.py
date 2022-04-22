@@ -5,7 +5,7 @@ Created on Thu Apr 14 09:57:02 2022
 
 @author: wangy79
 """
-from data_structures import PathCache
+from utils.data_structures import PathCache
 import numpy as np
 import unittest
 
@@ -49,22 +49,25 @@ class T(unittest.TestCase):
             
     def test_final_paths(self):
         # number of roots
-        self.assertEqual(len(self.pc.get_all_roots()), len(self.roots), "Should be {} roots".format(len(self.roots)))
+        self.assertEqual(self.pc.count(), len(self.roots), "Should be {} roots".format(len(self.roots)))
         # number of paths
         paths = self.pc.get_all_paths()
-        print(paths)
-        print(self.paths)
         self.assertEqual(len(paths), len(self.roots), "Should be {} roots".format(len(self.roots)))
 
         for i, path in enumerate(paths):
             self.assertEqual(path, self.paths[i], "{}th path is incorrect".format(i))
 
     def test_path_order(self):
-        roots = self.pc.get_all_roots()
+        roots = self.pc.get_all_roots(attr_name = "id")
         self.assertEqual(list(roots), self.roots, "Path order incorrect")
         
-    def test_tail_time(self):
-        pass
+    def test_pop_path(self):
+        self.pc.pop_first_path()
+        self.assertEqual(self.pc.count(), len(self.roots)-1, "first path incorrect")
+        paths = self.pc.get_all_paths()
+        self.assertEqual(paths, self.paths[1:], "first path incorrect")
+        self.assertEqual(len(self.pc.path), len(self.docs)-len(self.paths[0]), "left over fragments not correct")
+        
 
 
 
