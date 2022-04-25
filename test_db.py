@@ -83,28 +83,56 @@ for doc in col.find({}):
 
 
 # %% Test change stream
+import pymongo
+import time
 # connect to a replica set
 
-dbw = dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-               password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
+#dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
+#               password=db_parameters.DEFAULT_PASSWORD,
+#               database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
 
+client = pymongo.MongoClient(host=['localhost:27017'])
 pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
-test_collection = "test_cs_collection"
-# stream = dbw.collection.watch(pipeline)
+db = client["trajectory"]
+test_collection = db["test_cs_collection"]
+test_collection.drop()
+test_collection = db["test_cs_collection"]
 
-# writing with 0.1 secs wait
-for i in range(100):
-    time.sleep(0.1)
-    dbw.write_one_document({"key" :str(i)}, test_collection)
-    if i % 10 == 0:
-        stream = dbw.db[test_collection].watch(pipeline)
-        first_insert_change = next(stream)
-        print("current change event: ", first_insert_change["fullDocument"]["key"])
-# watch every 1 sec
-# view change event after each watch
+
+iter_num = 0
+while iter_num < 5: # replace with while True
+   
+    with test_collection.watch(pipeline) as stream:
+        for i in range(3): # simulate some changes
+            test_collection.insert_one({"key" :3 * iter_num + i}) 
+
+        change = stream.try_next() # only read the first change
+        if change:
+            print("Change document: %r" % (change["fullDocument"]["key"],))
+        else:
+            continue
+        
+        time.sleep(1)
+            
+        iter_num += 1
+            
+        
+        
+
 
 
 #%% Test live data read
+q = queue.Queue()
+MIN_QUEUE_SIZE = 5
 
+while True:
+    try:
+        if q.qsize() <= MIN_QUEUE_SIZE: # only move to the next query range if queue is low in stock
+            stream = dbr.collection.watch(pipeline)
+            first_insert_change = next(stream)
+            t_max = max(first_insert_change["fullDocument"]["last_timestamp"], t_max)
+            if t_max > rri._current_upper_value:
+                next_batch = next(rri)
+                for doc in next_batch:
+                    ready_queue.put(doc)
 
