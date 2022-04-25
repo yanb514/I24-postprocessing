@@ -132,6 +132,7 @@ client = MongoClient(host=['localhost:27017'])
 db=client["trajectories"]
 col=db["test_change_stream"]
 
+#%%
 col.insert_one({"x":1})
 
 #%%
