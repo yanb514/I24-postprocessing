@@ -3,6 +3,7 @@ import pymongo
 import db_parameters
 import csv
 import urllib.parse
+import asyncio
 
 def write_data_from_csv(**kwargs):
     '''
@@ -281,10 +282,11 @@ class DBWriter:
         self.session_config_id = session_config_id
 
         # Connect immediately upon instantiation.
-        # print("motor client")
-        # self.motor_client = motor.motor_tornado.MotorClient('mongodb://%s:%s@%s' % (username, password, host))
-        # print("motor db")
-        # self.motor_db = self.motor_client[database_name]
+        print("motor client")
+        self.motor_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb://%s:%s@%s' % (username, password, host))
+        print("motor db")
+        self.motor_db = self.motor_client[database_name]
+        # self.motor_db = motor.motor_asyncio.AsyncIOMotorDatabase(self.motor_client, database_name)
         
         # TODO: consider adding a PyMongo version as well for one-off writes
         # TODO: figure out if there are resiliency checks that we can do for async writes -- callbacks?
@@ -309,15 +311,24 @@ class DBWriter:
         except:
             pass
 
-    def write_one_document(self, document, collection_name):
+    async def write_one_async(self, document, collection_name):
+        await self.motor_db[collection_name].insert_one(document)
+       
+    async def write_many_async(self, documents, collection_name):
+        await self.motor_db[collection_name].insert_many(documents)
+        
+        
+
+    def write_one_sync(self, document, collection_name):
         '''
         For testing: write an arbitrary document to any collection name collection_name
         :param document: A dictionary to be written
         :param collection name: Collection to be written to
         '''
-        col = self.client.db[collection_name]
-        col.insert(document)
+        self.db[collection_name].insert_one(document)
         return
+    
+
     
     def write_trajectory_fragment(self, local_fragment_id: int, coarse_vehicle_class: int, fine_vehicle_class: int,
                                   timestamps: list[float], raw_timestamps: list[float], road_segment_id: int,

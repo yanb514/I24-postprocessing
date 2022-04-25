@@ -11,3 +11,9 @@ DB_NAME = "trajectories"
 
 # Buffer queue size for live_data_read
 MIN_QUEUE_SIZE = 1000
+
+# Define data schema
+RAW_SCHEMA = []
+STITCHED_SCHEMA = []
+GT_SCHEMA = []
+RECONCILED_SCHEMA = []

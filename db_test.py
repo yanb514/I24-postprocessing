@@ -79,8 +79,12 @@ for doc in test_res:
 for doc in col.find({}):
     print(doc["ID"], doc["last_timestamp"])
           
-          
+      
+
+
 # %% Test change stream
+# connect to a replica set
+
 dbw = dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                password=db_parameters.DEFAULT_PASSWORD,
                database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)

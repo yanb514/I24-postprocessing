@@ -7,10 +7,10 @@ Created on Sat Apr 16 16:13:43 2022
 """
 TIME_WIN = 50
 THRESH = 3
-VARX = 0.05 # TODO: unit conversion
+VARX = 0.05 # TODO: unit conversion (now it's based on meter)
 VARY = 0.03
 
-IDLE_TIME = 20
+IDLE_TIME = 5 # if tail_time of a path has not changed after IDLE_TIME, then write to database
 
 # For writing raw trajectories as Fragment objects
 # change first "ID" to "_id" to query by ObjectId

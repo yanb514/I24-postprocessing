@@ -10,15 +10,10 @@ import multiprocessing
 import stitcher_parameters
 import db_parameters
 import logging
-# TODO: check and test database implementation
-import pymongo
-import pymongo.errors
-from db_reader import DBReader
 from db_writer import DBWriter
-from collections import deque, OrderedDict
+from collections import deque
 from utils.stitcher_module import min_nll_cost
 from utils.data_structures import Fragment, PathCache
-import heapq
 
 # helper functions
 def _first(dict):
@@ -51,7 +46,7 @@ def stitch_raw_trajectory_fragments(fragment_queue,
     past_fragments = dict()  # set of ids indicate end of fragment ready to be matched, insertion ordered
     P = PathCache() # an LRU cache of Fragment object (see utils.data_structures)
 
-    # Make database connection for writing
+    # Make a database connection for writing
     dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                    password=db_parameters.DEFAULT_PASSWORD,
                    database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
@@ -59,27 +54,25 @@ def stitch_raw_trajectory_fragments(fragment_queue,
     print("** Stitching starts. fragment_queue size: ", fragment_queue.qsize())
     p = None
     # while True: 
-    while fragment_queue.qsize() > 0:
+    while True:
         # print("*** getting fragment")  
-        
-        fragment = Fragment(fragment_queue.get()) # make object
-        print("\n")
-        print("current fragment: ", fragment.ID)
+        try:
+            fragment = Fragment(fragment_queue.get(False)) # make object
+        except: # handle queue empty case
+            break
+        # print("\n")
+        # print("current fragment: ", fragment.ID)
         fragment.curr = True
         P.add_node(fragment)
-        
-        if fragment.ID == 100165:
-            print('here')
-            p = fragment
         
         # specify time window for curr_fragments
         right = fragment.last_timestamp # right pointer: current end time
         left = min(fragment.first_timestamp, right - TIME_WIN)
-        print("left, right: ", left, right)
+        # print("left, right: ", left, right)
         
         # compute fragment statistics (1d motion model)
         fragment.compute_stats()
-        print("Curr_fragments size: ", len(curr_fragments))
+        # print("Curr_fragments size: ", len(curr_fragments))
         
         # remove out of sight fragments 
         if curr_fragments:
@@ -89,7 +82,7 @@ def stitch_raw_trajectory_fragments(fragment_queue,
                 past_fragment.curr = False
                 past_fragment.past = True
                 past_fragments[past_id] = past_fragment # could use keys only: past_fragments[past_id] = None if memory is an issue 
-        print("Past_fragments size: ", len(past_fragments))
+        # print("Past_fragments size: ", len(past_fragments))
         
         # compute score from every fragment in curr to fragment, update Cost
         for curr_id in curr_fragments:
@@ -122,10 +115,7 @@ def stitch_raw_trajectory_fragments(fragment_queue,
                     except: 
                         best_tail = None
                         continue
-                    # TODO: can tail_matched fragments be matched again? try no
-                    if best_head.ID == 100166:
-                        print("here")
-                    
+
                     if best_tail.id == ready.id and best_tail.id not in ready.conflicts_with:
                         print("** match tail of {} to head of {}".format(best_tail.ID, best_head.ID))
                         
@@ -144,11 +134,12 @@ def stitch_raw_trajectory_fragments(fragment_queue,
         curr_fragments.append(fragment.id)    
         
         # write paths from P if time out is reached
+        # This block can be written as an async operation
         while True:
             try:
                 root = P.first_node()
                 if root.gone and root.tail_time < left - IDLE_TIME:
-                    print("root's tail time: {:.2f}, current time window: {:.2f}-{:.2f}".format(root.tail_time, left, right))
+                    # print("root's tail time: {:.2f}, current time window: {:.2f}-{:.2f}".format(root.tail_time, left, right))
                     path = P.pop_first_path()  
                     print("write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
                     stitched_trajectory_queue.put(path) # doesn't know ObjectId
@@ -160,6 +151,7 @@ def stitch_raw_trajectory_fragments(fragment_queue,
             
         num_roots = P.count() # number of roots    
         print("Number of roots: ", num_roots)
+    
     
     print("Total stitched trajectories: ", num_roots)
     # P.print_cache()
