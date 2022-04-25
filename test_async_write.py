@@ -126,14 +126,16 @@ print("Final count: %d" % count)
 print("Pymongo bulk write takes {:.2f} sec".format(t2-t1))
 
 #%% Test change stream
+# Can only run on VM (where MongoDB is set up)
 from pymongo import MongoClient
+import pymongo
 
 client = MongoClient(host=['localhost:27017'])
 db=client["trajectories"]
 col=db["test_change_stream"]
 
-#%%
 col.insert_one({"x":1})
+print(col.count_documents({}))
 
 #%%
 try:
