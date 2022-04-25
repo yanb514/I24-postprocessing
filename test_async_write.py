@@ -140,8 +140,8 @@ print(col.count_documents({}))
 #%%
 try:
     resume_token = None
-    pipeline = [{'$match': {'operationType': 'insert'}}]
-    with db.collection.watch(pipeline) as stream:
+    # pipeline = [{'$match': {'operationType': 'insert'}}]
+    with db.collection.watch() as stream:
         for insert_change in stream:
             print(insert_change)
             resume_token = stream.resume_token
