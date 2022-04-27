@@ -84,7 +84,7 @@ def read_data_into_csv(host, port, username, password, database_name, collection
             writer.writerow(doc_fmt)
 
 
-def live_data_reader(host, port, username, password, database_name, db_collection, range_increment,
+def live_data_reader(database_name, collection_name, range_increment,
                      ready_queue):
     """
     Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
@@ -98,15 +98,15 @@ def live_data_reader(host, port, username, password, database_name, db_collectio
     :param username: Database authentication username.
     :param password: Database authentication password.
     :param database_name: Name of database to connect to (do not confuse with collection name).
-    :param db_collection: Name of database collection from which to query.
+    :param collection_name: Name of database collection from which to query.
     :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
     :return:
     """
-    # TODO: not tested
-    dbr = DBReader(host=host, port=port, username=username, password=password,
-                   database_name=database_name, collection_name=db_collection)
+    # Connect to local replica set TODO: how to remote connect to replica set?
+    dbr_rs = DBReader(host=None, port=None, username=None, password=None,
+                   database_name=database_name, collection_name=collection_name)
     # TODO: currently read_query_range doesn't support unbounded range
-    rri = dbr.read_query_range(range_parameter='last_timestamp', range_greater_equal=None, range_less_than=None, range_increment=range_increment)
+    rri = dbr_rs.read_query_range(range_parameter='last_timestamp', range_greater_equal=None, range_less_than=None, range_increment=range_increment)
     t_max = 0
     pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
     
@@ -126,18 +126,7 @@ def live_data_reader(host, port, username, password, database_name, db_collectio
             # resume attempt failed to recreate the cursor.
             print("live_data_reader encounters an error")
             pass
-            # if resume_token is None:
-            #     # There is no usable resume token because there was a
-            #     # failure during ChangeStream initialization.
-            #     logging.error('...')
-            # else:
-            #     # Use the interrupted ChangeStream's resume token to create
-            #     # a new ChangeStream. The new stream will continue from the
-            #     # last seen insert change without missing any events.
-            #     with db.collection.watch(
-            #             pipeline, resume_after=resume_token) as stream:
-            #         for insert_change in stream:
-            #             print(insert_change)
+
     
 
 class DBReader:
@@ -159,10 +148,12 @@ class DBReader:
         # Connect immediately upon instantiation.
 #        self.client = pymongo.MongoClient(host=host, port=port, username=username, password=password,
 #                                          connect=True, connectTimeoutMS=5000)
-        username = urllib.parse.quote_plus(username)
-        password = urllib.parse.quote_plus(password)
-
-        self.client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
+        try:
+            username = urllib.parse.quote_plus(username)
+            password = urllib.parse.quote_plus(password)
+            self.client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
+        except:
+            self.client = pymongo.MongoClient(host=['localhost:27017']) # connect to replica set
         # TODO: add connect=True and connectTimeoutMS=5000
         # Test out the connection with a ping and raise a ConnectionError if it isn't available.
         # Connection timeout specified during creation of self.client.
@@ -269,16 +260,17 @@ class DBReader:
         :param limit: Numerical limit for number of documents returned by query.
         :return: iterator across range-segmented queries (each query executes when __next__() is called in iteration)
         """
-        # no bounds: raise error
+        # no bounds: raise error TODO: start querying from the min value
         if range_greater_than is None and range_greater_equal is None and range_less_than is None \
                 and range_less_equal is None:
             raise ValueError("Must specify lower and or upper bound (inclusive or exlusive) for range query.")
             
-        # only bounded on one side: currently not supported
+        # only bounded on one side: TODO: start querying from the min value
         if (range_greater_than is None and range_greater_equal is None) or \
                 (range_less_than is None and range_less_equal is None):
             raise NotImplementedError("Infinite ranges not currently supported.")
 
+        # if no range_increment, query everything between lower bound and upper bound
         if range_increment is None:
             range_filter = defaultdict(dict)            
             # more operations: https://www.mongodb.com/docs/manual/reference/operator/query/
@@ -294,13 +286,14 @@ class DBReader:
             self.range_iter_increment = range_increment
             self.range_iter_sort = query_sort
 
-            if range_greater_equal is not None: # left closed [a, b
+            if range_greater_equal is not None: # left closed [a, ~
                 self.range_iter_start = range_greater_equal
                 self.range_iter_start_closed_interval = True
-            elif range_greater_than is not None: # left open (a, b
+            elif range_greater_than is not None: # left open (a, ~
                 self.range_iter_start = range_greater_than
                 self.range_iter_start_closed_interval = False
             else:
+                # self.range_iter_start = self.get_min(range_parameter)
                 # Currently, this point should not be reachable, given the check against infinite ranges.
                 pass
 
