@@ -1,8 +1,9 @@
 import db_parameters
 from db_reader import DBReader
 from db_writer import DBWriter
+import pymongo
 import time
-
+import queue
 # %% Test connection Done
 dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                password=db_parameters.DEFAULT_PASSWORD,
@@ -83,8 +84,7 @@ for doc in col.find({}):
 
 
 # %% Test change stream
-import pymongo
-import time
+
 # connect to a replica set
 
 client = pymongo.MongoClient(host=['localhost:27017'])
@@ -113,7 +113,7 @@ while iter_num < 5: # replace with while True
             
 
 #%% Test queue refill on static database DONE
-import queue
+
 # if queue is below a threshold, refill with the next range chunk
 
 q = queue.Queue()
@@ -145,7 +145,14 @@ while True:
     break
 #    print("collection size", dbr.collection.count_documents({}))
     
-#%% Test live queue refill with dummy database
+#%% Test live queue refill with dummy database Done 
+from db_reader import DBReader
+from db_writer import DBWriter
+import pymongo
+import time
+import queue
+import db_parameters
+
 def insert_many_with_count(collection, insert_num, start):
     many_documents = ({"key": i+start} for i in range(insert_num))
     collection.insert_many(many_documents)
@@ -157,33 +164,39 @@ RANGE_INCREMENT = 10 # IN SEC
 INSERT_NUM = 5
 T_BUFFER = 10
 
-client = pymongo.MongoClient(host=['localhost:27017'])
 pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
-db = client["trajectories"]
-test_collection = db["test_cs_collection"]
-test_collection.drop()
-test_collection = db["test_cs_collection"]
 
 # initiate a mongodb replica set
-dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username="",   
-               password="", database_name=db_parameters.DB_NAME, collection_name="test_cs_collection")
+dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
+                password=db_parameters.DEFAULT_PASSWORD,
+                database_name=db_parameters.DB_NAME, collection_name="test_cs_collection")
+
 rri = dbr.read_query_range(range_parameter='key', range_greater_equal=0, range_less_than=600, range_increment=RANGE_INCREMENT)
 
+
+test_collection = dbr.db["test_cs_collection"]
+test_collection.drop()
+test_collection = dbr.db["test_cs_collection"]
+# test_collection_rs = dbr_rs.db["test_cs_collection"] 
+# dbr_rs.client.close()
 
 iteration = 0
 t_max = 0
 start = 0
 
-while iteration < 100:
+while iteration < 6:
     count = 0
+    
     while q.qsize() <= MIN_QUEUE_SIZE: # only move to the next query range if queue is low in stock
-        with test_collection.watch(pipeline) as stream:
+        with test_collection.watch(pipeline) as stream:  
 #            test_collection.insert_many(({'key': INSERT_NUM * iteration + i} for i in range(INSERT_NUM)))
             start = insert_many_with_count(test_collection, INSERT_NUM, start)
             change = stream.try_next()
             if change:
+                print("new change: ", change["fullDocument"]["key"])
                 t_max = max(change["fullDocument"]["key"], t_max) # reset the t_max cursor
                 if t_max > rri._current_upper_value + T_BUFFER:
+                    print("refilling queue...")
                     for doc in next(rri):
     #                        print(doc)
                         q.put(doc)
@@ -200,6 +213,12 @@ while iteration < 100:
     print("current change", change["fullDocument"]["key"], "upper bound", rri._current_upper_value)
 
 
-
-
-
+#%% Try replica set connection from laptop
+from pymongo.errors import ConnectionFailure
+client = pymongo.MongoClient(host = db_parameters.DEFAULT_HOST, directConnection = True)
+try:
+    # The ping command is cheap and does not require auth.
+    client.admin.command('ping')
+except ConnectionFailure:
+    print("Server not available")
+# client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))

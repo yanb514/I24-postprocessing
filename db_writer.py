@@ -330,7 +330,7 @@ class DBWriter:
     
 
     
-    def write_trajectory_fragment(self, local_fragment_id: int, coarse_vehicle_class: int, fine_vehicle_class: int,
+    def write_fragment(self, local_fragment_id: int, coarse_vehicle_class: int, fine_vehicle_class: int,
                                   timestamps: list[float], raw_timestamps: list[float], road_segment_id: int,
                                   x_positions: list[float], y_positions: list[float],
                                   lengths: list[float], widths: list[float], heights: list[float],

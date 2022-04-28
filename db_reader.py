@@ -146,24 +146,37 @@ class DBReader:
         :param collection_name: Name of database collection from which to query.
         """
         # Connect immediately upon instantiation.
-#        self.client = pymongo.MongoClient(host=host, port=port, username=username, password=password,
-#                                          connect=True, connectTimeoutMS=5000)
-        try:
-            username = urllib.parse.quote_plus(username)
-            password = urllib.parse.quote_plus(password)
-            self.client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
-        except:
-            self.client = pymongo.MongoClient(host=['localhost:27017']) # connect to replica set
-        # TODO: add connect=True and connectTimeoutMS=5000
-        # Test out the connection with a ping and raise a ConnectionError if it isn't available.
-        # Connection timeout specified during creation of self.client.
+#        
 
+        # username = urllib.parse.quote_plus(username)
+        # password = urllib.parse.quote_plus(password)
+        # self.client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
+        self.client = pymongo.MongoClient(host=host, port=port, username=username, password=password,
+                                          connect=True, connectTimeoutMS=5000)
         try:
             self.client.admin.command('ping')
         except pymongo.errors.ConnectionFailure:
             print("Server not available")
             raise ConnectionError("Could not connect to MongoDB.")
 
+        # username = urllib.parse.quote_plus(username)
+        # password = urllib.parse.quote_plus(password)
+        # self.client = pymongo.MongoReplicaSetClient('mongodb://%s:%s@%s/' % (username, password, host),directConnection = True) # works
+        # self.client = pymongo.MongoClient(host = host, directConnection = True) # connect to replica set
+        # self.client = pymongo.MongoClient(host = host, username=username, password=password, replicaSet = "rs0")
+        # self.client = pymongo.MongoReplicaSetClient(host = host, replicaSet='rs0',connectTimeoutMS = 5000)
+        # try:
+        #     self.client.admin.command('ping')
+        #     print("initiated a replica set")
+        # except pymongo.errors.ConnectionFailure:
+        #     print("Server not available")
+        #     raise ConnectionError("Could not connect to MongoDB.")
+            
+        # TODO: add connect=True and connectTimeoutMS=5000
+        # Test out the connection with a ping and raise a ConnectionError if it isn't available.
+        # Connection timeout specified during creation of self.client.
+
+    
         self.db = self.client[database_name]
         self.collection = self.db[collection_name]
 
