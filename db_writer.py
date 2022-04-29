@@ -282,10 +282,10 @@ class DBWriter:
         self.session_config_id = session_config_id
 
         # Connect immediately upon instantiation.
-        print("motor client")
-        self.motor_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb://%s:%s@%s' % (username, password, host))
-        print("motor db")
-        self.motor_db = self.motor_client[database_name]
+        # print("motor client")
+        # self.motor_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb://%s:%s@%s' % (username, password, host))
+        # print("motor db")
+        # self.motor_db = self.motor_client[database_name]
         # self.motor_db = motor.motor_asyncio.AsyncIOMotorDatabase(self.motor_client, database_name)
         
         # TODO: consider adding a PyMongo version as well for one-off writes
@@ -299,6 +299,7 @@ class DBWriter:
         except pymongo.errors.ConnectionFailure:
             print("Server not available")
             raise ConnectionError("Could not connect to MongoDB using pymongo.")
+        
 
     def __del__(self):
         """

@@ -36,24 +36,8 @@ STITCHER_PARAMS = {
         'THRESH': 3,
         'VARX': 0.05, # TODO: unit conversion
         'VARY': 0.03
-#        "X_MAX": X_MAX,
-#        "X_MIN": X_MIN
         }
 
-# Initialize data structures for bookkeeping
-STITCHER_INIT_E = {
-        "curr_fragments": deque(),  # fragments in view. list of fragments. should be sorted by end_time
-        "past_fragments": OrderedDict(),  # set of ids indicate end of fragment ready to be matched
-        "path": {}, # latest_fragment_id: previous_id. to store matching assignment
-        "start_times_heap": []
-        }
-
-STITCHER_INIT_W = {
-        "curr_fragments": deque(),  # fragments in view. list of fragments. should be sorted by end_time
-        "past_fragments": OrderedDict(),  # set of ids indicate end of fragment ready to be matched
-        "path": {}, # latest_fragment_id: previous_id. to store matching assignment
-        "start_times_heap": []
-        }
 
 # rectification parameters
 RECONCILIATION_PARAMS = { # TODO fill in those numbers, unit convert in feet

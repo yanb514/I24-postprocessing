@@ -1,14 +1,15 @@
-import multiprocessing
-import urllib.parse
+# import multiprocessing
+# import urllib.parse
 import pymongo
 import pymongo.errors
 import db_parameters
 
-from collections.abc import Iterable
+# from collections.abc import Iterable
 from collections import defaultdict
 from typing import Union
 Numeric = Union[int, float]
 
+from I24_logging.log_writer import I24Logger
 
 def format_flat(columns, document, impute_none_for_missing=False):
     """
@@ -102,11 +103,15 @@ def live_data_reader(database_name, collection_name, range_increment,
     :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
     :return:
     """
-    # Connect to local replica set TODO: how to remote connect to replica set?
-    dbr_rs = DBReader(host=None, port=None, username=None, password=None,
+    # Initiate logger
+    logger = I24Logger(connect_file=True, file_log_level='DEBUG', 
+                       connect_console=True, console_log_level='INFO')
+    
+    # Connect to a replica set (the replica set has to be started first)
+    dbr = DBReader(host=None, port=None, username=None, password=None,
                    database_name=database_name, collection_name=collection_name)
     # TODO: currently read_query_range doesn't support unbounded range
-    rri = dbr_rs.read_query_range(range_parameter='last_timestamp', range_greater_equal=None, range_less_than=None, range_increment=range_increment)
+    rri = dbr.read_query_range(range_parameter='last_timestamp', range_greater_equal=None, range_less_than=None, range_increment=range_increment)
     t_max = 0
     pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
     
@@ -124,11 +129,52 @@ def live_data_reader(database_name, collection_name, range_increment,
         except pymongo.errors.PyMongoError:
             # The ChangeStream encountered an unrecoverable error or the
             # resume attempt failed to recreate the cursor.
-            print("live_data_reader encounters an error")
+            logger.warning("live_data_reader encounters an error")
             pass
 
     
-
+def raw_data_feed(database_name, collection_name, range_increment, ready_queue, direction):
+    """
+    Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
+        that it can be assured to be time-ordered. Refill data queue if the queue size is below a threshold AND the next query range is before change_stream t_max - t_buffer
+    ** THIS PROCEDURE AND FUNCTION IS TO BE REPLACED BY live_data_reader **
+    :param host: Database connection host name.
+    :param port: Database connection port number.
+    :param username: Database authentication username.
+    :param password: Database authentication password.
+    :param database_name: Name of database to connect to (do not confuse with collection name).
+    :param collection_name: Name of database collection from which to query.
+    :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
+    :param direction: "east" or "west" for query
+    :return:
+    """
+    # Initiate logger
+    data_feed_logger = I24Logger(connect_file=True, file_log_level='DEBUG', 
+                       connect_console=True, console_log_level='INFO')
+    
+    # Connect to a replica set (the replica set has to be started first)
+    dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
+                    password=db_parameters.DEFAULT_PASSWORD,
+                    database_name=database_name, collection_name=db_parameters.RAW_COLLECTION)
+    
+    # TODO: currently read_query_range doesn't support unbounded range
+    # temporary: start from min and end at max
+    dir = 1 if direction == "east" else -1
+    rri = dbr.read_query_range(range_parameter='last_timestamp', range_greater_equal=None, range_less_than=None, range_increment=range_increment,
+                               static_parameters = ["direction"], static_parameters_query = [("$eq", dir)])
+    
+    while True:
+        try:
+            if ready_queue.qsize() <= db_parameters.MIN_QUEUE_SIZE: # only move to the next query range if queue is low in stock
+                next_batch = next(rri)
+                for doc in next_batch:
+                    ready_queue.put(doc)            
+        except:
+            # The ChangeStream encountered an unrecoverable error or the
+            # resume attempt failed to recreate the cursor.
+            data_feed_logger.warning("Raw data feed reached the end of iteration. Stop raw_data_feed process.", extra={})
+            break
+        
 class DBReader:
     """
     MongoDB database reader, specific to a collection in the database. This object is typically fairly persistent, i.e.,
@@ -241,7 +287,9 @@ class DBReader:
                          range_less_equal = None,
                          range_increment = None,
                          query_sort = None,
-                         limit = 0):
+                         limit = 0,
+                         static_parameters = None,
+                         static_parameters_query = None):
         """
         Iterate across a query range in portions.
         Usage:
@@ -262,7 +310,7 @@ class DBReader:
                     print("END OF ITERATION")
                     break
         ```
-        :param range_parameter: Document field across which to run range queries.
+        :param range_parameter: One document field across which to run range queries.
         :param range_greater_than: Sets a '>' bound on `range_parameter` for the query or successive queries.
         :param range_greater_equal: Sets a '>' bound on `range_parameter` for the query or successive queries.
         :param range_less_than: Sets a '>' bound on `range_parameter` for the query or successive queries.
@@ -271,28 +319,36 @@ class DBReader:
             returns iterable of queries/results.
         :param query_sort: List of tuples: (field_to_sort, sort_direction); direction is ASC/ASCENDING or DSC/DESCENDING
         :param limit: Numerical limit for number of documents returned by query.
+        :param static_parameters: (Multiple) document fields across with to query directly from.
+            e.g., ["direction", "starting_x"]
+        :param static_parameters_query: Operators correspond to static_parameters
+            e.g., [("$in", -1), ("$gt", 100)]
         :return: iterator across range-segmented queries (each query executes when __next__() is called in iteration)
         """
-        # no bounds: raise error TODO: start querying from the min value
-        if range_greater_than is None and range_greater_equal is None and range_less_than is None \
-                and range_less_equal is None:
-            raise ValueError("Must specify lower and or upper bound (inclusive or exlusive) for range query.")
+        # # no bounds: raise error TODO: start querying from the min value
+        # if range_greater_than is None and range_greater_equal is None and range_less_than is None \
+        #         and range_less_equal is None:
+        #     raise ValueError("Must specify lower and or upper bound (inclusive or exlusive) for range query.")
             
-        # only bounded on one side: TODO: start querying from the min value
-        if (range_greater_than is None and range_greater_equal is None) or \
-                (range_less_than is None and range_less_equal is None):
-            raise NotImplementedError("Infinite ranges not currently supported.")
+        # # only bounded on one side: TODO: start querying from the min value
+        # if (range_greater_than is None and range_greater_equal is None) or \
+        #         (range_less_than is None and range_less_equal is None):
+        #     raise NotImplementedError("Infinite ranges not currently supported.")
 
         # if no range_increment, query everything between lower bound and upper bound
         if range_increment is None:
-            range_filter = defaultdict(dict)            
+            query_filter = defaultdict(dict)            
             # more operations: https://www.mongodb.com/docs/manual/reference/operator/query/
             operators = ["$gt","$gte","$lt","$lte"]  
             values = [range_greater_than, range_greater_equal, range_less_than, range_less_equal]
             for i, operator in enumerate(operators):
                 if values[i]: 
-                    range_filter[range_parameter][operator] = values[i]
-            return self.read_query(query_filter=range_filter, query_sort=query_sort, limit=limit)
+                    query_filter[range_parameter][operator] = values[i]
+            # add static parameter filters if any is provided
+            if static_parameters:
+                for i, static_parameter in enumerate(static_parameters):
+                    query_filter[static_parameter][static_parameters_query[i][0]] = static_parameters_query[i][1]
+            return self.read_query(query_filter=query_filter, query_sort=query_sort, limit=limit)
         
         else:
             self.range_iter_parameter = range_parameter
@@ -306,9 +362,9 @@ class DBReader:
                 self.range_iter_start = range_greater_than
                 self.range_iter_start_closed_interval = False
             else:
-                # self.range_iter_start = self.get_min(range_parameter)
-                # Currently, this point should not be reachable, given the check against infinite ranges.
-                pass
+                # TODO: temporarily set start and end point to the min and max values. For live stream, this is not applicable.
+                self.range_iter_start = self.get_min(range_parameter)
+                self.range_iter_start_closed_interval = True
 
             if range_less_equal is not None: # right closed a, b]
                 self.range_iter_stop = range_less_equal
@@ -317,9 +373,10 @@ class DBReader:
                 self.range_iter_stop = range_less_than
                 self.range_iter_stop_closed_interval = False
             else:
-                # Currently, this point should not be reachable, given the check against infinite ranges.
-                pass
-
+                # TODO: temporarily set start and end point to the min and max values. Works on static database collections only.
+                self.range_iter_stop = self.get_max(range_parameter)
+                self.range_iter_stop_closed_interval = True
+                
         return iter(self)
 
     def read_stream(self, pipeline):

@@ -9,8 +9,6 @@ dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT,
                password=db_parameters.DEFAULT_PASSWORD,
                database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
 
-
-
 # %% Test read_query Done
 dbr.create_index(["last_timestamp", "first_timestamp", "starting_x", "ending_x"])
 res = dbr.read_query(query_filter = {"last_timestamp": {"$gt": 5, "$lt":309}}, query_sort = [("last_timestamp", "ASC"), ("starting_x", "ASC")],
