@@ -21,7 +21,7 @@ gt = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, 
                password=db_parameters.DEFAULT_PASSWORD,
                database_name=db_parameters.DB_NAME, collection_name=db_parameters.GT_COLLECTION)
 
-gt_ids = [1]
+gt_ids = [1,2,100,101]
 fragment_ids = []
 gt_res = gt.read_query(query_filter = {"ID": {"$in": gt_ids}},
                        limit = 0)
@@ -36,7 +36,6 @@ raw_res = raw.read_query(query_filter = {"_id": {"$in": fragment_ids}},
 fragment_queue = queue.Queue()
 for doc in raw_res:
     # print(doc["ID"])
-    # if len(doc["timestamp"])>=2: # TODO: is this acceptable?
     fragment_queue.put(doc)
     
 fragment_size = fragment_queue.qsize()
@@ -53,16 +52,21 @@ print("Queue size: ", fragment_size)
     
 # % Run stitcher with a pre-filled queue
 stitched_trajectories_queue = queue.Queue()
-stitch_raw_trajectory_fragments(fragment_queue, stitched_trajectories_queue, log_queue=None)
+stitch_raw_trajectory_fragments("west", fragment_queue, stitched_trajectories_queue)
 stitched = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                password=db_parameters.DEFAULT_PASSWORD,
                database_name=db_parameters.DB_NAME, collection_name=db_parameters.STITCHED_COLLECTION)
 
+#%%
 print("{} fragments stitched to {} trajectories".format(fragment_size,stitched_trajectories_queue.qsize()))
 
 
 #%% print stitched_trajectories_queue
 stitched_paths = []
+raw = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
+               password=db_parameters.DEFAULT_PASSWORD,
+               database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
+
 while not stitched_trajectories_queue.empty():
     path = stitched_trajectories_queue.get()
     print([raw.find_one("ID", raw_id)["ID"] for raw_id in path])

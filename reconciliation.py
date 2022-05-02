@@ -23,7 +23,7 @@ def reconcile_single_trajectory(trajectory_data, result_queue: multiprocessing.Q
     :return:
     """
     
-    log_queue.put((logging.DEBUG, "Reconciling on trajectory {}.".format('0')))
+    # log_queue.put((logging.DEBUG, "Reconciling on trajectory {}.".format('0')))
 
     # DO THE RECONCILIATION
     resampled_trajectory = resample(trajectory_data)
@@ -51,7 +51,7 @@ def handle_reconcile_error(process_exception):
 
 
 def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
-                        log_queue: multiprocessing.Queue, pid_tracker) -> None:
+                         pid_tracker) -> None:
     """
 
     :param stitched_trajectory_queue:

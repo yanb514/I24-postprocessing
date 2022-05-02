@@ -51,24 +51,24 @@ def min_nll_cost(track1, track2, TIME_WIN, VARX, VARY):
     targetx = np.matmul(xx, track1.fitx)
     targety = np.matmul(xx, track1.fity)
     pt1 = track1.t[-1]
-    varx = (np.array(track2.t)-pt1) * VARX 
-    vary = (np.array(track2.t)-pt1) * VARY
+    varx = (track2.t-pt1) * VARX 
+    vary = (track2.t-pt1) * VARY
 
-    input = torch.transpose(torch.tensor([track2.x,track2.y]),0,1)
-    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
-    var = torch.transpose(torch.tensor([varx,vary]),0,1)
-    nll1 = loss(input,target,var).item()
+    input = torch.transpose(torch.tensor(np.array([track2.x,track2.y])),0,1) # if track2.x and track2.y are np.array, this operation is slow (according to tensor's warning)
+    target = torch.transpose(torch.tensor(np.array([targetx, targety])),0,1)
+    var = torch.transpose(torch.tensor(np.array([varx,vary])),0,1)
+    nll1 = loss(input,target,var).item() # get a number from a tensor
     
     # predict from track2 backward to time of track1 
     xx = np.vstack([track1.t,np.ones(len(track1.t))]).T # N x 2
     targetx = np.matmul(xx, track2.fitx)
     targety = np.matmul(xx, track2.fity)
     pt1 = track2.t[-1]
-    varx = (np.array(track1.t)-pt1) * VARX 
-    vary = (np.array(track1.t)-pt1) * VARY
-    input = torch.transpose(torch.tensor([track1.x,track1.y]),0,1)
-    target = torch.transpose(torch.tensor([targetx, targety]),0,1)
-    var = torch.transpose(torch.tensor([varx,vary]),0,1)
+    varx = (track1.t-pt1) * VARX 
+    vary = (track1.t-pt1) * VARY
+    input = torch.transpose(torch.tensor(np.array([track1.x,track1.y])),0,1)
+    target = torch.transpose(torch.tensor(np.array([targetx, targety])),0,1)
+    var = torch.transpose(torch.tensor(np.array([varx,vary])),0,1)
     nll2 = loss(input,target,np.abs(var)).item()
     cost = min(nll1, nll2)
     # cost = (nll1 + nll2)/2

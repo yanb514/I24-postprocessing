@@ -1,1 +1,0 @@
-2022-04-28 16:33:41,282 | WARNING | PID-75547 | Raw data feed reached the end of iteration. Stop raw_data_feed process. | {'serverid': 'Yanbings-MacBook-Pro.local', 'environment': 'DEF_ENV', 'ownername': 'PID-75547', 'ownerpid': 75547, 'parentname': None}

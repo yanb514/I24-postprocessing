@@ -11,7 +11,7 @@ dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT,
 
 # %% Test read_query Done
 dbr.create_index(["last_timestamp", "first_timestamp", "starting_x", "ending_x"])
-res = dbr.read_query(query_filter = {"last_timestamp": {"$gt": 5, "$lt":309}}, query_sort = [("last_timestamp", "ASC"), ("starting_x", "ASC")],
+res = dbr.read_query(query_filter = {"last_timestamp": {"$gt": 5, "$lt":330}}, query_sort = [("last_timestamp", "ASC"), ("starting_x", "ASC")],
                    limit = 0)
 
 for doc in res:
@@ -36,7 +36,7 @@ print("END OF ITERATION")
 
 #%% Test read_query_range (with range_increment) Done
 print("Using while-loop to read range")
-rri = dbr.read_query_range(range_parameter='last_timestamp', range_greater_equal=300, range_less_than=330, range_increment=10)
+rri = dbr.read_query_range(range_parameter='last_timestamp', range_greater_equal=300, range_less_than=330, range_increment=10,static_parameters = ["direction"], static_parameters_query = [("$eq", dir)])
 while True:
     try:
         print("Current range: {}-{}".format(rri._current_lower_value, rri._current_upper_value))
@@ -53,6 +53,23 @@ while True:
 #         print(doc["ID"])
 # print("END OF ITERATION")
 
+
+#%% Test read_query_range with no upper or lower bounds (with range_increment) Done
+print("Using while-loop to read range")
+rri = dbr.read_query_range(range_parameter='last_timestamp', range_less_equal = 320, range_increment=10,static_parameters = ["direction"], static_parameters_query = [("$eq", dir)])
+
+iteration = 0
+while iteration < 5:
+    try:
+        print("Current range: {}-{}".format(rri._current_lower_value, rri._current_upper_value))
+        for doc in next(rri): # next(rri) is a cursor
+            print(doc["last_timestamp"])
+    except StopIteration:
+        print("END OF ITERATION")
+        break
+    iteration += 1
+    
+    
 #%% Test DBWriter write_stitch Done
 # query some test data to write to a new collection
 print("Connect to DBReader")
@@ -79,8 +96,6 @@ for doc in col.find({}):
     print(doc["ID"], doc["last_timestamp"])
           
       
-
-
 # %% Test change stream
 
 # connect to a replica set

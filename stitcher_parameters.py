@@ -12,7 +12,9 @@ THRESH = 3
 VARX = 0.05 # TODO: unit conversion (now it's based on meter)
 VARY = 0.03
 
-IDLE_TIME = 5 # if tail_time of a path has not changed after IDLE_TIME, then write to database
+IDLE_TIME = 1 # if tail_time of a path has not changed after IDLE_TIME, then write to database
+# if IDLE_TIME is too short, stitcher tends to under stitch
+
 
 # For writing raw trajectories as Fragment objects
 # change first "ID" to "_id" to query by ObjectId

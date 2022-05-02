@@ -105,7 +105,7 @@ def live_data_reader(database_name, collection_name, range_increment,
     """
     # Initiate logger
     logger = I24Logger(connect_file=True, file_log_level='DEBUG', 
-                       connect_console=True, console_log_level='INFO')
+                        connect_console=True, console_log_level='INFO')
     
     # Connect to a replica set (the replica set has to be started first)
     dbr = DBReader(host=None, port=None, username=None, password=None,
@@ -149,31 +149,35 @@ def raw_data_feed(database_name, collection_name, range_increment, ready_queue, 
     :return:
     """
     # Initiate logger
-    data_feed_logger = I24Logger(connect_file=True, file_log_level='DEBUG', 
-                       connect_console=True, console_log_level='INFO')
+    # data_feed_logger = I24Logger(owner_process_name = "raw_data_feed_"+direction, connect_file=True, file_log_level='DEBUG', 
+    #                    connect_console=True, console_log_level='INFO')
     
     # Connect to a replica set (the replica set has to be started first)
     dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                     password=db_parameters.DEFAULT_PASSWORD,
                     database_name=database_name, collection_name=db_parameters.RAW_COLLECTION)
     
-    # TODO: currently read_query_range doesn't support unbounded range
     # temporary: start from min and end at max
     dir = 1 if direction == "east" else -1
-    rri = dbr.read_query_range(range_parameter='last_timestamp', range_greater_equal=None, range_less_than=None, range_increment=range_increment,
+    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=range_increment,
                                static_parameters = ["direction"], static_parameters_query = [("$eq", dir)])
     
     while True:
         try:
+            # print("current raw_trajectories_queue size: {}".format(ready_queue.qsize()))
             if ready_queue.qsize() <= db_parameters.MIN_QUEUE_SIZE: # only move to the next query range if queue is low in stock
                 next_batch = next(rri)
+    
                 for doc in next_batch:
-                    ready_queue.put(doc)            
+                    ready_queue.put(doc)   
+                # data_feed_logger.info("current raw_trajectories_queue size: {}".format(ready_queue.qsize()))
+                print("current raw_trajectories_queue size: {}".format(ready_queue.qsize()))
         except:
             # The ChangeStream encountered an unrecoverable error or the
             # resume attempt failed to recreate the cursor.
-            data_feed_logger.warning("Raw data feed reached the end of iteration. Stop raw_data_feed process.", extra={})
-            break
+            # data_feed_logger.warning("Raw data feed reached the end of iteration. Stop raw_data_feed process.", extra={})
+            print("Raw data feed reached the end of iteration. Stop raw_data_feed process.")
+            # break
         
 class DBReader:
     """

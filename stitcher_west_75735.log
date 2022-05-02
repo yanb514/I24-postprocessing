@@ -1,2 +1,0 @@
-2022-04-28 16:39:18,673 | INFO | stitcher_west | ** Stitching starts. fragment_queue size: 0 | {'serverid': 'Yanbings-MacBook-Pro.local', 'environment': 'DEF_ENV', 'ownername': 'stitcher_west', 'ownerpid': 75735, 'parentname': None}
-2022-04-28 16:39:18,673 | WARNING | stitcher_west | fragment_queue is empty | {'serverid': 'Yanbings-MacBook-Pro.local', 'environment': 'DEF_ENV', 'ownername': 'stitcher_west', 'ownerpid': 75735, 'parentname': None}

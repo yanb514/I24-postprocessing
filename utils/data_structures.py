@@ -251,6 +251,14 @@ class Fragment(Node):
         else:
             super().__init__(traj_doc)
         
+        # cast time series to np array
+        for time_series in ["t", "x", "y"]:
+            try:
+                np_time_series = np.array(getattr(self, time_series))
+                setattr(self, time_series, np_time_series)
+            except:
+                pass
+        
         
     def __repr__(self):
         try:
@@ -297,7 +305,7 @@ class Fragment(Node):
         return suc
     
     def peek_first_pre(self):
-        # return the best successor of self if exists
+        # return the best predecessor of self if exists
         # otherwise return None
         # heappop empty fragments from self.suc
         # while self.pre and self.pre[0][1].id is None: # get the first non-empty fragment
@@ -333,11 +341,11 @@ class Fragment(Node):
         # by the call, u = v._getFirstPre and u._getFirstSuc = v
         # match u's tail to v's head
         # 1. add u's conflicts to v -> contagious conflicts!
-        nei_u = u.conflicts_with
-        nei_v = v.conflicts_with     
-        u_v = nei_u-nei_v
-        for w in u_v:
-            v.add_conflict(w)      
+        # nei_u = u.conflicts_with
+        # nei_v = v.conflicts_with     
+        # u_v = nei_u-nei_v
+        # for w in u_v:
+        #     v.add_conflict(w)      
             
         # 2. remove all u's succ from u -> remove all from v's pre
         # 4/13/22 modified from v.pre = None to heapq.heappop(v.pre), because v's head can still be matched to others
