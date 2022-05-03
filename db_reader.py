@@ -293,7 +293,7 @@ class DBReader:
                 self.range_iter_start = range_greater_than
                 self.range_iter_start_closed_interval = False
             else:
-                # self.range_iter_start = self.get_min(range_parameter)
+                # self.range_iter_start = self.get_min()
                 # Currently, this point should not be reachable, given the check against infinite ranges.
                 pass
 
