@@ -15,54 +15,30 @@ LOG_MESSAGE_QUEUE_SIZE = 10000
 RECONCILIATION_POOL_SIZE = 10
 RECONCILIATION_TIMEOUT = 15
 
+# -----------------------------
+# data query / write parameters
+RANGE_INCREMENT = 50 # seconds interval to batch query and refill raw_trajectories_queue
+
+# -----------------------------
+# stitcher algorithm parameters
+TIME_WIN = 50
+THRESH = 3
+VARX = 0.05 # TODO: unit conversion (now it's based on meter)
+VARY = 0.03
+IDLE_TIME = 1 # if tail_time of a path has not changed after IDLE_TIME, then write to database
+# if IDLE_TIME is too short, stitcher tends to under stitch
+
+# For writing raw trajectories as Fragment objects
+# change first "ID" to "_id" to query by ObjectId
+WANTED_DOC_FIELDS = ["ID", "ID","timestamp","x_position","y_position","direction","last_timestamp","last_timestamp", "first_timestamp"]
+FRAGMENT_ATTRIBUTES = ["id","ID","t","x","y","dir","tail_time","last_timestamp","first_timestamp"]
 
 
-
-## specify parameters
-MODE = 'test'
-TIME_RANGE = 50 # A moving window range in sec for raw-data-feed
-START = 0
-END = 480
-TIME_OUT = 50 # gracefully shutdown if db has not been updated in TIME_OUT seconds
-
-## roadway parameters
-X_MAX = 32800 # in feet
-X_MIN = 1000
-
-
-# stitcher parameters
-STITCHER_PARAMS = {
-        'TIME_WIN': 10, 
-        'THRESH': 3,
-        'VARX': 0.05, # TODO: unit conversion
-        'VARY': 0.03
-#        "X_MAX": X_MAX,
-#        "X_MIN": X_MIN
-        }
-
-# Initialize data structures for bookkeeping
-STITCHER_INIT_E = {
-        "curr_fragments": deque(),  # fragments in view. list of fragments. should be sorted by end_time
-        "past_fragments": OrderedDict(),  # set of ids indicate end of fragment ready to be matched
-        "path": {}, # latest_fragment_id: previous_id. to store matching assignment
-        "start_times_heap": []
-        }
-
-STITCHER_INIT_W = {
-        "curr_fragments": deque(),  # fragments in view. list of fragments. should be sorted by end_time
-        "past_fragments": OrderedDict(),  # set of ids indicate end of fragment ready to be matched
-        "path": {}, # latest_fragment_id: previous_id. to store matching assignment
-        "start_times_heap": []
-        }
-
-# rectification parameters
-RECONCILIATION_PARAMS = { # TODO fill in those numbers, unit convert in feet
-        'lam1_x':0.0012,
-        'lam1_Y':0.0012,
-        'lam2_x':1.67e-2,
-        'lam2_y':1.67e-2,
-        'PH': 100,
-        'IH': 5
-        }
-
-
+# -----------------------------
+# reconciliation pamaters
+LAM1_X = 0.0012
+LAM1_Y = 0.0012
+LAM2_X = 1.67e-2
+LAM2_Y = 1.67e-2
+PH = 100
+IH = 5

@@ -8,16 +8,17 @@ Spawns and manages child processes for trajectory fragment stitching and traject
 # -----------------------------
 
 import multiprocessing as mp
-from multiprocessing import Value, Lock
 import os
 import signal
 
 # TODO: do this within-package import correctly
 import time
-import parameters
-import stitcher
+from db_reader import raw_data_feed # change to live_data_read later
+import db_parameters, parameters
+import stitcher_parameters
+from I24_logging.log_writer import I24Logger
+from stitcher import stitch_raw_trajectory_fragments
 import reconciliation
-import logging_handler
 
 
 if __name__ == '__main__':
@@ -45,17 +46,14 @@ if __name__ == '__main__':
     # Log message queue
     # -- populated by all processes and consumed by log handler
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    log_message_queue = mp_manager.Queue(maxsize=parameters.LOG_MESSAGE_QUEUE_SIZE)
+    # log_message_queue = mp_manager.Queue(maxsize=parameters.LOG_MESSAGE_QUEUE_SIZE)
+    # manager_logger = I24Logger(owner_process_name = "postprocessing_manager",
+    #                            connect_console=True,
+    #                            connect_file = True)
 
     # PID tracker is a single dictionary of format {processName: PID}
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     pid_tracker = mp_manager.dict()
-    
-    # Initialize shared values
-    bookmark_e = Value('d', parameters.START)
-    bookmark_w = Value('d', parameters.START)
-    
-    lock = Lock() # unclear if lock can be shared
 
 #%%
     # ASSISTANT/CHILD PROCESSES
@@ -69,19 +67,24 @@ if __name__ == '__main__':
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {
-#                          'raw_data_feed_e': (stitcher.get_raw_fragments_naive,
-#                                            (bookmark_e, lock, raw_fragment_queue_e, log_message_queue,)),
-                          'raw_data_feed_w': (stitcher.get_raw_fragments_naive,
-                                            (bookmark_w, lock, raw_fragment_queue_w, log_message_queue,)),
-#                          'stitcher_e': (stitcher.stitch_raw_trajectory_fragments,
-#                                       (parameters.STITCHER_PARAMS, parameters.STITCHER_INIT_E, 
-#                                        raw_fragment_queue_e, stitched_trajectory_queue, log_message_queue,)),
-                          'stitcher_w': (stitcher.stitch_raw_trajectory_fragments,
-                                       (parameters.STITCHER_PARAMS, parameters.STITCHER_INIT_W, 
-                                        raw_fragment_queue_w, stitched_trajectory_queue, log_message_queue,)),
-#                          'reconciliation': (reconciliation.reconciliation_pool,
-#                                             (stitched_trajectory_queue, log_message_queue, pid_tracker,)),
-                          'log_handler': (logging_handler.message_handler, (log_message_queue,)),
+                          # 'raw_data_feed_e': (raw_data_feed,
+                          #                   (db_parameters.DB_NAME, 
+                          #                    db_parameters.RAW_COLLECTION, 
+                          #                    stitcher_parameters.RANGE_INCREMENT,
+                          #                    raw_fragment_queue_e,
+                          #                    "east",)),
+                          'raw_data_feed_w': (raw_data_feed,
+                                            (db_parameters.DB_NAME, 
+                                             db_parameters.RAW_COLLECTION, 
+                                             stitcher_parameters.RANGE_INCREMENT,
+                                             raw_fragment_queue_w,
+                                             "west",)),
+                          # 'stitcher_e': (stitch_raw_trajectory_fragments,
+                          #                ("east", raw_fragment_queue_e, stitched_trajectory_queue,)),
+                          'stitcher_w': (stitch_raw_trajectory_fragments,
+                                         ("west", raw_fragment_queue_w, stitched_trajectory_queue,)),
+                           # 'reconciliation': (reconciliation.reconciliation_pool,
+                           #                   (stitched_trajectory_queue, pid_tracker,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.
@@ -89,9 +92,10 @@ if __name__ == '__main__':
     subsystem_process_objects = {}
 
     # Start all processes for the first time and put references to those processes in `subsystem_process_objects`
-    print("Post-process manager beginning to spawn processes")
+    # manager_logger.info("Post-process manager beginning to spawn processes")
     for process_name, (process_function, process_args) in processes_to_spawn.items():
-        print("Post-process manager spawning ", process_name, process_function, process_args)
+        # manager_logger.info("Post-process manager spawning {}, {}, {}".format(process_name, process_function, process_args))
+        print("Post-process manager spawning {}".format(process_name))
         # Start up each process.
         # Can't make these subsystems daemon processes because they will have their own children; we'll use a
         # different method of cleaning up child processes on exit.
@@ -102,8 +106,9 @@ if __name__ == '__main__':
         # Each process is responsible for putting its own children's PIDs in the tracker upon creation (if it spawns).
         pid_tracker[process_name] = subsys_process.pid
 
+    # manager_logger.info("Started all processes.")
     print("Started all processes.")
-    print(pid_tracker)
+    # print(pid_tracker)
 
     try:
         while True:
@@ -113,12 +118,14 @@ if __name__ == '__main__':
                 child_process = subsystem_process_objects[child_key]
                 if child_process.is_alive():
                     # Process is running; do nothing.
+                    # print(child_key)
                     pass
                 else:
                     # Process has died. Let's restart it.
                     # Copy its name out of the existing process object for lookup and restart.
                     process_name = child_process.name
-                    print("Restarting process:", process_name)
+                    # manager_logger.warning("Restarting process: {}".format(process_name), extra = {})
+                    print("Restarting process: {}".format(process_name))
                     # Get the function handle and function arguments to spawn this process again.
                     process_function, process_args = processes_to_spawn[process_name]
                     # Restart the process the same way we did originally.
@@ -135,4 +142,4 @@ if __name__ == '__main__':
         # shut down the whole AI-DSS with its child processes.
         for pid_name, pid_val in pid_tracker.items():
             os.kill(pid_val, signal.SIGKILL)
-            print("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
+            # manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))

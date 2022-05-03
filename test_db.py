@@ -1,18 +1,17 @@
 import db_parameters
 from db_reader import DBReader
 from db_writer import DBWriter
+import pymongo
 import time
-
+import queue
 # %% Test connection Done
 dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                password=db_parameters.DEFAULT_PASSWORD,
                database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
 
-
-
 # %% Test read_query Done
 dbr.create_index(["last_timestamp", "first_timestamp", "starting_x", "ending_x"])
-res = dbr.read_query(query_filter = {"last_timestamp": {"$gt": 5, "$lt":309}}, query_sort = [("last_timestamp", "ASC"), ("starting_x", "ASC")],
+res = dbr.read_query(query_filter = {"last_timestamp": {"$gt": 5, "$lt":330}}, query_sort = [("last_timestamp", "ASC"), ("starting_x", "ASC")],
                    limit = 0)
 
 for doc in res:
@@ -37,7 +36,7 @@ print("END OF ITERATION")
 
 #%% Test read_query_range (with range_increment) Done
 print("Using while-loop to read range")
-rri = dbr.read_query_range(range_parameter='last_timestamp', range_greater_equal=300, range_less_than=330, range_increment=10)
+rri = dbr.read_query_range(range_parameter='last_timestamp', range_greater_equal=300, range_less_than=330, range_increment=10,static_parameters = ["direction"], static_parameters_query = [("$eq", dir)])
 while True:
     try:
         print("Current range: {}-{}".format(rri._current_lower_value, rri._current_upper_value))
@@ -54,6 +53,23 @@ while True:
 #         print(doc["ID"])
 # print("END OF ITERATION")
 
+
+#%% Test read_query_range with no upper or lower bounds (with range_increment) Done
+print("Using while-loop to read range")
+rri = dbr.read_query_range(range_parameter='last_timestamp', range_less_equal = 320, range_increment=10,static_parameters = ["direction"], static_parameters_query = [("$eq", dir)])
+
+iteration = 0
+while iteration < 5:
+    try:
+        print("Current range: {}-{}".format(rri._current_lower_value, rri._current_upper_value))
+        for doc in next(rri): # next(rri) is a cursor
+            print(doc["last_timestamp"])
+    except StopIteration:
+        print("END OF ITERATION")
+        break
+    iteration += 1
+    
+    
 #%% Test DBWriter write_stitch Done
 # query some test data to write to a new collection
 print("Connect to DBReader")
@@ -80,11 +96,8 @@ for doc in col.find({}):
     print(doc["ID"], doc["last_timestamp"])
           
       
-
-
 # %% Test change stream
-import pymongo
-import time
+
 # connect to a replica set
 
 client = pymongo.MongoClient(host=['localhost:27017'])
@@ -113,7 +126,7 @@ while iter_num < 5: # replace with while True
             
 
 #%% Test queue refill on static database DONE
-import queue
+
 # if queue is below a threshold, refill with the next range chunk
 
 q = queue.Queue()
@@ -145,7 +158,14 @@ while True:
     break
 #    print("collection size", dbr.collection.count_documents({}))
     
-#%% Test live queue refill with dummy database
+#%% Test live queue refill with dummy database Done 
+from db_reader import DBReader
+from db_writer import DBWriter
+import pymongo
+import time
+import queue
+import db_parameters
+
 def insert_many_with_count(collection, insert_num, start):
     many_documents = ({"key": i+start} for i in range(insert_num))
     collection.insert_many(many_documents)
@@ -157,33 +177,39 @@ RANGE_INCREMENT = 10 # IN SEC
 INSERT_NUM = 5
 T_BUFFER = 10
 
-client = pymongo.MongoClient(host=['localhost:27017'])
 pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
-db = client["trajectories"]
-test_collection = db["test_cs_collection"]
-test_collection.drop()
-test_collection = db["test_cs_collection"]
 
 # initiate a mongodb replica set
-dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username="",   
-               password="", database_name=db_parameters.DB_NAME, collection_name="test_cs_collection")
+dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
+                password=db_parameters.DEFAULT_PASSWORD,
+                database_name=db_parameters.DB_NAME, collection_name="test_cs_collection")
+
 rri = dbr.read_query_range(range_parameter='key', range_greater_equal=0, range_less_than=600, range_increment=RANGE_INCREMENT)
 
+
+test_collection = dbr.db["test_cs_collection"]
+test_collection.drop()
+test_collection = dbr.db["test_cs_collection"]
+# test_collection_rs = dbr_rs.db["test_cs_collection"] 
+# dbr_rs.client.close()
 
 iteration = 0
 t_max = 0
 start = 0
 
-while iteration < 100:
+while iteration < 6:
     count = 0
+    
     while q.qsize() <= MIN_QUEUE_SIZE: # only move to the next query range if queue is low in stock
-        with test_collection.watch(pipeline) as stream:
+        with test_collection.watch(pipeline) as stream:  
 #            test_collection.insert_many(({'key': INSERT_NUM * iteration + i} for i in range(INSERT_NUM)))
             start = insert_many_with_count(test_collection, INSERT_NUM, start)
             change = stream.try_next()
             if change:
+                print("new change: ", change["fullDocument"]["key"])
                 t_max = max(change["fullDocument"]["key"], t_max) # reset the t_max cursor
                 if t_max > rri._current_upper_value + T_BUFFER:
+                    print("refilling queue...")
                     for doc in next(rri):
     #                        print(doc)
                         q.put(doc)
@@ -200,6 +226,12 @@ while iteration < 100:
     print("current change", change["fullDocument"]["key"], "upper bound", rri._current_upper_value)
 
 
-
-
-
+#%% Try replica set connection from laptop
+from pymongo.errors import ConnectionFailure
+client = pymongo.MongoClient(host = db_parameters.DEFAULT_HOST, directConnection = True)
+try:
+    # The ping command is cheap and does not require auth.
+    client.admin.command('ping')
+except ConnectionFailure:
+    print("Server not available")
+# client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))

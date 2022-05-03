@@ -1,9 +1,9 @@
-import motor.motor_asyncio
 import pymongo
 import db_parameters
 import csv
 import urllib.parse
-import asyncio
+from threading import Thread
+
 
 def write_data_from_csv(**kwargs):
     '''
@@ -248,17 +248,15 @@ def write_csv_to_db_by_time(dbwriter, collection_name, file_location, file_name,
             col.insert_one(traj)
 
     return
-
-
-
-
+        
+        
 class DBWriter:
     """
     MongoDB database writer; uses asynchronous query mechanism in "motor" package by default.
     """
 
     def __init__(self, host, port, username, password, database_name,
-                 server_id, process_name, process_id, session_config_id):
+                 server_id, process_name, process_id, session_config_id, num_workers = 200):
         """
         :param host: Database connection host name.
         :param port: Database connection port number.
@@ -282,60 +280,57 @@ class DBWriter:
         self.session_config_id = session_config_id
 
         # Connect immediately upon instantiation.
-        print("motor client")
-        self.motor_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb://%s:%s@%s' % (username, password, host))
-        print("motor db")
-        self.motor_db = self.motor_client[database_name]
-        # self.motor_db = motor.motor_asyncio.AsyncIOMotorDatabase(self.motor_client, database_name)
-        
-        # TODO: consider adding a PyMongo version as well for one-off writes
-        # TODO: figure out if there are resiliency checks that we can do for async writes -- callbacks?
-        # self.client = motor.motor_asyncio.AsyncIOMotorClient(host=self.host, port=self.port,
-                                                             # username=self.username, password=self.password)
         self.client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
-        self.db = self.client[database_name]
+        # self.client = pymongo.MongoClient(host=host, port=port, username=username, password=password,
+        #                                   connect=True, connectTimeoutMS=5000)
         try:
             self.client.admin.command('ping')
         except pymongo.errors.ConnectionFailure:
             print("Server not available")
             raise ConnectionError("Could not connect to MongoDB using pymongo.")
-
-    def __del__(self):
-        """
-        Upon DBReader deletion, close the client/connection.
-        :return: None
-        """
-        try:
-            self.client.close()
-        # TODO: add the motor exception that would be raised
-        except:
-            pass
-
-    async def write_one_async(self, document, collection_name):
-        await self.motor_db[collection_name].insert_one(document)
-       
-    async def write_many_async(self, documents, collection_name):
-        await self.motor_db[collection_name].insert_many(documents)
-        
+            
+        self.db = self.client[database_name]
         
 
-    def write_one_sync(self, document, collection_name):
-        '''
-        For testing: write an arbitrary document to any collection name collection_name
-        :param document: A dictionary to be written
-        :param collection name: Collection to be written to
-        '''
-        self.db[collection_name].insert_one(document)
-        return
-    
 
-    
-    def write_trajectory_fragment(self, local_fragment_id: int, coarse_vehicle_class: int, fine_vehicle_class: int,
-                                  timestamps: list[float], raw_timestamps: list[float], road_segment_id: int,
-                                  x_positions: list[float], y_positions: list[float],
-                                  lengths: list[float], widths: list[float], heights: list[float],
-                                  direction: int, flags: list[str] = None, camera_snapshots: list[bytes] = None):
+    def thread_insert(self, collection, document):
+        '''
+        A wrapper around pymongo insert_one, which is a thread-safe operation
+        '''
+        collection.insert_one(document)
+        
+    def write_trajectory(self, thread = True, collection_name = "test_collection", **kwargs):
         """
+        write a test trajectory
+        """
+        col = self.db[collection_name]
+        
+        configuration_id = self.session_config_id
+        compute_node_id = self.server_id
+        doc = {}
+        
+        for field_name in db_parameters.RAW_SCHEMA:
+            try:
+                doc[field_name] = kwargs[field_name]
+            except:
+                pass
+            
+        # add extra fields in doc
+        doc["configuration_id"] = configuration_id
+        doc["compute_node_id"] = compute_node_id
+        
+        if not thread:
+            col.insert_one(doc)
+        else:
+            # fire off a thread
+            t = Thread(target=self.thread_insert, args=(col, doc,))
+            t.daemon = True
+            t.start()    
+            
+            
+    def write_fragment(self, thread = True, **kwargs):
+        """
+        Blocking write using insert_one for each document (slow)
         Write a raw trajectory according to the data schema, found here:
             https://docs.google.com/document/d/1xli3N-FCvIYhvg7HqaQSOcKY44B6ZktGHgcsRkjf7Vg/edit?usp=sharing
         Values that are in the schema, but assigned by the database are: db_write_timestamp, _id.
@@ -358,14 +353,36 @@ class DBWriter:
         :param direction: Indicator of roadway direction (-1 or +1).
         :param flags: List of any string flags describing the data.
         :param camera_snapshots: Possibly empty array of JPEG compressed images (as bytes) of vehicles.
+        
+        :param thread: set True if create a thread for insert in the background (fast), False if blocking insert_one
         :return: None
         """
-        collection_name = db_parameters.RAW_TRAJECTORY_COLLECTION
+        col = self.db[db_parameters.RAW_COLLECTION]
+        
         configuration_id = self.session_config_id
         compute_node_id = self.server_id
-        pass
+        doc = {}
+        
+        for field_name in db_parameters.RAW_SCHEMA:
+            try:
+                doc[field_name] = kwargs[field_name]
+            except:
+                pass
+            
+        # add extra fields in doc
+        doc["configuration_id"] = configuration_id
+        doc["compute_node_id"] = compute_node_id
+        
+        if not thread:
+            col.insert_one(doc)
+        else:
+            # fire off a thread
+            t = Thread(target=self.thread_insert, args=(col, doc,))
+            t.daemon = True
+            t.start()
+    
 
-    def write_stitch(self, fragment_ids: list, collection_name = None):
+    def write_stitch(self, thread = True, **kwargs):
         """
         Write a stitched trajectory reference document according to the data schema, found here:
             https://docs.google.com/document/d/1vyLgsz6y0SrpTXWZNOS5fSgMnmwCr3xD0AB6MgYWl-w/edit?usp=sharing
@@ -375,24 +392,32 @@ class DBWriter:
             sorted by start_timestamp.
         :return: None
         """
-        collection_name = db_parameters.STITCHED_COLLECTION
-        col = self.client.db[collection_name]
-        doc = {
-                "fragment_ids": fragment_ids,
-                "configuration_id": self.session_config_id
-                }
+        col = self.db[db_parameters.STITCHED_COLLECTION]
         
-        col.insert(doc)
-        return
-
-
+        configuration_id = self.session_config_id
+        compute_node_id = self.server_id
+        doc = {}
+        
+        for field_name in db_parameters.STITCHED_SCHEMA:
+            try:
+                doc[field_name] = kwargs[field_name]
+            except:
+                pass
+            
+        # add extra fields in doc
+        doc["configuration_id"] = configuration_id
+        doc["compute_node_id"] = compute_node_id
+        
+        if not thread:
+            col.insert_one(doc)
+        else:
+            # fire off a thread
+            t = Thread(target=self.thread_insert, args=(col, doc,))
+            t.daemon = True
+            t.start()
     
     
-    def write_reconciled_trajectory(self, vehicle_id: int, coarse_vehicle_class: int, fine_vehicle_class: int,
-                                    timestamps: list[float], road_segment_id: int,
-                                    x_positions: list[float], y_positions: list[float],
-                                    length: float, width: float, height: float,
-                                    direction: int, flags: list[str] = None):
+    def write_reconciled_trajectory(self, thread = True, **kwargs):
         """
         Write a reconciled/post-processed trajectory according to the data schema, found here:
             https://docs.google.com/document/d/1Qh4OYOhOi1Kh-7DEwFfLx8NX8bjaFdviD2Q0GsfgR9k/edit?usp=sharing
@@ -415,17 +440,36 @@ class DBWriter:
         :param flags: List of any string flags describing the data.
         :return: None
         """
-        collection_name = ''
+        col = self.db[db_parameters.RECONCILED_COLLECTION]
+        
         configuration_id = self.session_config_id
-        pass
-
+        compute_node_id = self.server_id
+        doc = {}
+        
+        for field_name in db_parameters.RECONCILED_SCHEMA:
+            try:
+                doc[field_name] = kwargs[field_name]
+            except:
+                pass
+            
+        # add extra fields in doc
+        doc["configuration_id"] = configuration_id
+        doc["compute_node_id"] = compute_node_id
+        
+        if not thread:
+            col.insert_one(doc)
+        else:
+            # fire off a thread
+            t = Thread(target=self.thread_insert, args=(col, doc,))
+            t.daemon = True
+            t.start()
+            
+            
     def write_metadata(self, metadata):
         pass
 
-    def write_ground_truth_trajectory(self, vehicle_id: int, fragment_ids: list[int], coarse_vehicle_class: int,
-                                      fine_vehicle_class: int, timestamps: list[float], road_segment_id: int,
-                                      x_positions: list[float], y_positions: list[float],
-                                      length: float, width: float, height: float, direction: int):
+
+    def write_ground_truth_trajectory(self, thread = True, **kwargs):
         """
         Write a ground truth trajectory according to the data schema, found here:
             https://docs.google.com/document/d/1zbjPycZlGNPOwuPVtY5GkS3LvIZwMDOtL7yFc575kSw/edit?usp=sharing
@@ -448,6 +492,37 @@ class DBWriter:
         :param direction: Indicator of roadway direction (-1 or +1).
         :return: None
         """
-        collection_name = ''
+        col = self.db[db_parameters.GT_COLLECTION]
+        
         configuration_id = self.session_config_id
-        pass
+        compute_node_id = self.server_id
+        doc = {}
+        
+        for field_name in db_parameters.GT_SCHEMA:
+            try:
+                doc[field_name] = kwargs[field_name]
+            except:
+                pass
+            
+        # add extra fields in doc
+        doc["configuration_id"] = configuration_id
+        doc["compute_node_id"] = compute_node_id
+        
+        if not thread:
+            col.insert_one(doc)
+        else:
+            # fire off a thread
+            t = Thread(target=self.thread_insert, args=(col, doc,))
+            t.daemon = True
+            t.start()
+            
+    
+    def __del__(self):
+        """
+        Upon DBReader deletion, close the client/connection.
+        :return: None
+        """
+        try:
+            self.client.close()
+        except:
+            pass

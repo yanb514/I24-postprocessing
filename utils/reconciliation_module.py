@@ -17,6 +17,7 @@ import time
 # implement receding_horizon_1d_l1
 
 solvers.options['show_progress'] = False
+dt = 1/30
 
 # ==================== CVX optimization for 2d dynamics ==================
 def resample(car):
@@ -181,6 +182,7 @@ def rectify_2d(car,args,reg = "l2"):
 
 
 # =================== RECEDING HORIZON RECTIFICATION =========================
+
 def receding_horizon_1d(car, args, axis="x"):
     '''
     rolling horizon version of rectify_1d
@@ -218,15 +220,17 @@ def receding_horizon_1d(car, args, axis="x"):
         else:
             xx = x[i*IH: i*IH+PH]
         nn = len(xx)
-        Q, p, H, N,M = _getQPMatrices(xx, 0, lam, reg="l2")
-        
-        if i == 0:
-            sol=solvers.qp(P=Q, q=p)          
-        else: # if x_prev exists - not first window
+        Q, p, H, N,M = _getQPMatrices(xx, 0, lam2, reg="l2")
+    
+        try:
             A = sparse([[spmatrix(1.0, range(cs), range(cs))], [spmatrix([], [], [], (cs,nn-cs))]])
             A = matrix(A, tc="d")
             b = matrix(x_prev)
-            sol=solvers.qp(P=Q, q=p, A = A, b=b)           
+            sol=solvers.qp(P=Q, q=p, A = A, b=b) 
+            
+        except: # if x_prev exists - not first window
+            sol=solvers.qp(P=Q, q=p)  
+            
         xhat = sol["x"]
 
         if last:
@@ -271,6 +275,7 @@ def receding_horizon_1d_l1(car, args, axis):
     lam1, lam2, PH, IH = args
     x = car[axis+"_position"]
     n_total = len(x)
+    
     # Q, p, H, G, h, N,M = _getQPMatrices(x, 0, args, reg="l1")
     # sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
     
@@ -295,13 +300,16 @@ def receding_horizon_1d_l1(car, args, axis):
         # nn = len(xx)
         Q, p, H, G, h, N,M = _getQPMatrices(xx, 0, args, reg="l1")
         
-        if i == 0:
-            sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))    
-        else: # if x_prev exists - not first window
+        
+        try: # if x_prev exists - not first window
             A = sparse([[spmatrix(1.0, range(cs), range(cs))], [spmatrix([], [], [], (cs,N-cs + 2*M))]])
             A = matrix(A, tc="d")
             b = matrix(x_prev)
-            sol=solvers.qp(P=Q, q=p, G=G, h=matrix(h), A = A, b=b)           
+            sol=solvers.qp(P=Q, q=p, G=G, h=matrix(h), A = A, b=b)   
+            
+        except:
+            sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))    
+        
         xhat = sol["x"]
 
         if last:
@@ -320,8 +328,6 @@ def receding_horizon_2d_l1(car, lam1_x, lam1_y, lam2_x, lam2_y, PH, IH):
     car: stitched fragments from data_q
     TODO: parallelize x and y?
     '''
-    # get data
-    
     xhat = receding_horizon_1d_l1(car, (lam1_x, lam2_x, PH, IH), "x")
     yhat = receding_horizon_1d_l1(car, (lam1_y, lam2_y, PH, IH), "y")
     
