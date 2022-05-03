@@ -218,6 +218,7 @@ class Fragment(Node):
         self.root = self # 
         self.parent = None
         self.tail_matched = False # flip to true when its tail matches to another fragment's head
+        self.head_matched = False
         
         # only one of the following is true when first entering the process
         self.curr = False # in current view of time window?
@@ -298,8 +299,8 @@ class Fragment(Node):
         # return the best successor of self if exists
         # otherwise return None
         # heappop empty fragments from self.suc
-        # while self.suc and self.suc[0][1].id is None: # get the first non-empty fragment
-        #     _, suc = heapq.heappop(self.suc)
+        while self.suc and self.suc[0][1].head_matched: # get the first "unmatched" suc
+            _, suc = heapq.heappop(self.suc)
         try: suc = self.suc[0][1] # self.suc[0] is None
         except: suc = None
         return suc
@@ -309,31 +310,18 @@ class Fragment(Node):
         # otherwise return None
         # heappop empty fragments from self.suc
         # while self.pre and self.pre[0][1].id is None: # get the first non-empty fragment
-        while self.pre and self.pre[0][1].tail_matched: # get the first "unmatched" fragment
+        while self.pre and self.pre[0][1].tail_matched: # get the first "unmatched" pre
             _, pre = heapq.heappop(self.pre)
         try: pre = self.pre[0][1]
         except: pre = None
         return pre
-    
-    # clear the reference once out of sight or matched
-    # TODO: call a destructor? - a Fragment object will be permanently deleted if the path it belongs to is written to the stitched_trajectories database
-    # def delete(self):
-    #     self.ready = False # if tail is ready to be matched
-    #     self.id = None
-    #     self.t = None
-    #     self.x = None
-    #     self.y = None
-    #     self.suc = None # tail matches to [(cost, Fragment_obj)] - minheap
-    #     self.pre = None # head matches to [(cost, Fragment_obj)] - minheap
-    #     self.conflicts_with = None
-    #     # del self.id, self.t, self.x
        
     # add bi-directional conflicts
-    def add_conflict(self, fragment):
-        if fragment.id: # only add if fragment is valid (not out of view)
-            self.conflicts_with.add(fragment)
-            fragment.conflicts_with.add(self)
-        return
+    # def add_conflict(self, fragment):
+    #     if fragment.id: # only add if fragment is valid (not out of view)
+    #         self.conflicts_with.add(fragment)
+    #         fragment.conflicts_with.add(self)
+    #     return
     
     # union conflicted neighbors, set head's pre to [], delete self
     @classmethod
@@ -350,14 +338,18 @@ class Fragment(Node):
         # 2. remove all u's succ from u -> remove all from v's pre
         # 4/13/22 modified from v.pre = None to heapq.heappop(v.pre), because v's head can still be matched to others
         #TODO: not tested
-        heapq.heappop(v.pre)
+        # heapq.heappop(v.pre)
+        v.pre = [] # v's head cannot be matched again
         
         # 3. delete u 
         # 4/16/22 modifed from u.delete() to u.tail_matched = True. Reason: only delete when path_cache.popFirstPath(), to prevent data loss
         # TODO: not tested
         # u.delete()
-        heapq.heappop(u.suc)
+        # heapq.heappop(u.suc)
+        u.suc = [] # u's tail cannot be matched again
         u.tail_matched = True
+        v.head_matched = True
+        
         return
 
         
@@ -585,9 +577,7 @@ if __name__ == '__main__':
     pc.union("a", "f")  
     
     pc.union("b", "e") 
-    pc.union("e", "f")
-
-    
+    pc.union("e", "f")  
     pc.union("c", "d") 
 
     

@@ -16,7 +16,7 @@ MIN_QUEUE_SIZE = 1000
 # Define data schema
 RAW_SCHEMA = ["local_fragment_id", "coarse_vehicle_class", "fine_vehicle_class", 
               "timestamp", "raw_timestamp", "first_timestamp", "last_timestamp",
-              "road_segment_ids", "x_position", "y_position", 
+              "road_segment_id", "x_position", "y_position", 
               "starting_x", "ending_x", 
               "camera_snapshots",
               "flags", "direction"
@@ -24,9 +24,15 @@ RAW_SCHEMA = ["local_fragment_id", "coarse_vehicle_class", "fine_vehicle_class",
 STITCHED_SCHEMA = ["fragment_ids"]
 GT_SCHEMA = ["fragment_ids", "local_fragment_id", "coarse_vehicle_class", "fine_vehicle_class", 
               "timestamp", "raw_timestamp", "first_timestamp", "last_timestamp",
-              "road_segment_ids", "x_position", "y_position", 
+              "road_segment_id", "x_position", "y_position", 
               "starting_x", "ending_x", 
               "camera_snapshots",
               "flags", "direction"
               "length", "width", "height"]
-RECONCILED_SCHEMA = []
+RECONCILED_SCHEMA = ["coarse_vehicle_class", "fine_vehicle_class", 
+              "timestamp", "raw_timestamp", "first_timestamp", "last_timestamp",
+              "road_segment_id", "x_position", "y_position", 
+              "starting_x", "ending_x", 
+              "camera_snapshots",
+              "flags", "direction"
+              "length", "width", "height"]

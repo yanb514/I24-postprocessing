@@ -83,8 +83,8 @@ if __name__ == '__main__':
                           #                ("east", raw_fragment_queue_e, stitched_trajectory_queue,)),
                           'stitcher_w': (stitch_raw_trajectory_fragments,
                                          ("west", raw_fragment_queue_w, stitched_trajectory_queue,)),
-                           'reconciliation': (reconciliation.reconciliation_pool,
-                                             (stitched_trajectory_queue, pid_tracker,)),
+                           # 'reconciliation': (reconciliation.reconciliation_pool,
+                           #                   (stitched_trajectory_queue, pid_tracker,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.

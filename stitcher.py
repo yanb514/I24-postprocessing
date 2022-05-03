@@ -7,8 +7,7 @@ written to the database.
 
 # -----------------------------
 import multiprocessing
-import stitcher_parameters
-import db_parameters
+import db_parameters, parameters
 from I24_logging.log_writer import I24Logger
 from db_writer import DBWriter 
 from collections import deque
@@ -42,11 +41,11 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
     
     # Get parameters
     # print("in stitcher")
-    TIME_WIN = stitcher_parameters.TIME_WIN
-    VARX = stitcher_parameters.VARX
-    VARY = stitcher_parameters.VARY
-    THRESH = stitcher_parameters.THRESH
-    IDLE_TIME = stitcher_parameters.IDLE_TIME
+    TIME_WIN = parameters.TIME_WIN
+    VARX = parameters.VARX
+    VARY = parameters.VARY
+    THRESH = parameters.THRESH
+    IDLE_TIME = parameters.IDLE_TIME
     
     # Initialize some data structures
     curr_fragments = deque()  # fragments that are in current window (left, right), sorted by last_timestamp
@@ -132,9 +131,9 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
                     # if best_pre.id == ready.id and best_pre.id not in ready.conflicts_with:
                     if best_pre.id == ready.id:
                         # stitcher_logger.info("** match tail of {} to head of {}".format(best_tail.ID, best_head.ID), extra = None)
-                        # print("** match tail of {} to head of {}".format(best_succ.ID, best_pre.ID))
-                        # if best_succ.ID//100000 != best_pre.ID//100000:
-                        #     print("wrong matching!")
+                        print("** match tail of {} to head of {}".format(int(best_succ.ID), int(best_pre.ID)))
+                        if best_succ.ID//100000 != best_pre.ID//100000:
+                            print("wrong matching!")
                         try:
                             P.union(best_pre.id, best_succ.id) # update path cache
                             Fragment.match_tail_head(best_pre, best_succ) # update both fragments
