@@ -132,8 +132,8 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
                     if best_pre.id == ready.id:
                         # stitcher_logger.info("** match tail of {} to head of {}".format(best_tail.ID, best_head.ID), extra = None)
                         print("** match tail of {} to head of {}".format(int(best_pre.ID), int(best_succ.ID)))
-                        if best_succ.ID//100000 != best_pre.ID//100000:
-                            print("wrong matching!")
+                        # if best_succ.ID//100000 != best_pre.ID//100000:
+                        #     print("wrong matching!")
                         try:
                             P.union(best_pre.id, best_succ.id) # update path cache
                             Fragment.match_tail_head(best_pre, best_succ) # update both fragments
@@ -165,7 +165,7 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
                     print("write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
                     # stitcher_logger.info("write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
                     stitched_trajectory_queue.put(path) # doesn't know ObjectId
-                    dbw.write_stitched_trajectory(path)
+                    dbw.write_stitched_trajectory(fragment_ids = path)
                 else: # break if first in cache is not timed out yet
                     break
             except StopIteration: # break if nothing in cache

@@ -238,7 +238,11 @@ class Fragment(Node):
             field_names = parameters.WANTED_DOC_FIELDS
             attr_names = parameters.FRAGMENT_ATTRIBUTES
             for i in range(len(field_names)): # set as many attributes as possible
-                try: setattr(self, attr_names[i], traj_doc[field_names[i]])
+                try: 
+                    if field_names[i] == "_id":
+                        setattr(self, attr_names[i], str(traj_doc[field_names[i]]))
+                    else:
+                        setattr(self, attr_names[i], traj_doc[field_names[i]])
                 except: pass
                 
             # TODO: parameters needs to change if unit conversion. convert x/y_position from feet to meter
@@ -379,13 +383,14 @@ class PathCache(SortedDLL):
             node = Fragment(node) # create a new node
         # self.cache[node.id] = node
         self.append(node)
-        try:
-            self.path[node.ID] = node
-        except:
-            self.path[node.id] = node
+        # try:
+        #     self.path[node.ID] = node
+        # except:
+        self.path[node.id] = node
 
     def get_fragment(self, id):
         return self.path[id]
+
     
     # Find the root of the set in which element `k` belongs
     def find(self, node):

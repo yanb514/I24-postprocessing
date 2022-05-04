@@ -8,6 +8,7 @@ from multiprocessing import Pool, cpu_count
 from cvxopt import matrix, solvers, sparse,spdiag,spmatrix
 import time
 import sys
+from bson.objectid import ObjectId
 
 # TODO
 # impute timesttamps from stitched trajectories
@@ -28,8 +29,14 @@ def combine_fragments(raw_collection, stitched_doc):
     fields that are preserved (copied from any fragment): vehicle class
     fields that need to be re-assigned: first_timestamp, last_timestamp, starting_x, ending_x, length, width, height
     '''
-    stacked = stitched_doc
-    stacked.pop("_id")
+    
+    # stacked = stitched_doc
+    # try:
+    #     stacked.pop("_id")
+    # except:
+    #     pass
+    print(stitched_doc)
+    stacked = {}
     stacked["timestamp"] = []
     stacked["x_position"] = []
     stacked["y_position"] = []
@@ -39,14 +46,16 @@ def combine_fragments(raw_collection, stitched_doc):
     stacked["width"] = []
     stacked["height"] = []
     
-    t0 = time.time()
-    all_fragment = raw_collection.find({"_id": {"$in": stitched_doc["fragment_ids"]}}) # returns a cursor
-    print("in takes", time.time()-t0)
-    
-    tt = time.time()
+    # print("here")
+    # print(stitched_doc["fragment_ids"])    # t0 = time.time()
+    stitched_doc = [ObjectId(_id) for _id in stitched_doc]
+    all_fragment = raw_collection.find({"_id": {"$in": stitched_doc}}) # returns a cursor
+    # print("in takes", time.time()-t0)
+
+    # tt = time.time()
     for fragment in all_fragment:
-        print(fragment["first_timestamp"], fragment["last_timestamp"])
-        print(len(fragment["timestamp"]))
+        # print(fragment["first_timestamp"], fragment["last_timestamp"])
+        # print(len(fragment["timestamp"]))
         stacked["timestamp"].extend(fragment["timestamp"])
         stacked["x_position"].extend(fragment["x_position"])
         stacked["y_position"].extend(fragment["y_position"])
@@ -56,15 +65,15 @@ def combine_fragments(raw_collection, stitched_doc):
         stacked["width"].extend(fragment["width"])
         stacked["height"].extend(fragment["height"])
     
-    print("for loop: ", time.time()-tt)    
+    # print("for loop: ", time.time()-tt)    
     # first fragment
-    first_id = stitched_doc["fragment_ids"][0]
+    first_id = stitched_doc[0]
     first_fragment = raw_collection.find_one({"_id": first_id})
     stacked["starting_x"] = first_fragment["starting_x"]
     stacked["first_timestamp"] = first_fragment["first_timestamp"]
     
     # last fragment
-    last_id = stitched_doc["fragment_ids"][-1]
+    last_id = stitched_doc[-1]
     last_fragment = raw_collection.find_one({"_id": last_id})
     stacked["ending_x"] = last_fragment["ending_x"]
     stacked["last_timestamp"] = last_fragment["last_timestamp"]
@@ -179,7 +188,36 @@ def _getQPMatrices(x, t, lam2, lam1, reg="l2"):
         h = spmatrix([], [], [], (2*M,1))
         return Q, p, H, G, h, N,M
 
-
+def _getQPMatrices_nan(x, t, lam2, lam1, reg="l2"):
+    '''
+    same with _getQPMatrices, but dealt with x vector is all nans
+    Q = 2(lam2 D^T D)
+    p = 0
+    
+    '''
+    if reg == "l1" and lam1 is None:
+        raise ValueError("lam1 must be specified when regularization is set to L1")
+        
+    # get data
+    N = len(x)
+    
+    # non-missing entries
+    idx = [i.item() for i in np.argwhere(~np.isnan(x)).flatten()]
+    x = x[idx]
+    M = len(x)
+    assert M == 0
+    
+    # differentiation operator
+    # D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
+    # D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
+    D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), N) * (1/dt**3)
+    DD = lam2 * D3.trans() * D3
+    Q = 2*(DD/N)
+    p = spmatrix([], [], [], (N,1))
+    p = matrix(p, tc="d")
+    return Q, p
+    
+    
 def rectify_1d(car, lam2, axis):
     '''                        
     solve solve for ||y-x||_2^2 + \lam ||Dx||_2^2
@@ -285,7 +323,11 @@ def receding_horizon_1d(car, lam2, PH, IH, axis="x"):
         else:
             xx = x[i*IH: i*IH+PH]
         nn = len(xx)
-        Q, p, H, N,M = _getQPMatrices(xx, 0, lam2, None, reg="l2")
+        try:
+            Q, p, H, N,M = _getQPMatrices(xx, 0, lam2, None, reg="l2")
+        except ZeroDivisionError:
+            # print("This particular moving window has no valid data, try longer PH")
+            Q, p = _getQPMatrices_nan(xx, 0, lam2, None, reg="l2")
     
         try:
             A = sparse([[spmatrix(1.0, range(cs), range(cs))], [spmatrix([], [], [], (cs,nn-cs))]])

@@ -52,20 +52,22 @@ while i < 5:
     plt.figure()
     next_to_reconcile = stitched_queue.get(block=False)
 
-    t0 = time.time()
+    # t0 = time.time()
     combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)
-    t1 = time.time()
+    # t1 = time.time()
     plt.scatter(combined_trajectory["timestamp"],combined_trajectory["x_position"], s=0.1, label = "raw")
+    print(len(combined_trajectory["timestamp"]))
     resampled_trajectory = resample(next_to_reconcile)
-    t2 = time.time()
+    # t2 = time.time()
 
-    # plt.scatter(resampled_trajectory["timestamp"],resampled_trajectory["x_position"], s=1, label = "resampled")
+    plt.scatter(resampled_trajectory["timestamp"],resampled_trajectory["x_position"], s=1, label = "resampled")
+    print(len(resampled_trajectory["timestamp"]))
     finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
-    t3 = time.time()
+    # t3 = time.time()
 
     plt.scatter(finished_trajectory["timestamp"],finished_trajectory["x_position"], s=0.5, label = "rectified")
     plt.legend()
-    print("combine: {:.2f}, resample: {:.2f}, rectify: {:.2f}".format(t1-t0, t2-t1, t3-t2))
+    # print("combine: {:.2f}, resample: {:.2f}, rectify: {:.2f}".format(t1-t0, t2-t1, t3-t2))
     
 #%% examin stitched_trajectories collection
 dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
@@ -75,5 +77,5 @@ dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT,
 stitched = dbw.db["stitched_trajectories"]
 reconciled = dbw.db["reconciled_trajectories"]
 print(stitched.count_documents({}), reconciled.count_documents({}))
-# stitched.drop()
-# reconciled.drop()
+stitched.drop()
+reconciled.drop()

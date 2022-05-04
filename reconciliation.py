@@ -28,10 +28,12 @@ reconciliation_args = {"lam2_x": parameters.LAM2_X,
 dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                password=db_parameters.DEFAULT_PASSWORD,
                database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
-
+raw = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
+               password=db_parameters.DEFAULT_PASSWORD,
+               database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
 # initiate a logger object
-reconciliation_logger = I24Logger(owner_process_name = "reconciliation", connect_file=True, file_log_level='DEBUG', 
-                    connect_console=True, console_log_level='INFO')
+# reconciliation_logger = I24Logger(owner_process_name = "reconciliation", connect_file=True, file_log_level='DEBUG', 
+#                     connect_console=True, console_log_level='INFO')
 
 def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue) -> None:
     """
@@ -45,10 +47,17 @@ def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue
     # get the pid of current worker
     # DO THE RECONCILIATION
     sys.stdout.flush()
-    next_to_reconcile = stitched_trajectory_queue.get(block=True)
-    combined_trajectory = combine_fragments(dbw[db_parameters.RAW_COLLECTION], next_to_reconcile)
+    next_to_reconcile = stitched_trajectory_queue.get(block=True) # path list
+    print("...got next...")
+    
+    combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)
+    print("...combined...")
+    
     resampled_trajectory = resample(combined_trajectory)
+    print("...resampled...")
+    
     finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
+    print("...finished...")
     
     # TODO: replace with schema validation in dbw before insert
     finished_trajectory["timestamp"] = list(finished_trajectory["timestamp"])

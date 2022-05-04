@@ -30,7 +30,7 @@ IDLE_TIME = 1 # if tail_time of a path has not changed after IDLE_TIME, then wri
 
 # For writing raw trajectories as Fragment objects
 # change first "ID" to "_id" to query by ObjectId
-WANTED_DOC_FIELDS = ["ID", "ID","timestamp","x_position","y_position","direction","last_timestamp","last_timestamp", "first_timestamp"]
+WANTED_DOC_FIELDS = ["_id", "ID","timestamp","x_position","y_position","direction","last_timestamp","last_timestamp", "first_timestamp"]
 FRAGMENT_ATTRIBUTES = ["id","ID","t","x","y","dir","tail_time","last_timestamp","first_timestamp"]
 
 

@@ -42,11 +42,12 @@ def dummy_stitcher(direction, fragment_queue,
     dbw.db[db_parameters.STITCHED_COLLECTION].drop()
     while True:
         sys.stdout.flush()
-        # time.sleep(2)
+        time.sleep(2)
         fragment = fragment_queue.get(block = True) # make object
-        fragment.pop('_id')
+        # fragment.pop('_id')
+        fragment["fragment_ids"] = [fragment["_id"]]
         stitched_trajectory_queue.put(fragment)
-        # dbw.write_one_trajectory(thread = False, collection_name = db_parameters.STITCHED_COLLECTION, **fragment)
+        dbw.write_one_trajectory(thread = False, collection_name = db_parameters.STITCHED_COLLECTION, **fragment)
         # print(dbw.db[db_parameters.STITCHED_COLLECTION].count_documents({}))
             
 
