@@ -10,9 +10,9 @@ Created on Sun Apr 10 17:49:47 2022
 #inserts raw trajectories that are not sorted by ID
 import urllib.parse
 import csv
-import pymongo
 from pymongo import MongoClient
 from collections import OrderedDict
+import random
 
 # read the top n rows of csv file as a dataframe
 #df = pd.read_csv('/isis/home/teohz/Desktop/data_for_mongo/pollute/0-12min.csv', nrows=1000)
@@ -28,6 +28,7 @@ col=db["raw_trajectories_one"]
 TMFilePath='/isis/home/teohz/Desktop/data_for_mongo/pollute/'
 
 X_MAX = 10000 # a cutoff threshold
+write_probability = 0.8 # 80% of the fragments are written to db, 20% missing
 
 #%%
 #files=['0-12min.csv','12-23min.csv','23-34min.csv','34-45min.csv','45-56min.csv','56-66min.csv','66-74min.csv','74-82min.csv','82-89min.csv']
@@ -48,6 +49,8 @@ for file in files1:
             ID = int(float(row[3]))
             curr_time = float(row[2])
             curr_x = float(row[40])
+            
+#            print(ID, curr_time, curr_x)
             if curr_x > X_MAX:
                 continue
             
@@ -106,7 +109,8 @@ for file in files1:
                 traj['flags'] = ['fragment']
                 
 #                print("** write {} to db".format(ID))
-                col.insert_one(traj)
+                if random.random() < write_probability:
+                    col.insert_one(traj)
         
     f.close()
     
@@ -120,4 +124,5 @@ for ID, traj in lru.items():
     traj['ending_x']=traj['x_position'][-1]
     traj['flags'] = ['fragment']
     
-    col.insert_one(traj)
+    if random.random() < write_probability:
+        col.insert_one(traj)

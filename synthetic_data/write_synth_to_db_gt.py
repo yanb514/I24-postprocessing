@@ -62,6 +62,7 @@ for file in files1:
             ID = int(float(row[4]))
             curr_time = float(row[3])
             curr_x = float(row[41])
+#            print(ID, curr_time, curr_x)
             
             if curr_x > X_MAX:
                 continue
@@ -146,7 +147,12 @@ print("Adding fragment IDs")
 colraw = db["raw_trajectories_one"]
 colgt = db['ground_truth_one']
 
-for rawdoc in colraw.find({}):
+indices = ["_id", "ID"]
+for index in indices:
+    colraw.create_index(index)
+    colgt.create_index(index)
+    
+for rawdoc in colraw.find({}): # loop through all raw fragments
     _id = rawdoc.get('_id')
     raw_ID=rawdoc.get('ID')
     gt_ID=raw_ID//100000
