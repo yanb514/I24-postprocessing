@@ -17,6 +17,65 @@ solvers.options['show_progress'] = False
 dt = 1/30
 
 # ==================== CVX optimization for 2d dynamics ==================
+def combine_fragments(raw_collection, stitched_doc):
+    '''
+    stack fragments from stitched_doc to a single document
+    fragment_ids should be sorted by last_timestamp (see PathCache data structures for details)
+    :param raw_collection: a mongoDB collection object to query fragments from fragment_ids
+    :param stitched_doc: an output document from stitcher
+    fields that need to be extended: timestamp, x_position, y_positin, road_segment_id, flags
+    fields that need to be removed: _id, 
+    fields that are preserved (copied from any fragment): vehicle class
+    fields that need to be re-assigned: first_timestamp, last_timestamp, starting_x, ending_x, length, width, height
+    '''
+    stacked = stitched_doc
+    stacked.pop("_id")
+    stacked["timestamp"] = []
+    stacked["x_position"] = []
+    stacked["y_position"] = []
+    stacked["road_segment_id"] = []
+    stacked["flags"] = []
+    stacked["length"] = []
+    stacked["width"] = []
+    stacked["height"] = []
+    
+    t0 = time.time()
+    all_fragment = raw_collection.find({"_id": {"$in": stitched_doc["fragment_ids"]}}) # returns a cursor
+    print("in takes", time.time()-t0)
+    
+    tt = time.time()
+    for fragment in all_fragment:
+        print(fragment["first_timestamp"], fragment["last_timestamp"])
+        print(len(fragment["timestamp"]))
+        stacked["timestamp"].extend(fragment["timestamp"])
+        stacked["x_position"].extend(fragment["x_position"])
+        stacked["y_position"].extend(fragment["y_position"])
+        stacked["road_segment_id"].extend(fragment["road_segment_id"])
+        stacked["flags"].extend(fragment["flags"])
+        stacked["length"].extend(fragment["length"])
+        stacked["width"].extend(fragment["width"])
+        stacked["height"].extend(fragment["height"])
+    
+    print("for loop: ", time.time()-tt)    
+    # first fragment
+    first_id = stitched_doc["fragment_ids"][0]
+    first_fragment = raw_collection.find_one({"_id": first_id})
+    stacked["starting_x"] = first_fragment["starting_x"]
+    stacked["first_timestamp"] = first_fragment["first_timestamp"]
+    
+    # last fragment
+    last_id = stitched_doc["fragment_ids"][-1]
+    last_fragment = raw_collection.find_one({"_id": last_id})
+    stacked["ending_x"] = last_fragment["ending_x"]
+    stacked["last_timestamp"] = last_fragment["last_timestamp"]
+    
+    # take the median of dimensions
+    stacked["length"] = np.median(stacked["length"])
+    stacked["width"] = np.median(stacked["width"])
+    stacked["height"] = np.median(stacked["height"])
+
+    return stacked
+    
 def resample(car):
     # resample timestamps to 30hz, leave nans for missing data
     '''

@@ -229,6 +229,8 @@ class DBReader:
     
         self.db = self.client[database_name]
         self.collection = self.db[collection_name]
+        # create indices
+        self.create_index(db_parameters.INDICES)
 
         # Class variables that will be set and reset during iterative read across a range.
         self.range_iter_parameter = None

@@ -49,7 +49,7 @@ print("Queue size: ", fragment_size)
 #         print(doc["ID"],len(doc["timestamp"]))
 #         plt.scatter(doc["timestamp"], doc["x_position"], s=0.01)
     
-# % Run stitcher with a pre-filled queue
+# %% Run stitcher with a pre-filled queue
 stitched_trajectories_queue = queue.Queue()
 stitch_raw_trajectory_fragments("west", fragment_queue, stitched_trajectories_queue)
 stitched = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   

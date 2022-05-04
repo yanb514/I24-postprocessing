@@ -10,7 +10,7 @@ from multiprocessing import Pool
 import parameters, db_parameters
 from I24_logging.log_writer import I24Logger
 from db_writer import DBWriter
-from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d
+from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d,combine_fragments
 import os
 import sys
 from db_reader import DBReader
@@ -30,8 +30,8 @@ dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT,
                database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
 
 # initiate a logger object
-# reconciliation_logger = I24Logger(owner_process_name = "reconciliation", connect_file=True, file_log_level='DEBUG', 
-#                     connect_console=True, console_log_level='INFO')
+reconciliation_logger = I24Logger(owner_process_name = "reconciliation", connect_file=True, file_log_level='DEBUG', 
+                    connect_console=True, console_log_level='INFO')
 
 def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue) -> None:
     """
@@ -46,7 +46,8 @@ def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue
     # DO THE RECONCILIATION
     sys.stdout.flush()
     next_to_reconcile = stitched_trajectory_queue.get(block=True)
-    resampled_trajectory = resample(next_to_reconcile)
+    combined_trajectory = combine_fragments(dbw[db_parameters.RAW_COLLECTION], next_to_reconcile)
+    resampled_trajectory = resample(combined_trajectory)
     finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
     
     # TODO: replace with schema validation in dbw before insert
@@ -68,10 +69,7 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     """
 
     print("** reconciliation starts...")
-    print("reconciliation pool qsize", stitched_trajectory_queue.qsize())
     worker_pool = Pool(processes=parameters.RECONCILIATION_POOL_SIZE)
-    # worker_pool = Pool(4)
-    # TODO: decide about tasks per child
     while True:
         worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
 

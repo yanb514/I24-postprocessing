@@ -35,7 +35,7 @@ FRAGMENT_ATTRIBUTES = ["id","ID","t","x","y","dir","tail_time","last_timestamp",
 
 
 # -----------------------------
-# reconciliation pamaters
+# reconciliation paramaters
 LAM2_X = 1.67e-2
 LAM2_Y = 1.67e-2
 LAM1_X = 0.0012

@@ -523,6 +523,56 @@ class DBWriter:
             t.start()
             
     
+    # simple query functions
+    def get_first(self, index_name):
+        '''
+        get the first document from MongoDB by index_name
+        '''
+        return self.collection.find_one(sort=[(index_name, pymongo.ASCENDING)])
+        
+    def get_last(self, index_name):
+        '''
+        get the last document from MongoDB by index_name        
+        '''
+        return self.collection.find_one(sort=[(index_name, pymongo.DESCENDING)])
+    
+    def find_one(self, index_name, index_value):
+        return self.collection.find_one({index_name: index_value})
+        
+    def is_empty(self):
+        return self.count() == 0
+        
+    def get_keys(self): 
+        oneKey = self.collection.find().limit(1)
+        for key in oneKey:
+            return key.keys()
+        
+    def create_index(self, indices):
+        all_field_names = self.collection.find_one({}).keys()
+        existing_indices = self.collection.index_information().keys()
+        for index in indices:
+            if index in all_field_names:
+                if index+"_1" not in existing_indices and index+"_-1" not in existing_indices:
+                    self.collection.create_index(index)     
+        return
+    
+    def get_range(self, index_name, start, end): 
+        return self.collection.find({
+            index_name : { "$gte" : start, "$lt" : end}}).sort(index_name, pymongo.ASCENDING)
+    
+    def count(self):
+        return self.collection.count_documents({})
+    
+    def get_min(self, index_name):
+        return self.get_first(index_name)[index_name]
+    
+    def get_max(self, index_name):
+        return self.get_last(index_name)[index_name]
+    
+    def exists(self, index_name, value):
+        return self.collection.count_documents({index_name: value }, limit = 1) != 0
+    
+    
     def __del__(self):
         """
         Upon DBReader deletion, close the client/connection.

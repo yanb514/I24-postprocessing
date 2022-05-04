@@ -13,6 +13,9 @@ DB_NAME = "trajectories"
 # Buffer queue size for live_data_read
 MIN_QUEUE_SIZE = 1000
 
+# Create indices upon instantiation of DBReader and DBWriter objects
+INDICES = ["_id", "ID", "first_timestamp", "last_timestamp"]
+
 # Define data schema
 RAW_SCHEMA = ["local_fragment_id", "coarse_vehicle_class", "fine_vehicle_class", 
               "timestamp", "raw_timestamp", "first_timestamp", "last_timestamp",
