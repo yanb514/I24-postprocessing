@@ -1,82 +1,86 @@
 # -----------------------------
-__file__ = '.py'
+__file__ = 'reconciliation.py'
 __doc__ = """
 
 """
 
 # -----------------------------
 import multiprocessing
-import parameters
-import pymongo
+from multiprocessing import Pool
+import parameters, db_parameters
 from I24_logging.log_writer import I24Logger
-from utils.reconciliation_module import receding_horizon_2d_l1, resample
+from db_writer import DBWriter
+from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d
+import os
+import sys
+from db_reader import DBReader
 
-reconciliation_args = (parameters.LAM1_X, 
-                       parameters.LAM1_Y,
-                       parameters.LAM2_X,
-                       parameters.LAM2_Y,
-                       parameters.PH ,
-                       parameters.IH)
+import time
 
-def reconcile_single_trajectory(trajectory_data, result_queue: multiprocessing.Queue,
-                                log_queue: multiprocessing.Queue) -> None:
+reconciliation_args = {"lam2_x": parameters.LAM2_X,
+                       "lam2_y": parameters.LAM2_Y,
+                       # "lam1_x": parameters.LAM1_X, 
+                       # "lam1_y": parameters.LAM1_Y,
+                       "PH": parameters.PH,
+                       "IH": parameters.IH}
+
+# initiate a dbw object
+dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
+               password=db_parameters.DEFAULT_PASSWORD,
+               database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
+
+# initiate a logger object
+# reconciliation_logger = I24Logger(owner_process_name = "reconciliation", connect_file=True, file_log_level='DEBUG', 
+#                     connect_console=True, console_log_level='INFO')
+
+def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue) -> None:
     """
-
-    :param trajectory_data: a dict
+    Resample and reconcile a single trajectory, and write the result to DB
+    :param stitched_trajectory_queue: 
     :param result_queue:
-    :param log_queue:
     :return:
     """
     
-    # log_queue.put((logging.DEBUG, "Reconciling on trajectory {}.".format('0')))
-
+    # reconciliation_logger.put((logging.DEBUG, "Reconciling on trajectory {}.".format('0')))
+    # get the pid of current worker
     # DO THE RECONCILIATION
-    resampled_trajectory = resample(trajectory_data)
-    finished_trajectory = receding_horizon_2d_l1(resampled_trajectory, *reconciliation_args)
-    result_queue.put(finished_trajectory)
-
-
-# def reconciled_results_handler(reconciled_queue: multiprocessing.Queue):
-#     '''
-#     keep grabbing trajectories from reconciled_queue and write to database
-#     '''
-#     client = pymongo.MongoClient(parameters.DATABASE_URL)
-#     db = client.trajectories
-#     collection = db.processed_trajectories
-
-#     while True:
-#         # Get the next result and wait as long as necessary.
-#         reconciled_result = reconciled_queue.get(block=True)
-#         # Insert the result in the database.
-#         # collection.insert(reconciled_result)
-
-
-# def handle_reconcile_error(process_exception):
-#     pass
-
+    sys.stdout.flush()
+    next_to_reconcile = stitched_trajectory_queue.get(block=True)
+    resampled_trajectory = resample(next_to_reconcile)
+    finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
+    
+    # TODO: replace with schema validation in dbw before insert
+    finished_trajectory["timestamp"] = list(finished_trajectory["timestamp"])
+    finished_trajectory["x_position"] = list(finished_trajectory["x_position"])
+    finished_trajectory["y_position"] = list(finished_trajectory["y_position"])
+    
+    print("writing to db...")
+    dbw.write_reconciled_trajectory(thread=True, **finished_trajectory)
+    print("reconciled collection: ", dbw.db["reconciled_trajectories"].count_documents({}))
 
 def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
                          pid_tracker) -> None:
     """
-    :param stitched_trajectory_queue:
-    :param pid_tracker:
+    Start a multiprocessing pool, each worker 
+    :param stitched_trajectory_queue: results from stitchers, shared by mp.manager
+    :param pid_tracker: a dictionary
     :return:
     """
+
     print("** reconciliation starts...")
+    print("reconciliation pool qsize", stitched_trajectory_queue.qsize())
+    worker_pool = Pool(processes=parameters.RECONCILIATION_POOL_SIZE)
+    # worker_pool = Pool(4)
     # TODO: decide about tasks per child
-    worker_pool = multiprocessing.pool.Pool(processes=parameters.RECONCILIATION_POOL_SIZE)
-    reconciliation_results_queue = multiprocessing.Queue(maxsize=parameters.RECONCILED_TRAJECTORY_QUEUE_SIZE)
-    # results_handler = multiprocessing.Process(target=reconciled_results_handler, args=(reconciliation_results_queue,),
-    #                                           name='reconciled_results_handler', daemon=True)
-    
-    # TODO: I'm not 100% sure this is correct...needs testing
     while True:
-        next_to_reconcile = stitched_trajectory_queue.get(block=True)
-        worker_pool.apply_async(func=reconcile_single_trajectory,
-                                args=(next_to_reconcile, reconciliation_results_queue))
-        # TODO: try to track PIDs
-        # TODO: make sure this will exit gracefully
+        worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
+
+    # TODO: try to track PIDs
+    # TODO: make sure this will exit gracefully
 
 
-if __name__ == '__main__':
-    print("NO CODE TO RUN")
+    
+# if __name__ == '__main__':
+#     print("no code to run")
+    
+    

@@ -15,10 +15,11 @@ import signal
 import time
 from db_reader import raw_data_feed # change to live_data_read later
 import db_parameters, parameters
-import stitcher_parameters
+# import stitcher_parameters
 from I24_logging.log_writer import I24Logger
 from stitcher import stitch_raw_trajectory_fragments
 import reconciliation
+import dummy_stitcher
 
 
 if __name__ == '__main__':
@@ -76,15 +77,17 @@ if __name__ == '__main__':
                           'raw_data_feed_w': (raw_data_feed,
                                             (db_parameters.DB_NAME, 
                                              db_parameters.RAW_COLLECTION, 
-                                             stitcher_parameters.RANGE_INCREMENT,
+                                             parameters.RANGE_INCREMENT,
                                              raw_fragment_queue_w,
                                              "west",)),
                           # 'stitcher_e': (stitch_raw_trajectory_fragments,
                           #                ("east", raw_fragment_queue_e, stitched_trajectory_queue,)),
-                          'stitcher_w': (stitch_raw_trajectory_fragments,
-                                         ("west", raw_fragment_queue_w, stitched_trajectory_queue,)),
-                           # 'reconciliation': (reconciliation.reconciliation_pool,
-                           #                   (stitched_trajectory_queue, pid_tracker,)),
+                           'stitcher_w': (stitch_raw_trajectory_fragments,
+                                          ("west", raw_fragment_queue_w, stitched_trajectory_queue,)),
+                          # 'dummy_stitcher': (dummy_stitcher.dummy_stitcher,
+                          #                    ("west", raw_fragment_queue_w, stitched_trajectory_queue,)),
+                           'reconciliation': (reconciliation.reconciliation_pool,
+                                               (stitched_trajectory_queue, pid_tracker,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.

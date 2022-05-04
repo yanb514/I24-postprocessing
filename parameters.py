@@ -12,7 +12,7 @@ STITCHED_TRAJECTORY_QUEUE_SIZE = 10000
 RECONCILED_TRAJECTORY_QUEUE_SIZE = 1000
 LOG_MESSAGE_QUEUE_SIZE = 10000
 
-RECONCILIATION_POOL_SIZE = 10
+RECONCILIATION_POOL_SIZE = 4
 RECONCILIATION_TIMEOUT = 15
 
 # -----------------------------
@@ -36,9 +36,9 @@ FRAGMENT_ATTRIBUTES = ["id","ID","t","x","y","dir","tail_time","last_timestamp",
 
 # -----------------------------
 # reconciliation pamaters
-LAM1_X = 0.0012
-LAM1_Y = 0.0012
 LAM2_X = 1.67e-2
 LAM2_Y = 1.67e-2
+LAM1_X = 0.0012
+LAM1_Y = 0.0012
 PH = 100
 IH = 5

@@ -7,14 +7,11 @@ from functools import partial
 from multiprocessing import Pool, cpu_count
 from cvxopt import matrix, solvers, sparse,spdiag,spmatrix
 import time
+import sys
 
 # TODO
-# 1. get rid of uniform timestamps assumption -> resample()
-# 2. unit conversion
-# 3. read from data_q
-# 4. write to a modified data_q
 # impute timesttamps from stitched trajectories
-# implement receding_horizon_1d_l1
+# add try except and put errors/warnings to log
 
 solvers.options['show_progress'] = False
 dt = 1/30
@@ -26,17 +23,19 @@ def resample(car):
     resample the original time-series to uniformly sampled time series in 30Hz
     car: document
     '''
-    
+
     # Select time series only
     time_series_field = ["timestamp", "x_position", "y_position"]
     data = {key: car[key] for key in time_series_field}
     
     # Read to dataframe and resample
     df = pd.DataFrame(data, columns=data.keys()) 
-    df = df.set_index('timestamp') 
+    index = pd.to_timedelta(df["timestamp"], unit='s')
+    df = df.set_index(index)
+    df = df.drop(columns = "timestamp")
     df = df.resample('0.033333333S').mean() # close to 30Hz
     df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
-
+    
     car['x_position'] = df['x_position'].values
     car['y_position'] = df['y_position'].values
     car['timestamp'] = df.index.values
@@ -62,7 +61,7 @@ def _blocdiag(X, n):
             mat.append(row)
         return sparse(mat)
 
-def _getQPMatrices(x, t, args, reg="l2"):
+def _getQPMatrices(x, t, lam2, lam1, reg="l2"):
     '''
     turn ridge regression (reg=l2) 
     1/M||y-Hx||_2^2 + \lam2/N ||Dx||_2^2
@@ -76,6 +75,9 @@ def _getQPMatrices(x, t, args, reg="l2"):
     return: Q, p, H, (G, h if l1)
     TODO: uneven timestamps
     '''
+    if reg == "l1" and lam1 is None:
+        raise ValueError("lam1 must be specified when regularization is set to L1")
+        
     # get data
     N = len(x)
     
@@ -90,7 +92,6 @@ def _getQPMatrices(x, t, args, reg="l2"):
     D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), N) * (1/dt**3)
     
     if reg == "l2":
-        lam2 = args
         DD = lam2 * D3.trans() * D3
         # sol: xhat = (I+delta D'D)^(-1)x
         I = spmatrix(1.0, range(N), range(N))
@@ -101,7 +102,6 @@ def _getQPMatrices(x, t, args, reg="l2"):
         p = -2*H.trans() * matrix(x)/M
         return Q, p, H, N, M
     else:
-        lam2, lam1 = args
         DD = lam2 * D3.trans() * D3
         # define matices
         I = spmatrix(1.0, range(N), range(N))
@@ -121,15 +121,15 @@ def _getQPMatrices(x, t, args, reg="l2"):
         return Q, p, H, G, h, N,M
 
 
-def rectify_1d(car, args, axis):
+def rectify_1d(car, lam2, axis):
     '''                        
     solve solve for ||y-x||_2^2 + \lam ||Dx||_2^2
-    args: lam
+    args: lam2
     axis: "x" or "y"
     '''  
     # get data and matrices
     x = car[axis + "_position"].values
-    Q, p, H, N,M = _getQPMatrices(x, 0, args, reg="l2")
+    Q, p, H, N,M = _getQPMatrices(x, 0, lam2, None, reg="l2")
     
     sol=solvers.qp(P=Q, q=p)
     print(sol["status"])
@@ -138,40 +138,48 @@ def rectify_1d(car, args, axis):
     xhat = sol["x"][:N]
     return xhat
 
-def rectify_1d_l1(car, args, axis):
+def rectify_1d_l1(car, lam2, lam1, axis):
     '''                        
     solve for ||y-Hx-e||_2^2 + \lam2 ||Dx||_2^2 + \lam1||e||_1
     convert to quadratic programming with linear inequality constraints
     handle sparse outliers in data
     rewrite l1 penalty to linear constraints https://math.stackexchange.com/questions/391796/how-to-expand-equation-inside-the-l2-norm
+    :param args: (lam2, lam1)
     '''  
     x = car[axis + "_position"].values
-    Q, p, H, G, h, N,M = _getQPMatrices(x, 0, args, reg="l1")
+    Q, p, H, G, h, N,M = _getQPMatrices(x, 0, lam2, lam1, reg="l1")
     sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
     
     # extract result
     xhat = sol["x"][:N]
-    u = sol["x"][N:N+M]
-    v = sol["x"][N+M:]
+    # u = sol["x"][N:N+M]
+    # v = sol["x"][N+M:]
     print(sol["status"])
     
     return xhat
 
-def rectify_2d(car,args,reg = "l2"):
+def rectify_2d(car, reg = "l2", **kwargs):
     '''
     rectify on x and y component independently
     batch method
+    :param args: (lam2_x, lam2_y) if reg == "l2"
+                (lam2_x, lam2_y, lam1_x, lam1_y) if reg == "l1"
     '''
+    if reg == "l1" and "lam1_x" not in kwargs:
+        raise ValueError("lam1 must be specified if regularization is set to l1.")
+      
+    lam2_x, lam2_y = kwargs["lam2_x"], kwargs["lam2_y"] # shared arguments
+    
     if reg == "l2":
-        lamx, lamy = args
-        xhat = rectify_1d(car, lamx, "x")
-        yhat = rectify_1d(car, lamy, "y")
-    elif reg == "l1": 
-        lamx, lamy, lam1 = args
-        xhat = rectify_1d_l1(car, (lamx, lam1), "x")
-        yhat = rectify_1d_l1(car, (lamy, lam1), "y")
+        xhat = rectify_1d(car, lam2_x, "x")
+        yhat = rectify_1d(car, lam2_y, "y")
         
-    # write to df
+    elif reg == "l1": 
+        lam1_x, lam1_y = kwargs["lam1_x"], kwargs["lam1_y"] # additional arguments for l1
+        xhat = rectify_1d_l1(car, (lam2_x, lam1_x), "x")
+        yhat = rectify_1d_l1(car, (lam2_y, lam1_y), "y")
+        
+    # write to document
     car['x_position'] = xhat 
     car['y_position'] = yhat   
     return car           
@@ -180,14 +188,13 @@ def rectify_2d(car,args,reg = "l2"):
 
 
 
-
 # =================== RECEDING HORIZON RECTIFICATION =========================
 
-def receding_horizon_1d(car, args, axis="x"):
+def receding_horizon_1d(car, lam2, PH, IH, axis="x"):
     '''
     rolling horizon version of rectify_1d
     car: dict
-    args: (lam, axis, PH, IH)
+    args: (lam2, PH, IH)
         PH: prediction horizon
         IH: implementation horizon
     QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
@@ -195,7 +202,6 @@ def receding_horizon_1d(car, args, axis="x"):
     # TODO: compute matrices once
 
     # get data
-    lam2, PH, IH = args
     x = car[axis+"_position"]
     n_total = len(x)
     # Q, p, H, N,M = _getQPMatrices(x[:PH], 0, lam, reg="l2")
@@ -220,7 +226,7 @@ def receding_horizon_1d(car, args, axis="x"):
         else:
             xx = x[i*IH: i*IH+PH]
         nn = len(xx)
-        Q, p, H, N,M = _getQPMatrices(xx, 0, lam2, reg="l2")
+        Q, p, H, N,M = _getQPMatrices(xx, 0, lam2, None, reg="l2")
     
         try:
             A = sparse([[spmatrix(1.0, range(cs), range(cs))], [spmatrix([], [], [], (cs,nn-cs))]])
@@ -231,7 +237,7 @@ def receding_horizon_1d(car, args, axis="x"):
         except: # if x_prev exists - not first window
             sol=solvers.qp(P=Q, q=p)  
             
-        xhat = sol["x"]
+        xhat = sol["x"][:N]
 
         if last:
             xfinal = matrix([xfinal, xhat])         
@@ -244,16 +250,14 @@ def receding_horizon_1d(car, args, axis="x"):
     return xfinal
 
 
-def receding_horizon_2d(car,args):
+def receding_horizon_2d(car, lam2_x, lam2_y, PH, IH):
     '''
     car: stitched fragments from data_q
     TODO: parallelize x and y?
     '''
-    # get data
-    lam2_x, lam2_y, PH, IH = args
-    
-    xhat = receding_horizon_1d(car, (lam2_x, PH, IH), "x")
-    yhat = receding_horizon_1d(car, (lam2_y, PH, IH), "y")
+    # get data    
+    xhat = receding_horizon_1d(car, lam2_x, PH, IH, "x")
+    yhat = receding_horizon_1d(car, lam2_y, PH, IH, "y")
     
     car['x_position'] = xhat
     car['y_position'] = yhat
@@ -261,7 +265,7 @@ def receding_horizon_2d(car,args):
     return car
 
 
-def receding_horizon_1d_l1(car, args, axis):
+def receding_horizon_1d_l1(car, lam2, lam1, PH, IH, axis):
     '''
     rolling horizon version of rectify_1d_l1
     car: dict
@@ -272,12 +276,8 @@ def receding_horizon_1d_l1(car, args, axis):
     # TODO: compute matrices once
 
     # get data
-    lam1, lam2, PH, IH = args
     x = car[axis+"_position"]
     n_total = len(x)
-    
-    # Q, p, H, G, h, N,M = _getQPMatrices(x, 0, args, reg="l1")
-    # sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
     
     # additional equality constraint: state continuity
     A = sparse([[spmatrix(1.0, range(4), range(4))], [spmatrix([], [], [], (4,PH-4))]])
@@ -298,7 +298,7 @@ def receding_horizon_1d_l1(car, args, axis):
         else:
             xx = x[i*IH: i*IH+PH]
         # nn = len(xx)
-        Q, p, H, G, h, N,M = _getQPMatrices(xx, 0, args, reg="l1")
+        Q, p, H, G, h, N,M = _getQPMatrices(xx, 0, lam2, lam1, reg="l1")
         
         
         try: # if x_prev exists - not first window
@@ -310,7 +310,7 @@ def receding_horizon_1d_l1(car, args, axis):
         except:
             sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))    
         
-        xhat = sol["x"]
+        xhat = sol["x"][:N]
 
         if last:
             xfinal = matrix([xfinal, xhat])         
@@ -323,13 +323,13 @@ def receding_horizon_1d_l1(car, args, axis):
     return xfinal
 
 
-def receding_horizon_2d_l1(car, lam1_x, lam1_y, lam2_x, lam2_y, PH, IH):
+def receding_horizon_2d_l1(car, lam2_x, lam2_y, lam1_x, lam1_y, PH, IH):
     '''
     car: stitched fragments from data_q
     TODO: parallelize x and y?
     '''
-    xhat = receding_horizon_1d_l1(car, (lam1_x, lam2_x, PH, IH), "x")
-    yhat = receding_horizon_1d_l1(car, (lam1_y, lam2_y, PH, IH), "y")
+    xhat = receding_horizon_1d_l1(car, lam2_x, lam1_x, PH, IH, "x")
+    yhat = receding_horizon_1d_l1(car, lam2_y, lam1_y, PH, IH, "y")
     
     car['x_position'] = xhat
     car['y_position'] = yhat

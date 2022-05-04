@@ -299,23 +299,29 @@ class DBWriter:
         '''
         collection.insert_one(document)
         
-    def write_trajectory(self, thread = True, collection_name = "test_collection", **kwargs):
+    def write_one_trajectory(self, thread = True, collection_name = "test_collection", **kwargs):
         """
-        write a test trajectory
+        Write an arbitrary document specified in kwargs to a specified collection. No schema enforcment.
+        :param thread: a boolean indicating if multi-threaded write is used
+        :param collection_name: a string for write collection destination
+        
+        Use case:
+        e.g.1. 
+        dbw.write_one_trajectory(timestamp = [1,2,3], x_position = [12,22,33])
+        e.g.2. 
+        traj = {"timestamp": [1,2,3], "x_position": [12,22,33]}
+        dbw.write_one_trajectory(**traj)
         """
+        
         col = self.db[collection_name]
-        
-        configuration_id = self.session_config_id
-        compute_node_id = self.server_id
-        doc = {}
-        
-        for field_name in db_parameters.RAW_SCHEMA:
-            try:
-                doc[field_name] = kwargs[field_name]
-            except:
-                pass
-            
+        doc = {} 
+        for key,val in kwargs.items():
+            doc[key] = val
+
         # add extra fields in doc
+        configuration_id = self.session_config_id
+        compute_node_id = self.server_id   
+        
         doc["configuration_id"] = configuration_id
         doc["compute_node_id"] = compute_node_id
         
@@ -382,7 +388,7 @@ class DBWriter:
             t.start()
     
 
-    def write_stitch(self, thread = True, **kwargs):
+    def write_stitched_trajectory(self, thread = True, **kwargs):
         """
         Write a stitched trajectory reference document according to the data schema, found here:
             https://docs.google.com/document/d/1vyLgsz6y0SrpTXWZNOS5fSgMnmwCr3xD0AB6MgYWl-w/edit?usp=sharing

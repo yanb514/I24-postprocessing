@@ -1,7 +1,7 @@
 import heapq
 import numpy as np
 #from time import sleep
-import stitcher_parameters
+import parameters
 
 class Node:
     '''
@@ -228,15 +228,15 @@ class Fragment(Node):
         if traj_doc: 
             # delete the unnucessary fields in traj_doc
             try:
-                unwanted = set(traj_doc.keys()) - set(stitcher_parameters.WANTED_DOC_FIELDS)
+                unwanted = set(traj_doc.keys()) - set(parameters.WANTED_DOC_FIELDS)
                 for unwanted_key in unwanted: 
                     try: del traj_doc[unwanted_key]
                     except: pass
             except:
                 pass
             
-            field_names = stitcher_parameters.WANTED_DOC_FIELDS
-            attr_names = stitcher_parameters.FRAGMENT_ATTRIBUTES
+            field_names = parameters.WANTED_DOC_FIELDS
+            attr_names = parameters.FRAGMENT_ATTRIBUTES
             for i in range(len(field_names)): # set as many attributes as possible
                 try: setattr(self, attr_names[i], traj_doc[field_names[i]])
                 except: pass

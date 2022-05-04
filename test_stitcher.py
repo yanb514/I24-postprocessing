@@ -8,7 +8,6 @@ Created on Mon Apr 18 11:26:36 2022
 from db_reader import DBReader
 from db_writer import DBWriter
 import db_parameters
-import stitcher_parameters
 from stitcher import stitch_raw_trajectory_fragments
 import queue
 
@@ -21,7 +20,7 @@ gt = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, 
                password=db_parameters.DEFAULT_PASSWORD,
                database_name=db_parameters.DB_NAME, collection_name=db_parameters.GT_COLLECTION)
 
-gt_ids = [1,2,100,101]
+gt_ids = [1,2,4]
 fragment_ids = []
 gt_res = gt.read_query(query_filter = {"ID": {"$in": gt_ids}},
                        limit = 0)

@@ -141,8 +141,17 @@ while True:
 # %% compare multhread with insert_many()
 
 # %% insert time vs. doc length and numbers
-    
-def foo(a,b):
-    print(a,b)
-args = (1,2)
-foo(*args)
+def foo(car, a, b, reg = "l2"):
+    print(car,a,b)
+    # for k,v in kwargs.items():
+    #     print(k,v)
+args_dict = {"a":1, "b":2}
+foo(car = "car", **args_dict)
+
+
+# foo(reg = "1", **args_dict)
+
+
+
+
+
