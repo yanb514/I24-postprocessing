@@ -6,10 +6,9 @@ import db_parameters
 
 # from collections.abc import Iterable
 from collections import defaultdict
-from typing import Union
-Numeric = Union[int, float]
+# from typing import Union
+# Numeric = Union[int, float]
 
-from I24_logging.log_writer import I24Logger
 
 def format_flat(columns, document, impute_none_for_missing=False):
     """
@@ -103,9 +102,6 @@ def live_data_reader(database_name, collection_name, range_increment,
     :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
     :return:
     """
-    # Initiate logger
-    logger = I24Logger(connect_file=True, file_log_level='DEBUG', 
-                        connect_console=True, console_log_level='INFO')
     
     # Connect to a replica set (the replica set has to be started first)
     dbr = DBReader(host=None, port=None, username=None, password=None,
@@ -129,14 +125,13 @@ def live_data_reader(database_name, collection_name, range_increment,
         except pymongo.errors.PyMongoError:
             # The ChangeStream encountered an unrecoverable error or the
             # resume attempt failed to recreate the cursor.
-            logger.warning("live_data_reader encounters an error")
+            # logger.warning("live_data_reader encounters an error")
             pass
 
     
 def raw_data_feed(database_name, collection_name, range_increment, ready_queue, direction):
     """
-    Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
-        that it can be assured to be time-ordered. Refill data queue if the queue size is below a threshold AND the next query range is before change_stream t_max - t_buffer
+    Feed raw data to a queue incrementally
     ** THIS PROCEDURE AND FUNCTION IS TO BE REPLACED BY live_data_reader **
     :param host: Database connection host name.
     :param port: Database connection port number.
@@ -209,26 +204,9 @@ class DBReader:
             print("Server not available")
             raise ConnectionError("Could not connect to MongoDB.")
 
-        # username = urllib.parse.quote_plus(username)
-        # password = urllib.parse.quote_plus(password)
-        # self.client = pymongo.MongoReplicaSetClient('mongodb://%s:%s@%s/' % (username, password, host),directConnection = True) # works
-        # self.client = pymongo.MongoClient(host = host, directConnection = True) # connect to replica set
-        # self.client = pymongo.MongoClient(host = host, username=username, password=password, replicaSet = "rs0")
-        # self.client = pymongo.MongoReplicaSetClient(host = host, replicaSet='rs0',connectTimeoutMS = 5000)
-        # try:
-        #     self.client.admin.command('ping')
-        #     print("initiated a replica set")
-        # except pymongo.errors.ConnectionFailure:
-        #     print("Server not available")
-        #     raise ConnectionError("Could not connect to MongoDB.")
-            
-        # TODO: add connect=True and connectTimeoutMS=5000
-        # Test out the connection with a ping and raise a ConnectionError if it isn't available.
-        # Connection timeout specified during creation of self.client.
-
-    
         self.db = self.client[database_name]
         self.collection = self.db[collection_name]
+        
         # create indices
         self.create_index(db_parameters.INDICES)
 
@@ -371,7 +349,6 @@ class DBReader:
                 # TODO: temporarily set start and end point to the min and max values. For live stream, this is not applicable.
                 self.range_iter_start = self.get_min(range_parameter)
                 self.range_iter_start_closed_interval = True
-
 
             if range_less_equal is not None: # right closed a, b]
                 self.range_iter_stop = range_less_equal

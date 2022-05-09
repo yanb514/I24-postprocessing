@@ -21,7 +21,7 @@ RANGE_INCREMENT = 50 # seconds interval to batch query and refill raw_trajectori
 
 # -----------------------------
 # stitcher algorithm parameters
-TIME_WIN = 50
+TIME_WIN = 5
 THRESH = 3
 VARX = 0.05 # TODO: unit conversion (now it's based on meter)
 VARY = 0.03

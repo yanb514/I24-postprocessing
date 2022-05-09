@@ -3,252 +3,8 @@ import db_parameters
 import csv
 import urllib.parse
 from threading import Thread
-
-
-def write_data_from_csv(**kwargs):
-    '''
-    Write trajectories from csv files to database
-    First check if csv data is sorted either by ID or by timestamp (frame)
-    '''
-    # connect to DBWriter
-    dbw = DBWriter(**kwargs)
-
-    order_by_time = input("Are the rows ordered by time [Y/N]?")
-    order_by_ID = input("Are the rows ordered by ID [Y/N]?")
-    
-    # TODO: if kwargs is passed on correctly?
-    if order_by_ID == "Y":
-        write_csv_to_db_by_ID(dbw, *kwargs)
-        
-    elif order_by_time == "Y":
-        write_csv_to_db_by_time(dbw, **kwargs)
-    
-    else:
-        raise NotImplementedError("Currently do not support reading csv files that are not ordered by time or ID")
-
-def write_csv_to_db_by_ID(dbwriter, collection_name, file_location, file_name, x_range, idle_time = None, verbose = True):
-    '''
-    Read csv file row by row, write to db if ID switches
-    Currently no schema enforcement 
-    Needs to manually check the column names
-    TODO: not tested
-    '''
-    if collection_name in dbwriter.db:
-        col = dbwriter.db[collection_name]
-        rewrite = input("Re-write to existing collection called {} [Y/N]?".format(collection_name))
-    if rewrite == "Y":
-        X_MIN, X_MAX = x_range
-        col.drop()
-        col = dbwriter.db[collection_name]
-        
-        prevID = -1 # if curr_ID!= prevID, write to database 
-        traj = {} # to start
-        traj['timestamp'] = []
-        traj['raw_timestamp'] = []
-        traj['road_segment_id'] = []
-        traj['x_position'] = []
-        traj['y_position'] = []
-        traj['configuration_id']=1
-        traj['local_fragment_id']=1
-        traj['compute_node_id']=1
-        traj['coarse_vehicle_class']= 0
-        traj['fine_vehicle_class']=1
-                        
-                        
-        for file in file_name:
-            print("In file {}".format(file))
-            line = 0
-            with open (file_location+file,'r') as f:
-                reader=csv.reader(f)
-                next(reader) # skip the header
-                
-                for row in reader:
-                    line += 1
-                    ID = int(float(row[4]))
-                    curr_time = float(row[3])
-                    curr_x = float(row[41])
-                    
-                    if curr_x > X_MAX or curr_x < X_MIN:
-                        continue
-                    
-                    if line % 10000 == 0 and verbose:
-                        print("line: {}, curr_time: {:.2f}, x:{:.2f},  gtID: {} ".format(line, curr_time, curr_x, ID))
-                    
-                    if ID!=prevID and prevID!=-1: 
-                        # write prevID to database
-                        traj['db_write_timestamp'] = 0
-                        traj['first_timestamp']=traj['timestamp'][0]
-                        traj['last_timestamp']=traj['timestamp'][-1]
-                        traj['starting_x']=traj['x_position'][0]
-                        traj['ending_x']=traj['x_position'][-1]
-                        traj['flags'] = ['gt']
-                        traj['ID']=prevID
-                        
-        #                print("** write {} to db".format(ID))
-                        col.insert_one(traj)
-                        
-                        traj = {} # create a new trajectory for the next iteration
-                        traj['configuration_id']=1
-                        traj['local_fragment_id']=1
-                        traj['compute_node_id']=1
-                        traj['coarse_vehicle_class']=int(row[5])
-                        traj['fine_vehicle_class']=1
-                        traj['timestamp']=[float(row[3])]
-                        traj['raw_timestamp']=[float(1.0)]
-                        traj['road_segment_id']=[int(row[49])]
-                        traj['x_position']=[3.2808*float(row[41])]
-                        traj['y_position']=[3.2808*float(row[42])]
-                        traj['direction']=int(float(row[37]))
-                        traj['ID']=ID
-                    
-                    else: #  keep augmenting trajectory
-                        traj['timestamp'].extend([float(row[3])])
-                        traj['raw_timestamp'].extend([float(1.0)])
-                        traj['road_segment_id'].extend([float(row[49])])
-                        traj['x_position'].extend([3.2808*float(row[41])])
-                        traj['y_position'].extend([3.2808*float(row[42])])
-                        traj['length']=[3.2808*float(row[45])]
-                        traj['width']=[3.2808*float(row[44])]
-                        traj['height']=[3.2808*float(row[46])]     
-                        
-                    prevID = ID
-                    
-            f.close()
-    
-        # flush out the last trajectory in cache
-        print("writing the last trajectory")
-        traj['db_write_timestamp'] = 0
-        traj['first_timestamp']=traj['timestamp'][0]
-        traj['last_timestamp']=traj['timestamp'][-1]
-        traj['starting_x']=traj['x_position'][0]
-        traj['ending_x']=traj['x_position'][-1]
-        traj['flags'] = ['gt']
-        traj['direction']=int(float(row[37]))
-        traj['ID']=ID
-        traj['length']=[3.2808*float(row[45])]
-        traj['width']=[3.2808*float(row[44])]
-        traj['height']=[3.2808*float(row[46])]
-
-        print("** write {} to db".format(ID))
-        col.insert_one(traj)
-
-
-        # finally, add fragment_ids to ground truth
-        # print("Adding fragment IDs")
-        # colraw = db["raw_trajectories_one"]
-        
-        # for rawdoc in colraw.find({}):
-        #     _id = rawdoc.get('_id')
-        #     raw_ID=rawdoc.get('ID')
-        #     gt_ID=raw_ID//100000
-        #     if colgt.count_documents({ 'ID': gt_ID }, limit = 1) != 0: # if gt_ID exists in colgt
-        #         # update
-        #         colgt.update_one({'ID':gt_ID},{'$push':{'fragment_ids':_id}},upsert=True)
-
-    return
-
-def write_csv_to_db_by_time(dbwriter, collection_name, file_location, file_name, x_range, idle_time=1, verbose=True):
-    '''
-    Read csv file row by row, keep in a lru cache. Write to db if the first item in lru (least recently used) idles more than idle_time
-    Currently no schema enforcement
-    '''
-    
-    if collection_name in dbwriter.db:
-        col = dbwriter.db[collection_name]
-        rewrite = input("Re-write to existing collection called {} [Y/N]?".format(collection_name))
-    if rewrite == "Y":
-        from collections import OrderedDict
-        lru = OrderedDict()
-        X_MIN, X_MAX = x_range
-        col.drop()
-        col = dbwriter.db[collection_name]
-
-        for file in file_name:
-            print("In file {}".format(file))
-            line = 0
-            with open(file_location+file,'r') as f:
-                reader = csv.reader(f)
-                next(reader) # skip the header
-                
-                for row in reader:
-                    line += 1
-                    ID = int(float(row[3]))
-                    curr_time = float(row[2])
-                    curr_x = float(row[40])
-                    if curr_x > X_MAX or curr_x < X_MIN:
-                        continue
-                    
-                    if verbose and line % 10000 == 0:
-                        print("line: {}, curr_time: {:.2f}, x:{:.2f},  lru size: {} ".format(line, curr_time, curr_x, len(lru)))
-        #                break
-                    
-                    if ID not in lru: # create new
-                        traj = {}
-                        traj['configuration_id']=1
-                        traj['local_fragment_id']=1
-                        traj['compute_node_id']=1
-                        traj['coarse_vehicle_class']=int(row[4])
-                        traj['fine_vehicle_class']=1
-                        traj['timestamp']=[float(row[2])]
-                        traj['raw_timestamp']=[float(1.0)]
-                        
-                        traj['road_segment_id']=[int(row[48])]
-                        traj['x_position']=[3.2808*float(row[40])]
-                        traj['y_position']=[3.2808*float(row[41])]
-                        
-                        traj['length']=[3.2808*float(row[44])]
-                        traj['width']=[3.2808*float(row[43])]
-                        traj['height']=[3.2808*float(row[45])]
-                        traj['direction']=int(float(row[36]))
-                        traj['ID']=float(row[3])
-                        
-                        lru[ID] = traj
-                        
-                    else:
-                        traj = lru[ID]
-                        traj['timestamp'].extend([float(row[2])])
-                        traj['raw_timestamp'].extend([float(1.0)])
-                
-                        traj['road_segment_id'].extend([float(row[48])])
-                        traj['x_position'].extend([3.2808*float(row[40])])
-                        traj['y_position'].extend([3.2808*float(row[41])])
-                        
-                        traj['length'].extend([3.2808*float(row[44])])
-                        traj['width'].extend([3.2808*float(row[43])])
-                        traj['height'].extend([3.2808*float(row[45])])
-                        
-                        lru.move_to_end(ID)
-                        
-                    while lru[next(iter(lru))]["timestamp"][-1] < curr_time - idle_time:
-                        ID, traj = lru.popitem(last=False) #FIFO
-                #        d=datetime.utcnow()
-                #        traj['db_write_timestamp']=calendar.timegm(d.timetuple()) #epoch unix time
-                        traj['db_write_timestamp'] = 0
-                        traj['first_timestamp']=traj['timestamp'][0]
-                        traj['last_timestamp']=traj['timestamp'][-1]
-                        traj['starting_x']=traj['x_position'][0]
-                        traj['ending_x']=traj['x_position'][-1]
-                        traj['flags'] = ['fragment']
-                        
-        #                print("** write {} to db".format(ID))
-                        col.insert_one(traj)
-                
-            f.close()
-            
-        # flush out all fragmentes in cache
-        print("flush out all the rest of LRU of size {}".format(len(lru)))
-        for ID, traj in lru.items():
-            traj['db_write_timestamp'] = 0
-            traj['first_timestamp']=traj['timestamp'][0]
-            traj['last_timestamp']=traj['timestamp'][-1]
-            traj['starting_x']=traj['x_position'][0]
-            traj['ending_x']=traj['x_position'][-1]
-            traj['flags'] = ['fragment']
-            
-            col.insert_one(traj)
-
-    return
-        
+import schema
+from i24_logger.log_writer import logger 
         
 class DBWriter:
     """
@@ -281,8 +37,12 @@ class DBWriter:
 
         # Connect immediately upon instantiation.
         self.client = pymongo.MongoClient('mongodb://%s:%s@%s' % (username, password, host))
-        # self.client = pymongo.MongoClient(host=host, port=port, username=username, password=password,
-        #                                   connect=True, connectTimeoutMS=5000)
+        # self.client = pymongo.MongoClient(host=host, port=port, username=username, 
+        #                                   password=password,
+        #                                   connect=True, 
+        #                                   connectTimeoutMS=5000,
+        #                                   authSource='admin'
+        #                                   )
         try:
             self.client.admin.command('ping')
         except pymongo.errors.ConnectionFailure:
@@ -291,13 +51,31 @@ class DBWriter:
             
         self.db = self.client[database_name]
         
-
+        # create three critical collections
+        try: self.db.create_collection(db_parameters.RAW_COLLECTION)
+        except: pass   
+        try: self.db.create_collection(db_parameters.STITCHED_COLLECTION)
+        except: pass
+        try: self.db.create_collection(db_parameters.RECONCILED_COLLECTION)
+        except: pass
+    
+        # set rules for schema. enable schema checking when insert using
+        # col.insert_one(doc)
+        # disable schema checking: col.insert_one(doc, bypass_document_validation=False)
+        self.db.command("collMod", db_parameters.RAW_COLLECTION, validator=schema.RAW_SCHEMA)
+        self.db.command("collMod", db_parameters.STITCHED_COLLECTION, validator=schema.STITCHED_SCHEMA)
+        self.db.command("collMod", db_parameters.RECONCILED_COLLECTION, validator=schema.RECONCILED_SCHEMA)
+        
 
     def thread_insert(self, collection, document):
         '''
         A wrapper around pymongo insert_one, which is a thread-safe operation
+        bypass_document_validation = True: enforce schema
         '''
-        collection.insert_one(document)
+        try:
+            collection.insert_one(document, bypass_document_validation = db_parameters.BYPASS_VALIDATION)
+        except: # schema violated
+            logger.warning("insert failed, please follow schema")
         
     def write_one_trajectory(self, thread = True, collection_name = "test_collection", **kwargs):
         """
@@ -331,7 +109,7 @@ class DBWriter:
             # fire off a thread
             t = Thread(target=self.thread_insert, args=(col, doc,))
             t.daemon = True
-            t.start()    
+            t.start()   
             
             
     def write_fragment(self, thread = True, **kwargs):

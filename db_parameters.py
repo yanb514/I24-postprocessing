@@ -10,6 +10,8 @@ STITCHED_COLLECTION = "stitched_trajectories"
 RECONCILED_COLLECTION = "reconciled_trajectories"
 DB_NAME = "trajectories"
 
+BYPASS_VALIDATION = False # False if enforcing schema
+
 # Buffer queue size for live_data_read
 MIN_QUEUE_SIZE = 1000
 

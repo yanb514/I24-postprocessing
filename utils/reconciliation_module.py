@@ -11,7 +11,6 @@ import sys
 from bson.objectid import ObjectId
 
 # TODO
-# impute timesttamps from stitched trajectories
 # add try except and put errors/warnings to log
 
 solvers.options['show_progress'] = False
@@ -32,10 +31,11 @@ def combine_fragments(raw_collection, stitched_doc):
     
     # stacked = stitched_doc
     # try:
-    #     stacked.pop("_id")
+    #   stacked.pop("_id")
     # except:
     #     pass
-    print(stitched_doc)
+    # print(stitched_doc)
+    # assert stitched_doc == 1
     stacked = {}
     stacked["timestamp"] = []
     stacked["x_position"] = []

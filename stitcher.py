@@ -6,15 +6,14 @@ written to the database.
 """
 
 # -----------------------------
-import multiprocessing
 import db_parameters, parameters
-from I24_logging.log_writer import I24Logger
+from i24_logger.log_writer import logger 
 from db_writer import DBWriter 
 from collections import deque
 from utils.stitcher_module import min_nll_cost
 from utils.data_structures import Fragment, PathCache
-
-import sys
+import time
+# import sys
 
 # helper functions
 def _first(dict):
@@ -35,12 +34,8 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
     :param log_queue:
     :return: None
     """
-    # Initiate a logger
-    # stitcher_logger = I24Logger(owner_process_name = "stitcher_"+direction, connect_file=True, file_log_level='DEBUG', 
-    #                     connect_console=True, console_log_level='INFO')
-    
+    stitcher_logger = logger
     # Get parameters
-    # print("in stitcher")
     TIME_WIN = parameters.TIME_WIN
     VARX = parameters.VARX
     VARY = parameters.VARY
@@ -53,49 +48,48 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
     P = PathCache() # an LRU cache of Fragment object (see utils.data_structures)
 
     # Make a database connection for writing
-    # print("before dbw")
     dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                    password=db_parameters.DEFAULT_PASSWORD,
                    database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
-    # print("after dbw")
-    # stitcher_logger.info("** Stitching starts. fragment_queue size: {}".format(fragment_queue.qsize()),extra = None)
 
-    
+    stitcher_logger.info("** Stitching starts. fragment_queue size: {}".format(fragment_queue.qsize()),extra = None)
+
+    # For benchmark run time
+    fgmt_count = 0
+    t_start = time.time()
+    tail_time = []
+    process_time = []
+    cache_size = []
     while True:
-        sys.stdout.flush()
-        # print(("fragment_queue size: {}".format(fragment_queue.qsize())))
-        # print("*** getting fragment")  
-        # try:
-        # stitcher_logger.info("fragment_queue size: {}".format(fragment_queue.qsize()))
-        fragment = Fragment(fragment_queue.get(block = True)) # make object
-        # time.sleep(1)
-        # except: # handle queue empty case
-            # stitcher_logger.warning("fragment_queue is empty", extra={})
-            # break
-            # pass
-        # print("\n")
-        # print("current fragment: ", fragment.last_timestamp)
-        # print(("fragment_queue size: {}".format(fragment_queue.qsize())))
+        try:
+            fragment = Fragment(fragment_queue.get(block = False)) # make object
+            fgmt_count += 1
+            tail_time.append(fragment.last_timestamp)
+            process_time.append(time.time()-t_start)
+            cache_size.append(len(P.path))
+            if fgmt_count % 100 == 0:
+                stitcher_logger.info("Processed {} fragments, in cache: {}".format(fgmt_count, len(P.path)))
+        except:
+            return fgmt_count, [t-tail_time[0] for t in tail_time], process_time,cache_size
+        
         fragment.curr = True
         P.add_node(fragment)
         
         # specify time window for curr_fragments
         right = fragment.last_timestamp # right pointer: current end time
         left = min(fragment.first_timestamp, right - TIME_WIN)
-        # print("left, right: ", left, right)
         
         # compute fragment statistics (1d motion model)
         fragment.compute_stats()
-        # print("Curr_fragments size: ", len(curr_fragments))
         
         # remove out of sight fragments 
-        if curr_fragments:
-            while P.get_fragment(curr_fragments[0]).last_timestamp < left: 
-                past_id = curr_fragments.popleft()
-                past_fragment = P.get_fragment(past_id)
-                past_fragment.curr = False
-                past_fragment.past = True
-                past_fragments[past_id] = past_fragment # could use keys only: past_fragments[past_id] = None if memory is an issue 
+        # if len(curr_fragments) > 0:
+        while curr_fragments and P.get_fragment(curr_fragments[0]).last_timestamp < left: 
+            past_id = curr_fragments.popleft()
+            past_fragment = P.get_fragment(past_id)
+            past_fragment.curr = False
+            past_fragment.past = True
+            past_fragments[past_id] = past_fragment # could use keys only: past_fragments[past_id] = None if memory is an issue 
         # print("Past_fragments size: ", len(past_fragments))
         
         # compute score from every fragment in curr to fragment, update Cost
@@ -104,7 +98,6 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
             cost = min_nll_cost(curr_fragment, fragment, TIME_WIN, VARX, VARY)
             if cost > THRESH:
                 pass
-            #     curr_fragment.add_conflict(fragment)
             elif cost > -999:
                 curr_fragment.add_suc(cost, fragment)
                 fragment.add_pre(cost, curr_fragment)
@@ -119,7 +112,6 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
             for id, ready in past_fragments.items(): # all fragments in past_fragments are ready to be matched to tail
                 best_succ = ready.peek_first_suc() # peek the first successor
                 if not best_succ or not best_succ.pre: # if ready has no match or best head already matched to other fragment-> go to the next ready
-                    # past_fragments.pop(ready.id)
                     gone_ids.add(id)
                 
                 else:
@@ -130,8 +122,8 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
 
                     # if best_pre.id == ready.id and best_pre.id not in ready.conflicts_with:
                     if best_pre.id == ready.id:
-                        # stitcher_logger.info("** match tail of {} to head of {}".format(best_tail.ID, best_head.ID), extra = None)
-                        print("** match tail of {} to head of {}".format(int(best_pre.ID), int(best_succ.ID)))
+                        # stitcher_logger.info("** match tail of {} to head of {}".format(int(best_pre.ID), int(best_succ.ID)), extra = None)
+                        # print("** match tail of {} to head of {}".format(int(best_pre.ID), int(best_succ.ID)))
                         # if best_succ.ID//100000 != best_pre.ID//100000:
                         #     print("wrong matching!")
                         try:
@@ -162,25 +154,15 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
                 if root.gone and root.tail_time < left - IDLE_TIME:
                     # print("root's tail time: {:.2f}, current time window: {:.2f}-{:.2f}".format(root.tail_time, left, right))
                     path = P.pop_first_path()  
-                    print("write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
-                    # stitcher_logger.info("write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
+                    # print("write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
+                    stitcher_logger.info("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
                     stitched_trajectory_queue.put(path) # doesn't know ObjectId
-                    dbw.write_stitched_trajectory(fragment_ids = path)
+                    dbw.write_stitched_trajectory(thread = True, fragment_ids = path)
                 else: # break if first in cache is not timed out yet
                     break
             except StopIteration: # break if nothing in cache
                 break
-            
-        # num_roots = P.count() # number of roots
-        # num_cache = len(P.path)
-        # print("Number of roots: ", num_roots,num_cache)
-    
-    
-    # print("Total stitched trajectories: ", num_roots)
-    # P.print_cache()
-    # all_paths = P.get_all_paths("ID")
-    # print(all_paths)
-
+       
 
         
             

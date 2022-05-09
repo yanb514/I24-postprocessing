@@ -16,11 +16,14 @@ import time
 from db_reader import raw_data_feed # change to live_data_read later
 import db_parameters, parameters
 # import stitcher_parameters
-from I24_logging.log_writer import I24Logger
+from i24_logger.log_writer import logger
+# import i24_logger
+# i24_logger.log_writer.logger._name = "postprocess_manager"
 from stitcher import stitch_raw_trajectory_fragments
 import reconciliation
-import dummy_stitcher
 
+manager_logger = logger
+logger._name = "postprocess_manager"
 
 if __name__ == '__main__':
     print("Post-processing manager starting up.")
@@ -49,9 +52,12 @@ if __name__ == '__main__':
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     # log_message_queue = mp_manager.Queue(maxsize=parameters.LOG_MESSAGE_QUEUE_SIZE)
     # manager_logger = I24Logger(owner_process_name = "postprocessing_manager",
-    #                            connect_console=True,
-    #                            connect_file = True)
+    #                             connect_console=True,
+    #                             connect_file = True)
+    
 
+    # manager_logger = i24_logger.log_writer.logger
+    
     # PID tracker is a single dictionary of format {processName: PID}
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     pid_tracker = mp_manager.dict()
@@ -86,8 +92,8 @@ if __name__ == '__main__':
                                            ("west", raw_fragment_queue_w, stitched_trajectory_queue,)),
                            # 'dummy_stitcher': (dummy_stitcher.dummy_stitcher,
                            #                    ("west", raw_fragment_queue_w, stitched_trajectory_queue,)),
-                            'reconciliation': (reconciliation.reconciliation_pool,
-                                                (stitched_trajectory_queue, pid_tracker,)),
+                            # 'reconciliation': (reconciliation.reconciliation_pool,
+                            #                     (stitched_trajectory_queue, pid_tracker,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.
@@ -97,8 +103,8 @@ if __name__ == '__main__':
     # Start all processes for the first time and put references to those processes in `subsystem_process_objects`
     # manager_logger.info("Post-process manager beginning to spawn processes")
     for process_name, (process_function, process_args) in processes_to_spawn.items():
-        # manager_logger.info("Post-process manager spawning {}, {}, {}".format(process_name, process_function, process_args))
-        print("Post-process manager spawning {}".format(process_name))
+        manager_logger.info("Post-process manager spawning {}".format(process_name))
+        # print("Post-process manager spawning {}".format(process_name))
         # Start up each process.
         # Can't make these subsystems daemon processes because they will have their own children; we'll use a
         # different method of cleaning up child processes on exit.
@@ -127,7 +133,7 @@ if __name__ == '__main__':
                     # Process has died. Let's restart it.
                     # Copy its name out of the existing process object for lookup and restart.
                     process_name = child_process.name
-                    # manager_logger.warning("Restarting process: {}".format(process_name), extra = {})
+                    manager_logger.warning("Restarting process: {}".format(process_name))
                     print("Restarting process: {}".format(process_name))
                     # Get the function handle and function arguments to spawn this process again.
                     process_function, process_args = processes_to_spawn[process_name]
@@ -145,4 +151,4 @@ if __name__ == '__main__':
         # shut down the whole AI-DSS with its child processes.
         for pid_name, pid_val in pid_tracker.items():
             os.kill(pid_val, signal.SIGKILL)
-            # manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
+            manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))

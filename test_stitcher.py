@@ -6,10 +6,10 @@ Created on Mon Apr 18 11:26:36 2022
 @author: yanbing_wang
 """
 from db_reader import DBReader
-from db_writer import DBWriter
 import db_parameters
 from stitcher import stitch_raw_trajectory_fragments
 import queue
+import matplotlib.pyplot as plt
 
 # %% Fill queue once 
 raw = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
@@ -17,20 +17,22 @@ raw = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT,
                database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
 
 gt = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-               password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, collection_name=db_parameters.GT_COLLECTION)
+                password=db_parameters.DEFAULT_PASSWORD,
+                database_name=db_parameters.DB_NAME, collection_name=db_parameters.GT_COLLECTION)
 
-gt_ids = [1,2,4]
+gt_ids = [1,2,3,4]
 fragment_ids = []
 gt_res = gt.read_query(query_filter = {"ID": {"$in": gt_ids}},
-                       limit = 0)
+                        limit = 0)
 
 for gt_doc in gt_res:
     print(gt_doc["ID"])
     fragment_ids.extend(gt_doc["fragment_ids"])
 
 raw_res = raw.read_query(query_filter = {"_id": {"$in": fragment_ids}},
-                         query_sort = [("last_timestamp", "ASC")])
+                          query_sort = [("last_timestamp", "ASC")])
+# raw_res = raw.read_query(query_filter = {"$and":[ {"last_timestamp": {"$gt": 600}}, {"ending_x": {"$gt": 25000}}]},
+#                          query_sort = [("last_timestamp", "ASC")])
 
 fragment_queue = queue.Queue()
 for doc in raw_res:
@@ -41,21 +43,27 @@ fragment_size = fragment_queue.qsize()
 print("Queue size: ", fragment_size)
 
 # % plot fragment_queue
-# import matplotlib.pyplot as plt
 # plt.figure()
 # while not fragment_queue.empty():
 #     doc = fragment_queue.get()
-#     if doc["ID"] in [100165, 100166]:
-#         print(doc["ID"],len(doc["timestamp"]))
-#         plt.scatter(doc["timestamp"], doc["x_position"], s=0.01)
+#     plt.scatter(doc["first_timestamp"], doc["starting_x"], s=0.01)
+#     plt.scatter(doc["last_timestamp"], doc["ending_x"], s=0.01)
     
 # %% Run stitcher with a pre-filled queue
 stitched_trajectories_queue = queue.Queue()
-stitch_raw_trajectory_fragments("west", fragment_queue, stitched_trajectories_queue)
+fgmt_count, tail_time, process_time, cache_size= stitch_raw_trajectory_fragments("west", fragment_queue, stitched_trajectories_queue)
 stitched = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                password=db_parameters.DEFAULT_PASSWORD,
                database_name=db_parameters.DB_NAME, collection_name=db_parameters.STITCHED_COLLECTION)
 
+# plt.figure()
+# plt.scatter(tail_time, process_time, s= 1, label = "process time")
+# plt.xlabel("Duration of raw data (sec)")
+# plt.ylabel("Total processing time (sec)")
+# plt.figure()
+# plt.scatter(range(fgmt_count), cache_size, s= 1, label = "cache size")
+# plt.xlabel("# fragments processed")
+# plt.ylabel("# fragments in memory")
 #%%
 print("{} fragments stitched to {} trajectories".format(fragment_size,stitched_trajectories_queue.qsize()))
 
