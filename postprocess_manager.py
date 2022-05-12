@@ -10,20 +10,13 @@ Spawns and manages child processes for trajectory fragment stitching and traject
 import multiprocessing as mp
 import os
 import signal
-
-# TODO: do this within-package import correctly
 import time
-from db_reader import raw_data_feed # change to live_data_read later
-import db_parameters, parameters
-# import stitcher_parameters
+from live_data_feed import live_data_reader # change to live_data_read later
+from config import parameters
 from i24_logger.log_writer import logger
-# import i24_logger
-# i24_logger.log_writer.logger._name = "postprocess_manager"
 from stitcher import stitch_raw_trajectory_fragments
 import reconciliation
 
-manager_logger = logger
-logger._name = "postprocess_manager"
 
 if __name__ == '__main__':
     print("Post-processing manager starting up.")
@@ -80,18 +73,26 @@ if __name__ == '__main__':
                           #                    stitcher_parameters.RANGE_INCREMENT,
                           #                    raw_fragment_queue_e,
                           #                    "east",)),
-                          'raw_data_feed_w': (raw_data_feed,
-                                            (db_parameters.DB_NAME, 
-                                             db_parameters.RAW_COLLECTION, 
-                                             parameters.RANGE_INCREMENT,
-                                             raw_fragment_queue_w,
-                                             "west",)),
+                          # 'raw_data_feed_w': (raw_data_feed,
+                          #                   (db_parameters.DB_NAME, 
+                          #                    db_parameters.RAW_COLLECTION, 
+                          #                    parameters.RANGE_INCREMENT,
+                          #                    raw_fragment_queue_w,
+                          #                    "west",)),
+                          "live_data_reader_w": (live_data_reader,
+                                                 )
+                          live_data_reader(parameters.DEFAULT_HOST, parameters.DEFAULT_PORT, parameters.READONLY_USER,   
+                                     parameters.DEFAULT_PASSWORD,
+                                     parameters.DB_NAME, parameters.RAW_COLLECTION, 
+                                     range_increment=parameters.RANGE_INCREMENT, 
+                                     direction="west",
+                                     raw_fragment_queue_w, 
+                                     t_buffer = 0, min_queue_size = 10)
+                          
                           # 'stitcher_e': (stitch_raw_trajectory_fragments,
                           #                ("east", raw_fragment_queue_e, stitched_trajectory_queue,)),
                             'stitcher_w': (stitch_raw_trajectory_fragments,
                                            ("west", raw_fragment_queue_w, stitched_trajectory_queue,)),
-                           # 'dummy_stitcher': (dummy_stitcher.dummy_stitcher,
-                           #                    ("west", raw_fragment_queue_w, stitched_trajectory_queue,)),
                             # 'reconciliation': (reconciliation.reconciliation_pool,
                             #                     (stitched_trajectory_queue, pid_tracker,)),
                           }

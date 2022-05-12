@@ -4,6 +4,7 @@ from db_writer import DBWriter
 import pymongo
 import time
 import queue
+
 # %% Test connection Done
 dbr = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
                password=db_parameters.DEFAULT_PASSWORD,

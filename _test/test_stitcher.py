@@ -5,20 +5,29 @@ Created on Mon Apr 18 11:26:36 2022
 
 @author: yanbing_wang
 """
-from db_reader import DBReader
-import db_parameters
-from stitcher import stitch_raw_trajectory_fragments
+import os
+import sys
 import queue
-import matplotlib.pyplot as plt
+from i24_database_api.db_reader import DBReader
+from i24_configparse.parse import parse_cfg
+sys.path.append('../')
+from stitcher import stitch_raw_trajectory_fragments
+
+# import matplotlib.pyplot as plt
+cwd = os.getcwd()
+cfg = "../config"
+config_path = os.path.join(cwd,cfg)
+os.environ["user_config_directory"] = config_path
+parameters = parse_cfg("DEFAULT", cfg_name = "test_param.config")
 
 # %% Fill queue once 
-raw = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-               password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
+raw = DBReader(host=parameters.default_host, port=parameters.default_port, username=parameters.readonly_user,   
+               password=parameters.default_password,
+               database_name=parameters.db_name, collection_name=parameters.raw_collection)
 
-gt = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-                password=db_parameters.DEFAULT_PASSWORD,
-                database_name=db_parameters.DB_NAME, collection_name=db_parameters.GT_COLLECTION)
+gt = DBReader(host=parameters.default_host, port=parameters.default_port, username=parameters.readonly_user,   
+                password=parameters.default_password,
+                database_name=parameters.db_name, collection_name=parameters.gt_collection)
 
 gt_ids = [1,2,3,4]
 fragment_ids = []
@@ -51,10 +60,10 @@ print("Queue size: ", fragment_size)
     
 # %% Run stitcher with a pre-filled queue
 stitched_trajectories_queue = queue.Queue()
-fgmt_count, tail_time, process_time, cache_size= stitch_raw_trajectory_fragments("west", fragment_queue, stitched_trajectories_queue)
-stitched = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-               password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, collection_name=db_parameters.STITCHED_COLLECTION)
+stitch_raw_trajectory_fragments("west", fragment_queue, stitched_trajectories_queue)
+stitched = DBReader(host=parameters.DEFAULT_HOST, port=parameters.DEFAULT_PORT, username=parameters.READONLY_USER,   
+               password=parameters.DEFAULT_PASSWORD,
+               database_name=parameters.DB_NAME, collection_name=parameters.STITCHED_COLLECTION)
 
 # plt.figure()
 # plt.scatter(tail_time, process_time, s= 1, label = "process time")

@@ -6,22 +6,15 @@ written to the database.
 """
 
 # -----------------------------
-import db_parameters, parameters
+import os
 from i24_logger.log_writer import logger 
-from db_writer import DBWriter 
+from i24_database_api.db_writer import DBWriter
 from collections import deque
 from utils.stitcher_module import min_nll_cost
 from utils.data_structures import Fragment, PathCache
 import time
-# import sys
+from i24_configparse.parse import parse_cfg
 
-# helper functions
-def _first(dict):
-    try:
-        key,val = next(iter(dict.items()))
-        return key, val
-    except StopIteration:
-        raise StopIteration
 
 
 def stitch_raw_trajectory_fragments(direction, fragment_queue,
@@ -48,29 +41,17 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
     P = PathCache() # an LRU cache of Fragment object (see utils.data_structures)
 
     # Make a database connection for writing
-    dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-                   password=db_parameters.DEFAULT_PASSWORD,
-                   database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
-
+    dbw = DBWriter(host=parameters.DEFAULT_HOST, port=parameters.DEFAULT_PORT, 
+                   username=parameters.DEFAULT_USERNAME, password=parameters.DEFAULT_PASSWORD,
+                   database_name=parameters.DB_NAME, collection_name = parameters.STITCHED_COLLECTION, 
+                   server_id=1, process_name=1, process_id=1, session_config_id=1, 
+                   collection_schema=db_schema.STITCHED_SCHEMA)
+    
     stitcher_logger.info("** Stitching starts. fragment_queue size: {}".format(fragment_queue.qsize()),extra = None)
 
-    # For benchmark run time
-    fgmt_count = 0
-    t_start = time.time()
-    tail_time = []
-    process_time = []
-    cache_size = []
+
     while True:
-        try:
-            fragment = Fragment(fragment_queue.get(block = False)) # make object
-            fgmt_count += 1
-            tail_time.append(fragment.last_timestamp)
-            process_time.append(time.time()-t_start)
-            cache_size.append(len(P.path))
-            if fgmt_count % 100 == 0:
-                stitcher_logger.info("Processed {} fragments, in cache: {}".format(fgmt_count, len(P.path)))
-        except:
-            return fgmt_count, [t-tail_time[0] for t in tail_time], process_time,cache_size
+        fragment = Fragment(fragment_queue.get(block = False)) # make object
         
         fragment.curr = True
         P.add_node(fragment)
@@ -80,7 +61,8 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
         left = min(fragment.first_timestamp, right - TIME_WIN)
         
         # compute fragment statistics (1d motion model)
-        fragment.compute_stats()
+        # TODO: abstract this step in Fragment object during construction
+        # fragment.compute_stats()
         
         # remove out of sight fragments 
         # if len(curr_fragments) > 0:
@@ -122,7 +104,7 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
 
                     # if best_pre.id == ready.id and best_pre.id not in ready.conflicts_with:
                     if best_pre.id == ready.id:
-                        # stitcher_logger.info("** match tail of {} to head of {}".format(int(best_pre.ID), int(best_succ.ID)), extra = None)
+                        stitcher_logger.info("** match tail of {} to head of {}".format(int(best_pre.ID), int(best_succ.ID)), extra = None)
                         # print("** match tail of {} to head of {}".format(int(best_pre.ID), int(best_succ.ID)))
                         # if best_succ.ID//100000 != best_pre.ID//100000:
                         #     print("wrong matching!")
@@ -157,7 +139,7 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
                     # print("write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
                     stitcher_logger.info("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
                     stitched_trajectory_queue.put(path) # doesn't know ObjectId
-                    dbw.write_stitched_trajectory(thread = True, fragment_ids = path)
+                    dbw.write_one_trajectory(thread = True, fragment_ids = path)
                 else: # break if first in cache is not timed out yet
                     break
             except StopIteration: # break if nothing in cache

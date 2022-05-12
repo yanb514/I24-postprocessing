@@ -1,7 +1,5 @@
 import heapq
 import numpy as np
-#from time import sleep
-import parameters
 
 class Node:
     '''
@@ -29,7 +27,8 @@ class Node:
             except:
                 return 'Sentinel Node'
     
-# Create the doubly linked list class
+    
+# Create a sorted doubly linked list class
 class SortedDLL:
     '''
     Sorted dll by a specified node's attribute
@@ -211,12 +210,12 @@ class Fragment(Node):
         
         self.suc = [] # tail matches to [(cost, Fragment_obj)] - minheap
         self.pre = [] # head matches to [(cost, Fragment_obj)] - minheap
-        self.conflicts_with = set() # keep track of conflicts - bi-directional
+        # self.conflicts_with = set() # keep track of conflicts - bi-directional
         # self.ready = False # if tail is ready to be matched
     
-        self.child = None # for printing path from root 
-        self.root = self # 
-        self.parent = None
+        self.child = None # its immediate successor
+        self.root = self # the first fragment in its path
+        self.parent = None # its immediate predecessor
         self.tail_matched = False # flip to true when its tail matches to another fragment's head
         self.head_matched = False
         
@@ -224,45 +223,52 @@ class Fragment(Node):
         self.curr = False # in current view of time window?
         self.past = False # in left time window and tail is ready to be matched?
         self.gone = False # left past view because already matched or no match exists, ready to be popped out
-            
+         
+        time_series = ["timestamp", "x_position", "y_position"]
         if traj_doc: 
             # delete the unnucessary fields in traj_doc
+            field_names = ["_id", "ID","timestamp","x_position","y_position","direction","last_timestamp","last_timestamp", "first_timestamp"]
+            attr_names = ["id","ID","t","x","y","dir","tail_time","last_timestamp","first_timestamp"]
+            
             try:
-                unwanted = set(traj_doc.keys()) - set(parameters.WANTED_DOC_FIELDS)
+                unwanted = set(traj_doc.keys()) - set(field_names)
                 for unwanted_key in unwanted: 
                     try: del traj_doc[unwanted_key]
                     except: pass
             except:
                 pass
             
-            field_names = parameters.WANTED_DOC_FIELDS
-            attr_names = parameters.FRAGMENT_ATTRIBUTES
             for i in range(len(field_names)): # set as many attributes as possible
                 try: 
-                    if field_names[i] == "_id":
+                    if field_names[i] == "_id": # cast bson ObjectId type to str
                         setattr(self, attr_names[i], str(traj_doc[field_names[i]]))
-                    else:
+                    elif field_names[i] not in time_series:
                         setattr(self, attr_names[i], traj_doc[field_names[i]])
                 except: pass
-                
-            # TODO: parameters needs to change if unit conversion. convert x/y_position from feet to meter
-            try:
-                self.x = np.array(self.x)*0.3048
-                self.y = np.array(self.y)*0.3048
-            except:
-                pass
             super().__init__(None)
+            
+            # calculate regression fit based on time-series
+            np_time_series = []
+            for signal in time_series:
+                if signal == "timestamp":
+                    np_time_series.append(np.array(traj_doc[signal]))
+                else:
+                    # TODO: parameters needs to change if unit conversion. convert x/y_position from feet to meter
+                    np_time_series.append(np.array(traj_doc[signal])*0.3048)
+
+            # print(np_time_series)
+            t,x,y = np_time_series
+            self._compute_stats(t, x, y)
+                
+                # try:
+                #     np_time_series = np.array(getattr(self, signal))
+                #     setattr(self, signal, np_time_series)
+                # except:
+                #     pass
             
         else:
             super().__init__(traj_doc)
         
-        # cast time series to np array
-        for time_series in ["t", "x", "y"]:
-            try:
-                np_time_series = np.array(getattr(self, time_series))
-                setattr(self, time_series, np_time_series)
-            except:
-                pass
         
         
     def __repr__(self):
@@ -270,13 +276,18 @@ class Fragment(Node):
             return 'Fragment({!r})'.format(self.ID)
         except:
             return 'Fragment({!r})'.format(self.id)
-    
-    def compute_stats(self):
+        
+    # def __del__(self):
+    #     '''
+    #     TODO: destroy this object and all reference to it at once?
+    #     '''
+    #     pass
+        
+    def _compute_stats(self, t, x, y):
         '''
         compute statistics for matching cost
         based on linear vehicle motion (least squares fit constant velocity)
         '''
-        t,x,y = self.t, self.x, self.y
         ct = np.nanmean(t)
         if len(t)<2:
             v = 30 * self.dir # assume 30m/s
@@ -290,6 +301,26 @@ class Fragment(Node):
         self.fitx = fitx
         self.fity = fity
         return
+    
+    # def compute_stats(self):
+    #     '''
+    #     compute statistics for matching cost
+    #     based on linear vehicle motion (least squares fit constant velocity)
+    #     '''
+    #     t,x,y = self.t, self.x, self.y
+    #     ct = np.nanmean(t)
+    #     if len(t)<2:
+    #         v = 30 * self.dir # assume 30m/s
+    #         b = x-v*ct # recalculate y-intercept
+    #         fitx = np.array([v,b[0]])
+    #         fity = np.array([0,y[0]])
+    #     else:
+    #         xx = np.vstack([t,np.ones(len(t))]).T # N x 2
+    #         fitx = np.linalg.lstsq(xx,x, rcond=None)[0]
+    #         fity = np.linalg.lstsq(xx,y, rcond=None)[0]
+    #     self.fitx = fitx
+    #     self.fity = fity
+    #     return
 
     # add successor to fragment with matching cost
     def add_suc(self, cost, fragment):
@@ -319,41 +350,14 @@ class Fragment(Node):
         try: pre = self.pre[0][1]
         except: pre = None
         return pre
-       
-    # add bi-directional conflicts
-    # def add_conflict(self, fragment):
-    #     if fragment.id: # only add if fragment is valid (not out of view)
-    #         self.conflicts_with.add(fragment)
-    #         fragment.conflicts_with.add(self)
-    #     return
     
     # union conflicted neighbors, set head's pre to [], delete self
     @classmethod
     def match_tail_head(cls, u,v):
-        # by the call, u = v._getFirstPre and u._getFirstSuc = v
-        # match u's tail to v's head
-        # 1. add u's conflicts to v -> contagious conflicts!
-        # nei_u = u.conflicts_with
-        # nei_v = v.conflicts_with     
-        # u_v = nei_u-nei_v
-        # for w in u_v:
-        #     v.add_conflict(w)      
-            
-        # 2. remove all u's succ from u -> remove all from v's pre
-        # 4/13/22 modified from v.pre = None to heapq.heappop(v.pre), because v's head can still be matched to others
-        #TODO: not tested
-        # heapq.heappop(v.pre)
         v.pre = [] # v's head cannot be matched again
-        
-        # 3. delete u 
-        # 4/16/22 modifed from u.delete() to u.tail_matched = True. Reason: only delete when path_cache.popFirstPath(), to prevent data loss
-        # TODO: not tested
-        # u.delete()
-        # heapq.heappop(u.suc)
         u.suc = [] # u's tail cannot be matched again
         u.tail_matched = True
         v.head_matched = True
-        
         return
 
         
