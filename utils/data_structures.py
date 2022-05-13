@@ -224,7 +224,7 @@ class Fragment(Node):
         self.past = False # in left time window and tail is ready to be matched?
         self.gone = False # left past view because already matched or no match exists, ready to be popped out
          
-        time_series = ["timestamp", "x_position", "y_position"]
+        # time_series = ["timestamp", "x_position", "y_position"]
         if traj_doc: 
             # delete the unnucessary fields in traj_doc
             field_names = ["_id", "ID","timestamp","x_position","y_position","direction","last_timestamp","last_timestamp", "first_timestamp"]
@@ -242,29 +242,18 @@ class Fragment(Node):
                 try: 
                     if field_names[i] == "_id": # cast bson ObjectId type to str
                         setattr(self, attr_names[i], str(traj_doc[field_names[i]]))
-                    elif field_names[i] not in time_series:
+                    else:
                         setattr(self, attr_names[i], traj_doc[field_names[i]])
                 except: pass
             super().__init__(None)
             
-            # calculate regression fit based on time-series
-            np_time_series = []
-            for signal in time_series:
-                if signal == "timestamp":
-                    np_time_series.append(np.array(traj_doc[signal]))
-                else:
-                    # TODO: parameters needs to change if unit conversion. convert x/y_position from feet to meter
-                    np_time_series.append(np.array(traj_doc[signal])*0.3048)
 
-            # print(np_time_series)
-            t,x,y = np_time_series
-            self._compute_stats(t, x, y)
-                
-                # try:
-                #     np_time_series = np.array(getattr(self, signal))
-                #     setattr(self, signal, np_time_series)
-                # except:
-                #     pass
+            try:
+                setattr(self, "x", np.array(self.x)*0.3048)
+                setattr(self, "y", np.array(self.y)*0.3048)
+                setattr(self, "t", np.array(self.t))
+            except:
+                pass
             
         else:
             super().__init__(traj_doc)
@@ -282,12 +271,14 @@ class Fragment(Node):
     #     TODO: destroy this object and all reference to it at once?
     #     '''
     #     pass
-        
-    def _compute_stats(self, t, x, y):
+
+    
+    def compute_stats(self):
         '''
         compute statistics for matching cost
         based on linear vehicle motion (least squares fit constant velocity)
         '''
+        t,x,y = self.t, self.x, self.y
         ct = np.nanmean(t)
         if len(t)<2:
             v = 30 * self.dir # assume 30m/s
@@ -301,26 +292,6 @@ class Fragment(Node):
         self.fitx = fitx
         self.fity = fity
         return
-    
-    # def compute_stats(self):
-    #     '''
-    #     compute statistics for matching cost
-    #     based on linear vehicle motion (least squares fit constant velocity)
-    #     '''
-    #     t,x,y = self.t, self.x, self.y
-    #     ct = np.nanmean(t)
-    #     if len(t)<2:
-    #         v = 30 * self.dir # assume 30m/s
-    #         b = x-v*ct # recalculate y-intercept
-    #         fitx = np.array([v,b[0]])
-    #         fity = np.array([0,y[0]])
-    #     else:
-    #         xx = np.vstack([t,np.ones(len(t))]).T # N x 2
-    #         fitx = np.linalg.lstsq(xx,x, rcond=None)[0]
-    #         fity = np.linalg.lstsq(xx,y, rcond=None)[0]
-    #     self.fitx = fitx
-    #     self.fity = fity
-    #     return
 
     # add successor to fragment with matching cost
     def add_suc(self, cost, fragment):

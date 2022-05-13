@@ -6,31 +6,41 @@ Created on Tue May  3 15:45:58 2022
 @author: yanbing_wang
 """
 
-import parameters, db_parameters
-from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments
-from db_reader import DBReader
-from db_writer import DBWriter
+import time
+import os
 import queue
 import matplotlib.pyplot as plt
-import time
+from i24_logger.log_writer import logger
+reconciliation_logger = logger
+from i24_database_api.db_writer import DBWriter
+from i24_database_api.db_reader import DBReader
+from i24_configparse.parse import parse_cfg
+import sys
+sys.path.append('../')
+from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments
+
+cwd = os.getcwd()
+cfg = "../config"
+config_path = os.path.join(cwd,cfg)
+os.environ["user_config_directory"] = config_path
+parameters = parse_cfg("TEST", cfg_name = "test_param.config")
 
 #%%
-reconciliation_args = {
-                        "lam2_x": parameters.LAM2_X,
-                        "lam2_y": parameters.LAM2_Y,
-                        # "lam1_x": parameters.LAM1_X, 
-                       # "lam1_y": parameters.LAM1_Y,
-                       "PH": parameters.PH ,
-                       "IH": parameters.IH}
+reconciliation_args = {"lam2_x": parameters.lam2_x,
+                       "lam2_y": parameters.lam2_y,
+                       # "lam1_x": parameters.lam1_x, 
+                       # "lam1_y": parameters.lam1_y,
+                       "PH": parameters.ph,
+                       "IH": parameters.ih}
 
 # already stitched fragments
-raw = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-               password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
+raw = DBReader(host=parameters.default_host, port=parameters.default_port, 
+            username=parameters.readonly_user, password=parameters.default_password,
+            database_name=parameters.db_name, collection_name=parameters.raw_collection)
 
-gt = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-               password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, collection_name=db_parameters.GT_COLLECTION)
+gt = DBReader(host=parameters.default_host, port=parameters.default_port, 
+            username=parameters.readonly_user, password=parameters.default_password,
+            database_name=parameters.db_name, collection_name=parameters.gt_collection)
 
 gt_ids = [1,2]
 fragment_ids = []
@@ -44,38 +54,54 @@ for gt_doc in gt_res:
     stitched_queue.put(stitched_doc)
 print("Queue size: ", stitched_queue.qsize())
 
+dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
+           username=parameters.default_username, password=parameters.default_password,
+           database_name=parameters.db_name, collection_name = parameters.reconciled_collection, 
+           server_id=1, process_name=1, process_id=1, session_config_id=1, 
+           schema_file=parameters.reconciled_schema_path)
 
 # %% start reconciliation worker
-i = 0
-while i < 5:
-    i += 1
+
+while True:
+
+    try:
+        next_to_reconcile = stitched_queue.get(block=False)
+    except:
+        break
     plt.figure()
-    next_to_reconcile = stitched_queue.get(block=False)
-
-    # t0 = time.time()
+    
+    t0 = time.time()
     combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)
-    # t1 = time.time()
     plt.scatter(combined_trajectory["timestamp"],combined_trajectory["x_position"], s=0.1, label = "raw")
-    print(len(combined_trajectory["timestamp"]))
-    resampled_trajectory = resample(next_to_reconcile)
-    # t2 = time.time()
-
+    
+    t1 = time.time()
+    resampled_trajectory = resample(combined_trajectory)
     plt.scatter(resampled_trajectory["timestamp"],resampled_trajectory["x_position"], s=1, label = "resampled")
-    print(len(resampled_trajectory["timestamp"]))
+    
+    t2 = time.time()
     finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
-    # t3 = time.time()
-
     plt.scatter(finished_trajectory["timestamp"],finished_trajectory["x_position"], s=0.5, label = "rectified")
     plt.legend()
-    # print("combine: {:.2f}, resample: {:.2f}, rectify: {:.2f}".format(t1-t0, t2-t1, t3-t2))
+    
+    t3 = time.time()
+    dbw.write_one_trajectory(**finished_trajectory)
+    
+    print("combine: {:.2f}, resample: {:.2f}, rectify: {:.2f}".format(t1-t0, t2-t1, t3-t2))
     
 #%% examin stitched_trajectories collection
-dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-               password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
+dbw = dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
+                username=parameters.default_username, password=parameters.default_password,
+                database_name=parameters.db_name, collection_name=parameters.reconciled_collection,
+                server_id=1, process_name=1, process_id=1, session_config_id=1, schema_file=None)
 
 stitched = dbw.db["stitched_trajectories"]
 reconciled = dbw.db["reconciled_trajectories"]
 print(stitched.count_documents({}), reconciled.count_documents({}))
-stitched.drop()
-reconciled.drop()
+# stitched.drop()
+# reconciled.drop()
+
+
+
+
+
+

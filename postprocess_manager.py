@@ -12,48 +12,46 @@ import os
 import signal
 import time
 from live_data_feed import live_data_reader # change to live_data_read later
-from config import parameters
-from i24_logger.log_writer import logger
+from i24_logger.log_writer import logger as manager_logger
+from i24_configparse.parse import parse_cfg
 from stitcher import stitch_raw_trajectory_fragments
 import reconciliation
 
+config_path = os.path.join(os.getcwd(),"./config")
+os.environ["user_config_directory"] = config_path
+parameters = parse_cfg("DEBUG", cfg_name = "test_param.config")
 
 if __name__ == '__main__':
-    print("Post-processing manager starting up.")
-    manager_PID = os.getpid()
-    print("Post-processing manager has PID={}".format(manager_PID))
+    
+    # CHANGE NAME OF THE LOGGER
+    setattr(manager_logger, "_name", "manager")
+    setattr(manager_logger, "_default_logger_extra",  {})
     mp_manager = mp.Manager()
+    manager_logger.info("Post-processing manager starting up.")
+    manager_PID = os.getpid()
+    manager_logger.info("Post-processing manager has PID={}".format(manager_PID))
 
     # SHARED DATA STRUCTURES
     # ----------------------------------
     # ----------------------------------
     print("Post-processing manager creating shared data structures")
+    
+    
     # Raw trajectory fragment queue
     # -- populated by database connector that listens for updates
-    # TODO: specify the format of raw data as it will be stored in the queue (JSON, dict, etc?)
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    raw_fragment_queue_e = mp_manager.Queue(maxsize=parameters.RAW_TRAJECTORY_QUEUE_SIZE) # east direction
-    raw_fragment_queue_w = mp_manager.Queue(maxsize=parameters.RAW_TRAJECTORY_QUEUE_SIZE) # west direction
+    raw_fragment_queue_e = mp_manager.Queue(maxsize=parameters.raw_trajectory_queue_size) # east direction
+    raw_fragment_queue_w = mp_manager.Queue(maxsize=parameters.raw_trajectory_queue_size) # west direction
+    
     # Stitched trajectory queue
     # -- populated by stitcher and consumed by reconciliation pool
-    # TODO: specify the format of raw data as it will be stored in the queue
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    stitched_trajectory_queue = mp_manager.Queue(maxsize=parameters.STITCHED_TRAJECTORY_QUEUE_SIZE)
-
-    # Log message queue
-    # -- populated by all processes and consumed by log handler
-    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    # log_message_queue = mp_manager.Queue(maxsize=parameters.LOG_MESSAGE_QUEUE_SIZE)
-    # manager_logger = I24Logger(owner_process_name = "postprocessing_manager",
-    #                             connect_console=True,
-    #                             connect_file = True)
-    
-
-    # manager_logger = i24_logger.log_writer.logger
+    stitched_trajectory_queue = mp_manager.Queue(maxsize=parameters.stitched_trajectory_queue_size)
     
     # PID tracker is a single dictionary of format {processName: PID}
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     pid_tracker = mp_manager.dict()
+    
 
 #%%
     # ASSISTANT/CHILD PROCESSES
@@ -67,34 +65,28 @@ if __name__ == '__main__':
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {
-                          # 'raw_data_feed_e': (raw_data_feed,
-                          #                   (db_parameters.DB_NAME, 
-                          #                    db_parameters.RAW_COLLECTION, 
-                          #                    stitcher_parameters.RANGE_INCREMENT,
-                          #                    raw_fragment_queue_e,
-                          #                    "east",)),
-                          # 'raw_data_feed_w': (raw_data_feed,
-                          #                   (db_parameters.DB_NAME, 
-                          #                    db_parameters.RAW_COLLECTION, 
-                          #                    parameters.RANGE_INCREMENT,
-                          #                    raw_fragment_queue_w,
-                          #                    "west",)),
-                          "live_data_reader_w": (live_data_reader,
-                                                 )
-                          live_data_reader(parameters.DEFAULT_HOST, parameters.DEFAULT_PORT, parameters.READONLY_USER,   
-                                     parameters.DEFAULT_PASSWORD,
-                                     parameters.DB_NAME, parameters.RAW_COLLECTION, 
-                                     range_increment=parameters.RANGE_INCREMENT, 
-                                     direction="west",
-                                     raw_fragment_queue_w, 
-                                     t_buffer = 0, min_queue_size = 10)
-                          
-                          # 'stitcher_e': (stitch_raw_trajectory_fragments,
-                          #                ("east", raw_fragment_queue_e, stitched_trajectory_queue,)),
-                            'stitcher_w': (stitch_raw_trajectory_fragments,
-                                           ("west", raw_fragment_queue_w, stitched_trajectory_queue,)),
-                            # 'reconciliation': (reconciliation.reconciliation_pool,
-                            #                     (stitched_trajectory_queue, pid_tracker,)),
+                            "live_data_reader_e": (live_data_reader,
+                                       (parameters.default_host, parameters.default_port, 
+                                        parameters.readonly_user, parameters.default_password,
+                                        parameters.db_name, parameters.raw_collection, 
+                                        parameters.range_increment, "east",
+                                        raw_fragment_queue_e, 
+                                        parameters.buffer_time, parameters.min_queue_size,)),
+                            "live_data_reader_w": (live_data_reader,
+                                         (parameters.default_host, parameters.default_port, 
+                                          parameters.readonly_user, parameters.default_password,
+                                          parameters.db_name, parameters.raw_collection, 
+                                          parameters.range_increment, "west",
+                                          raw_fragment_queue_w, 
+                                          parameters.buffer_time, parameters.min_queue_size,)),
+                            "stitcher_e": (stitch_raw_trajectory_fragments,
+                                           ("east", raw_fragment_queue_e, stitched_trajectory_queue,
+                                            parameters, )),
+                            "stitcher_w": (stitch_raw_trajectory_fragments,
+                                           ("west", raw_fragment_queue_w, stitched_trajectory_queue,
+                                            parameters, )),
+                            "reconciliation": (reconciliation.reconciliation_pool,
+                                        (stitched_trajectory_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.

@@ -7,33 +7,43 @@ __doc__ = """
 # -----------------------------
 import multiprocessing
 from multiprocessing import Pool
-import parameters, db_parameters
-# from I24_logging.log_writer import I24Logger
-from db_writer import DBWriter
-from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d,combine_fragments
-import os
-import sys
-from db_reader import DBReader
-from i24_logger.log_writer import logger
-reconciliation_logger = logger
-
 import time
+import os
 
-reconciliation_args = {"lam2_x": parameters.LAM2_X,
-                       "lam2_y": parameters.LAM2_Y,
-                       # "lam1_x": parameters.LAM1_X, 
-                       # "lam1_y": parameters.LAM1_Y,
-                       "PH": parameters.PH,
-                       "IH": parameters.IH}
+from i24_logger.log_writer import logger
+from i24_database_api.db_writer import DBWriter
+from i24_database_api.db_reader import DBReader
+from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments
+from i24_configparse.parse import parse_cfg
+
+import warnings
+warnings.filterwarnings("ignore")
+
+config_path = os.path.join(os.getcwd(),"./config")
+os.environ["user_config_directory"] = config_path
+parameters = parse_cfg("DEBUG", cfg_name = "test_param.config")
 
 # initiate a dbw and dbr object
-dbw = DBWriter(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-               password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, server_id=1, process_name=1, process_id=1, session_config_id=1)
-raw = DBReader(host=db_parameters.DEFAULT_HOST, port=db_parameters.DEFAULT_PORT, username=db_parameters.DEFAULT_USERNAME,   
-               password=db_parameters.DEFAULT_PASSWORD,
-               database_name=db_parameters.DB_NAME, collection_name=db_parameters.RAW_COLLECTION)
+dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
+                username=parameters.default_username, password=parameters.default_password,
+                database_name=parameters.db_name, collection_name=parameters.reconciled_collection,
+                server_id=1, process_name=1, process_id=1, session_config_id=1, 
+                max_idle_time_ms = 20000, schema_file=parameters.reconciled_schema_path)
+raw = DBReader(host=parameters.default_host, port=parameters.default_port, 
+            username=parameters.readonly_user, password=parameters.default_password,
+            database_name=parameters.db_name, collection_name=parameters.raw_collection)
 
+reconciliation_args = {"lam2_x": parameters.lam2_x,
+                       "lam2_y": parameters.lam2_y,
+                       # "lam1_x": parameters.lam1_x, 
+                       # "lam1_y": parameters.lam1_y,
+                       "PH": parameters.ph,
+                       "IH": parameters.ih}
+
+reconciliation_logger = logger
+setattr(reconciliation_logger, "_default_logger_extra",  {})
+# reconciliation_logger.info("reconciliation raw: {}".format(id(raw)))
+# reconciliation_logger.info("reconciliation dbw: {}".format(id(dbw)))
 
 
 def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue) -> None:
@@ -44,40 +54,42 @@ def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue
     :return:
     """
     
-    # reconciliation_logger.put((logging.DEBUG, "Reconciling on trajectory {}.".format('0')))
-    # get the pid of current worker
-    # DO THE RECONCILIATION
-    # sys.stdout.flush()
-
+    # Establish db connections (# connections = # pool workers)
+    # reconciliation_logger.info("*** Reconciliation worker started", extra = None)
+    
+    # while True:
+        
     next_to_reconcile = stitched_trajectory_queue.get(block=True) # path list
     # print("...got next...")
-    reconciliation_logger.info("*** Got a stitched trajectory document.", extra = None)
+    # reconciliation_logger.info("*** 1. Got a stitched trajectory document.", extra = None)
     
     combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)
     # print("...combined...")
-    reconciliation_logger.info("*** Combined stitched fragments.", extra = None)
+    # reconciliation_logger.info("*** 2. Combined stitched fragments.", extra = None)
 
     resampled_trajectory = resample(combined_trajectory)
     # print("...resampled...")
-    reconciliation_logger.info("*** Resampled.", extra = None)
+    # reconciliation_logger.info("*** 3. Resampled.", extra = None)
     
     finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
     # print("...finished...")
-    reconciliation_logger.info("*** Reconciled a trajectory. duration = {:.2f}s.".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"]), extra = None)
-
-    # TODO: replace with schema validation in dbw before insert
-    finished_trajectory["timestamp"] = list(finished_trajectory["timestamp"])
-    finished_trajectory["x_position"] = list(finished_trajectory["x_position"])
-    finished_trajectory["y_position"] = list(finished_trajectory["y_position"])
-    
+    # reconciliation_logger.info("*** 4. Reconciled a trajectory. duration = {:.2f}s.".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"]), extra = None)
+   
     # print("writing to db...")
-    dbw.write_reconciled_trajectory(thread=True, **finished_trajectory)
+    dbw.write_one_trajectory(**finished_trajectory)
     # print("reconciled collection: ", dbw.db["reconciled_trajectories"].count_documents({}))
-    reconciliation_logger.info("*** write reconciled to database", extra = None)
+    reconciliation_logger.info("*** 5. Reconciliation worker writes to database", extra = None)
+    
+    # reconciliation_logger.info("reconciliation raw: {}".format(id(raw)))
+    # reconciliation_logger.info("reconciliation dbw: {}".format(id(dbw)))
+    
+    
+    
+    
 
 
 def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
-                         pid_tracker) -> None:
+                         ) -> None:
     """
     Start a multiprocessing pool, each worker 
     :param stitched_trajectory_queue: results from stitchers, shared by mp.manager
@@ -85,21 +97,12 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     :return:
     """
 
-    # print("** reconciliation starts...")
-    # initiate a logger object
-    # reconciliation_logger = I24Logger(owner_process_name = "reconciliation", connect_file=True, file_log_level='DEBUG', 
-    #                     owner_parent_name = "postprocessing_manager", connect_console=True, console_log_level='INFO')
+    worker_pool = Pool(processes=parameters.reconciliation_pool_size)
+    reconciliation_logger.info("** Reconciliation pool starts. Pool size: {}".format(parameters.reconciliation_pool_size), extra = None)
 
-    worker_pool = Pool(processes=parameters.RECONCILIATION_POOL_SIZE)
-    reconciliation_logger.info("** Reconciliation pool starts. Pool size: {}".format(parameters.RECONCILIATION_POOL_SIZE), extra = None)
-
-    while True:
+    while True: 
         worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
-        time.sleep(0.2) # put some throttle so that while waiting for a job this loop does run tooo fast
+        time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
 
 
-    
-# if __name__ == '__main__':
-#     print("no code to run")
-    
     

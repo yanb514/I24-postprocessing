@@ -41,9 +41,9 @@ def min_nll_cost(track1, track2, TIME_WIN, VARX, VARY):
     -1: invalid
     '''
     INF = 10e6
-    if track2.t[0] < track1.t[-1]: # if track2 starts before track1 ends
+    if track2.first_timestamp < track1.last_timestamp: # if track2 starts before track1 ends
         return INF
-    if track2.t[0] - track1.t[-1] > TIME_WIN: # if track2 starts TIME_WIN after track1 ends
+    if track2.first_timestamp - track1.last_timestamp > TIME_WIN: # if track2 starts TIME_WIN after track1 ends
         return -INF
     
     # predict from track1 forward to time of track2

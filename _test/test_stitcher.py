@@ -60,7 +60,7 @@ print("Queue size: ", fragment_size)
     
 # %% Run stitcher with a pre-filled queue
 stitched_trajectories_queue = queue.Queue()
-stitch_raw_trajectory_fragments("west", fragment_queue, stitched_trajectories_queue)
+stitch_raw_trajectory_fragments("west", fragment_queue, stitched_trajectories_queue,parameters)
 stitched = DBReader(host=parameters.DEFAULT_HOST, port=parameters.DEFAULT_PORT, username=parameters.READONLY_USER,   
                password=parameters.DEFAULT_PASSWORD,
                database_name=parameters.DB_NAME, collection_name=parameters.STITCHED_COLLECTION)
