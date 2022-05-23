@@ -5,7 +5,6 @@ Created on Sun May 21 15:17:59 2022
 
 @author: yanbing_wang
 """
-import networkx as nx
 import queue
 from collections import deque 
 from i24_database_api.db_reader import DBReader
@@ -13,11 +12,12 @@ from i24_database_api.db_writer import DBWriter
 import os
 from i24_configparse.parse import parse_cfg
 from utils.data_structures import Fragment, PathCache, MOT_Graph
+import time
 
 # TODO:
     # 1. check if the answers agree with nx.edmond_karp
     # 2. add more intelligent enter/exiting cost based on the direction and where they are relative to the road
-    
+    # 3. collapse path into human-readable ones, e.g., [1001, 1002, etc]
     
     
 def read_to_queue(parameters):
@@ -45,7 +45,7 @@ def read_to_queue(parameters):
     print("connected to stitched collection")
     
     # specify ground truth ids and the corresponding fragment ids
-    gt_ids = [7]
+    gt_ids = [1,2,3,4]
     fragment_ids = []
     gt_res = gt.read_query(query_filter = {"ID": {"$in": gt_ids}},
                             limit = 0)
@@ -53,12 +53,12 @@ def read_to_queue(parameters):
     for gt_doc in gt_res:
         fragment_ids.extend(gt_doc["fragment_ids"])
     
-    raw_res = raw.read_query(query_filter = {"_id": {"$in": fragment_ids}},
-                              query_sort = [("last_timestamp", "ASC")])
-    # raw_res = raw.read_query(query_filter = {"$and":[ {"last_timestamp": {"$gt": 545}}, 
-    #                                                   {"last_timestamp": {"$lt": 580}},
-    #                                                   {"_id": {"$in": fragment_ids}}]},
-                               # query_sort = [("last_timestamp", "ASC")])
+    # raw_res = raw.read_query(query_filter = {"_id": {"$in": fragment_ids}},
+    #                           query_sort = [("last_timestamp", "ASC")])
+    raw_res = raw.read_query(query_filter = {"$and":[ {"last_timestamp": {"$gt": 545}}, 
+                                                      {"last_timestamp": {"$lt": 620}},
+                                                      {"_id": {"$in": fragment_ids}}]},
+                                query_sort = [("last_timestamp", "ASC")])
     
     # write fragments to queue
     fragment_queue = queue.Queue()
@@ -76,7 +76,7 @@ def read_to_queue(parameters):
             
 
 
-def min_cost_flow_online(fragment_queue, parameters):
+def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
     '''
     iteratively solving a MCF problem on a smaller graph
     '''
@@ -84,58 +84,138 @@ def min_cost_flow_online(fragment_queue, parameters):
     
     # Get parameters
     TIME_WIN = parameters.time_win
-    VARX = parameters.varx
-    VARY = parameters.vary
-    THRESH = parameters.thresh
     IDLE_TIME = parameters.idle_time
     TIMEOUT = parameters.raw_trajectory_queue_get_timeout
+    ATTR_NAME = parameters.fragment_attr_name
     
     # Initialize some data structures
     curr_fragments = deque()  # fragments that are in current window (left, right), sorted by last_timestamp
     # past_fragments = dict()  # set of ids indicate end of fragment ready to be matched, insertion ordered
-    P = PathCache() # an LRU cache of Fragment object (see utils.data_structures)
-    m = MOT_Graph(parameters)
+    P = PathCache(attr_name = ATTR_NAME) # an LRU cache of Fragment object (see utils.data_structures)
+    m = MOT_Graph(ATTR_NAME, parameters)
     
-    while not fragment_queue.empty():
-        fragment = Fragment(fragment_queue.get(block = False))
-        curr_fragments.append(fragment.ID) 
-        left = fragment.first_timestamp - TIME_WIN   
+    # Make a database connection for writing
+    dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
+               username=parameters.default_username, password=parameters.default_password,
+               database_name=parameters.db_name, collection_name = parameters.stitched_collection, 
+               server_id=1, process_name=1, process_id=1, session_config_id=1, max_idle_time_ms = None,
+               schema_file=parameters.stitched_schema_path)
+    
+    count = 0
+    union_time = 0
+    while True:
         
-        # compute fragment statistics (1d motion model)
-        fragment.compute_stats()      
-        P.add_node(fragment, "ID")
-        
-        # Add fragments to G if buffer time is reached
-        while curr_fragments and P.get_fragment(curr_fragments[0]).last_timestamp < left: 
-            past_id = curr_fragments.popleft()
-            past_fragment = P.get_fragment(past_id)
-            m.add_node(past_fragment) # update G with the new fragment
-
-        # Start min-cost-flow
-        m.min_cost_flow("s", "t")
-        
-        # Collapse paths
-        m.find_all_post_paths(m.G, "t", "s")
-        
-        # P.union the chain
-        # Delete nodes from G, only keep heads' pre and tail's post
-        # aggregate edge cost
-        # flip the edges back!
-        
-        for path, cost in m.all_paths:
-            path = path[1:-1] # exclude s, head-pre, tail-post and t, everything in the middle should be deleted
-            head = path[0]
-            tail = path[-1]
-            # Update P
-            for i, node in enumerate(path):
-                m.G.remove_node(node)
-            for node in path:
-                m.G.remove_node(node)
-            print(path, cost)
+        try: # grab a fragment from the queue if queue is not empty
+            fragment = Fragment(fragment_queue.get(block = True, timeout = TIMEOUT)) # make object
+            P.add_node(fragment)
+            
+            # specify time window for curr_fragments
+            curr_fragments.append(getattr(fragment, ATTR_NAME)) 
+            left = fragment.first_timestamp - TIME_WIN   
+            
+            # compute fragment statistics (1d motion model)
+            fragment.compute_stats()
+            
+            
+            
+        except: # if queue is empty, process the remaining
+            if not curr_fragments: # if all remaining fragments are processed
+                left += IDLE_TIME + 1e-6 # to make all fragments "ready" for tail matching
+                if len(P.path) == 0:# exit the stitcher if all fragments are written to database
+                    print("union time: ", union_time)
+                    break
+            else: 
+                # specify time window for curr_fragments
+                left = P.get_fragment(curr_fragments[0]).last_timestamp + 1e-6
+            fragment = None
             
         
-        # Retrive paths
+            
+            
+        # Add fragments to G if buffer time is reached
+        while curr_fragments and P.get_fragment(curr_fragments[0]).last_timestamp < left: 
+            
+            past_id = curr_fragments.popleft()
+            past_fragment = P.get_fragment(past_id)
+            m.add_node(past_fragment, P.path) # update G with the new fragment
+            count += 1
+ 
         
+        # Start min-cost-flow
+        if count >= 20 or fragment is None:
+            
+            count = 0
+            m.min_cost_flow("s", "t")
+            
+
+            # Collapse paths
+            m.find_all_post_paths(m.G, "t", "s") 
+            
+            for path, cost in m.all_paths:
+                path = m.pretty_path(path)
+                head = path[0]
+                tail = path[-1]
+                
+                # Update P by unioning nodes along the path
+                # forward union
+                # for i in range(len(path)-1):
+                #     try: # if attr = "ID"
+                #         id1, id2 = float(path[i].partition("-")[0]), float(path[i+1].partition("-")[0])
+                #     except: # if attr = "id"
+                #         id1, id2 = path[i].partition("-")[0], path[i+1].partition("-")[0]
+                #     if id1 in P.path and id2 in P.path and id1 != id2:
+                #         # print("union: {} and {}".format(id1, id2))
+                #         P.union(id1, id2)
+                # backward union
+                
+                for i in range(1, len(path)):
+                    id1, id2 = path[-i], path[-i-1]
+                    
+                    if id1 in P.path and id2 in P.path:
+                        # print("union: {} and {}".format(id1, id2))
+                        P.union(id2, id1)
+                
+                        
+                # Delete nodes from G, only keep heads' pre and tail's post 
+                for node_id in path:
+                    try: m.G.remove_node(node_id +"-pre")
+                    except: pass
+                    try: m.G.remove_node(node_id +"-post")
+                    except: pass
+                
+                
+                # Flip the edge directions to s-t, aggregate edge cost
+                m.G.add_edge("s", head + "-pre", weight = 0, flipped = False)
+                m.G.add_edge(tail+"-post", "t", weight = 0, flipped = False)
+                m.G.add_edge(head+ "-pre", tail+"-post", weight = -cost, flipped = False)   
+                # print("path: ", path)
+                # m.fragment_dict[tail] = P.get_fragment(tail)
+                
+                
+            
+            
+            # Retrive paths, write to DB
+            while True:
+                
+                try:  
+                    root = P.first_node()
+                    if not root:
+                        break
+                    # print(root.ID, root.tail_time, left)
+                    
+                    if root.tail_time < left - IDLE_TIME:
+                        # print("root's tail time: {:.2f}, current time window: {:.2f}-{:.2f}".format(root.tail_time, left, right))
+                        path = P.pop_first_path() 
+                        # print(path)
+                        # print("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
+                        stitched_trajectory_queue.put(path, timeout = parameters.stitched_trajectory_queue_put_timeout)
+                        if ATTR_NAME == "id":
+                            dbw.write_one_trajectory(thread = True, fragment_ids = path)
+                    else: # break if first in cache is not timed out yet
+                        break
+                except StopIteration: # break if nothing in cache
+                    break
+                
         
         
     
@@ -146,8 +226,9 @@ if __name__ == '__main__':
     cfg = "./config"
     config_path = os.path.join(cwd,cfg)
     os.environ["user_config_directory"] = config_path
-    parameters = parse_cfg("TEST", cfg_name = "test_param.config")
+    parameters = parse_cfg("DEBUG", cfg_name = "test_param.config")
     
     fragment_queue = read_to_queue(parameters)
-    min_cost_flow_online(fragment_queue, parameters)
+    stitched_trajectory_queue = queue.Queue()
+    min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters)
     

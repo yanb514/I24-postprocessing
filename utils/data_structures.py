@@ -23,6 +23,7 @@ class Node:
         self.prev = None
         
     def __repr__(self):
+
         try:
             return 'Node({!r})'.format(self.ID)
         except:
@@ -30,7 +31,7 @@ class Node:
                 return 'Node({!r})'.format(self.id)
             except:
                 return 'Sentinel Node'
-    
+
     
 # Create a sorted doubly linked list class
 class SortedDLL:
@@ -42,12 +43,13 @@ class SortedDLL:
             - Node()
     
     '''
-    def __init__(self):
+    def __init__(self, attr = "id"):
       self.sentinel = Node(None)
       self.sentinel.next = self.sentinel
       self.sentinel.prev = self.sentinel
       self.cache = {} # key: fragment_id, val: Node address with that fragment in it, keep the address of pointers
-
+      self.attr = attr
+      
     def count(self):
         return len(self.cache)
     
@@ -64,7 +66,7 @@ class SortedDLL:
         if isinstance(node, dict):
             node = Node(node)
 
-        self.cache[node.id] = node 
+        self.cache[getattr(node, self.attr)] = node 
         # Fix up the links in the new node.
         node.prev = pivot
         node.next = pivot.next
@@ -78,7 +80,7 @@ class SortedDLL:
     def insert_before(self, pivot, node):
         if isinstance(node, dict):
             node = Node(node)
-        self.cache[node.id] = node 
+        self.cache[getattr(node, self.attr)] = node 
         # Fix up the links in the new node.
         node.next = pivot
         node.prev = pivot.prev
@@ -107,7 +109,7 @@ class SortedDLL:
         # reference each other.
         node.prev.next = node.next
         node.next.prev = node.prev
-        self.cache.pop(node.id)
+        self.cache.pop(getattr(node, self.attr))
         return node
       
     # def find(self, data):
@@ -186,14 +188,14 @@ class SortedDLL:
     # Return the string representation of a circular, doubly linked
     # list with a sentinel, just as if it were a Python list.
     def __repr__(self):
-        return self.print_list("id")
+        return self.print_list()
     
-    def print_list(self, attr_name="id"):
+    def print_list(self):
         s = "["
         x = self.sentinel.next
         while x != self.sentinel:  # look at each node in the list
             try:
-                s += getattr(x, attr_name)
+                s += getattr(x, self.attr)
             except:
                 s += "x"
             if x.next != self.sentinel:
@@ -244,7 +246,7 @@ class Fragment(Node):
             
             for i in range(len(field_names)): # set as many attributes as possible
                 try: 
-                    if field_names[i] == "_id": # cast bson ObjectId type to str
+                    if field_names[i] in {"_id", "ID"}: # cast bson ObjectId type to str
                         setattr(self, attr_names[i], str(traj_doc[field_names[i]]))
                     else:
                         setattr(self, attr_names[i], traj_doc[field_names[i]])
@@ -269,6 +271,7 @@ class Fragment(Node):
             return 'Fragment({!r})'.format(self.ID)
         except:
             return 'Fragment({!r})'.format(self.id)
+
         
     # def __del__(self):
     #     '''
@@ -343,29 +346,23 @@ class PathCache(SortedDLL):
     Purpose:
         - keep track of root (as the first-appeared fragments) and their successors in paths
         - output paths to stitched_trajectories database if time out
-    # TODO:
-        - how to utilize cache? what to keep track of?
-        - stress test
-        - can it replace / integrate with Fragment object?
-        - parent = None to initialize
+
     '''
-    def __init__(self):
-        super().__init__()
+    def __init__(self, attr_name = "id"):
+        super().__init__(attr_name)
         self.path = {} # keep pointers for all Fragments
+        self.attr = attr_name
         
     def make_set(self, docs):
         for doc in docs:
             self.add_node(doc)
             
-    def add_node(self, node, attr = "id"):
+    def add_node(self, node):
         if not isinstance(node, Fragment):
             node = Fragment(node) # create a new node
         # self.cache[node.id] = node
         self.append(node)
-        # try:
-        #     self.path[node.ID] = node
-        # except:
-        self.path[getattr(node, attr)] = node
+        self.path[str(getattr(node, self.attr))] = node
 
     def get_fragment(self, id):
         return self.path[id]
@@ -378,7 +375,7 @@ class PathCache(SortedDLL):
             return node
         # delete node from cache, because node is not the root
         try:
-            self.delete(node.id)
+            self.delete(getattr(node, self.attr))
         except:
             pass
         # path compression
@@ -389,7 +386,8 @@ class PathCache(SortedDLL):
     # Perform Union of two subsets
     def union(self, id1, id2):
         # id2 comes after id1
-        
+        if id1 == id2:
+            return
         # find the root of the sets in which Nodes `id1` and `id2` belong
         node1, node2 = self.path[id1], self.path[id2]
         root1 = self.find(node1)
@@ -397,7 +395,7 @@ class PathCache(SortedDLL):
         
         # if `id1` and `id2` are present in the same set, only move to the end of cache
         if root1 == root2:
-            self.update(root1.id, max(root1.tail_time, node2.tail_time), attr_name = "tail_time")
+            self.update(getattr(root1, self.attr), max(root1.tail_time, node2.tail_time), attr_name = "tail_time")
             return
         
         # compress path: update parent and child pointers for node1 and node2
@@ -411,7 +409,7 @@ class PathCache(SortedDLL):
         else:
             node2_is_leaf = True
             head = Fragment(None) # create dummy 
-            head.id = -1
+            setattr(head, self.attr, -1)
 
         while p1 and p2:
             if p1.last_timestamp < p2.last_timestamp:
@@ -439,16 +437,16 @@ class PathCache(SortedDLL):
 
         # update tail_time for all nodes along the path
         # self.path_down_update(new_root1) # TODO probably unnecessary
-        self.update(new_root1.id, max(new_root1.tail_time, node2.tail_time), attr_name = "tail_time")
+        self.update(getattr(new_root1, self.attr), max(new_root1.tail_time, node2.tail_time), attr_name = "tail_time")
 
         
     def print_sets(self):
         
-        print([self.find(val).id for key,val in self.path.items()])
+        print([getattr(self.find(val), self.attr) for key,val in self.path.items()])
         return
           
 
-    def get_all_paths(self, attr_name="id"):
+    def get_all_paths(self):
         '''
         get all the paths from roots, whatever remains in self.cache.keys are roots!
         DFS
@@ -458,7 +456,7 @@ class PathCache(SortedDLL):
         # for DLL cache
         node = self.first_node()
         while node != self.sentinel:
-            path = self.path_down(node, attr_name)
+            path = self.path_down(node, self.attr)
             all_paths.append(path)
             node = node.next
         return all_paths
@@ -477,14 +475,14 @@ class PathCache(SortedDLL):
     def print_cache(self):
         roots = self.get_all_roots()
         for root in roots:
-            print("Root {}: tail_time is {}".format(root.id, root.tail_time))
+            print("Root {}: tail_time is {}".format(getattr(root, self.attr), root.tail_time))
         
     def print_attr(self, attr_name):
         for node in self.path.values():
             try:
-                print("Node {}: {}: {}".format(node.id, attr_name, getattr(node, attr_name)))
+                print("Node {}: {}: {}".format(getattr(root, self.attr), attr_name, getattr(node, attr_name)))
             except:
-                print("Node {} has no {}".format(node.id, attr_name))
+                print("Node {} has no {}".format(getattr(root, self.attr), attr_name))
                 
     def pop_first_path(self):
         '''
@@ -509,16 +507,16 @@ class PathCache(SortedDLL):
         path = []
         def _dfs(node, path):
             if node:
-                path.append(node.id) 
+                path.append(getattr(node, self.attr)) 
                 _dfs(node.parent, path)
         _dfs(node, path)
         return path
     
-    def path_down(self, node, attr_name="id"):
+    def path_down(self, node):
         path = []
         def _dfs(node, path):
             if node:
-                path.append(getattr(node, attr_name)) 
+                path.append(getattr(node, self.attr)) 
                 _dfs(node.child, path)
         _dfs(node, path)
         return path  
@@ -541,12 +539,13 @@ class PathCache(SortedDLL):
 
 class MOT_Graph:
     
-    def __init__(self, parameters = None):
+    def __init__(self, attr = "ID", parameters = None):
         self.parameters = parameters
         self.G = nx.DiGraph()
         self.G.add_nodes_from(["s","t"])
-        self.fragment_dict = {} # keep track of current fragments in G
         self.all_paths = []
+        self.attr = attr
+        
         
        
     def collapse_paths(self):
@@ -563,12 +562,12 @@ class MOT_Graph:
 
 
 
-    def add_node(self, fragment):
+    def add_node(self, fragment, fragment_dict):
         '''
         fragment: a document
-        add fragment to existing graph with possible connections
-        Fragments are ordered by last_timestamp in queue
-        nodes: id = fragment_id
+        add fragment to existing graph (self.G) with possible connections
+        look for id-fragment pair in fragment_dict
+        note that nodes in self.G are a subset of fragment_dict, but the node ids needs preprocessing
         '''
         TIME_WIN = self.parameters.time_win
         VARX = self.parameters.varx
@@ -576,13 +575,18 @@ class MOT_Graph:
         THRESHOLD = self.parameters.thresh
         INCLUSION = self.parameters.inclusion
         
-        # G.add_nodes_from([str(fragment.ID)+"-pre", str(fragment.ID)+"-post"])
         edge_list = []
-        for fgmt_id, fgmt in self.fragment_dict.items():
-            cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
-            if cost < THRESHOLD and cost > -999:
-                edge_list.append(((fgmt.ID, fragment.ID),cost))
-         
+        node_set = set()
+        for node in self.G.nodes():
+            if node not in {"s", "t"}:
+                fgmt_id = node.partition("-")[0]
+                if fgmt_id not in node_set and fgmt_id in fragment_dict:
+                    node_set.add(fgmt_id)
+                    fgmt = fragment_dict[fgmt_id]
+                    cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
+                    if cost < THRESHOLD and cost > -999:
+                        edge_list.append(((fgmt_id, getattr(fragment, self.attr)),cost))
+            
             
         # add transition edges
         for e,c in edge_list:
@@ -590,15 +594,13 @@ class MOT_Graph:
                 self.G.add_edge(str(e[0]) + "-post", str(e[1]) + "-pre", weight = c-THRESHOLD, flipped=False)    
         
         # add observation edges
-        ID = fragment.ID
+        ID = getattr(fragment, self.attr)
         self.G.add_edge(str(ID)+"-pre", str(ID)+"-post", weight = INCLUSION, flipped=False)
         
         # add source node and sink node
         self.G.add_edge("s", str(ID)+"-pre", weight = 0, flipped=False)
         self.G.add_edge(str(ID)+"-post", "t", weight = 0, flipped=False)
         
-        # add to current dictionary
-        self.fragment_dict[ID] = fragment
         
         return 
                 
@@ -673,8 +675,8 @@ class MOT_Graph:
             # plt.title(str(path))
             # print("current shortest path: ", path)
            
-        print("total flow: {}".format(tot_flow))
-        print("total cost: {}".format(tot_cost))
+        # print("total flow: {}".format(tot_flow))
+        # print("total cost: {}".format(tot_cost))
         # self.find_all_post_paths(self.G, "t", "s")
         # print("all paths: ", self.all_paths)
         
@@ -786,6 +788,23 @@ class MOT_Graph:
                     p.append(path[i])
                     i += 1
             print(p)
+            
+    def pretty_path(self, path):
+        '''
+        get rid of "-pre, -post" in paths and remove duplicate ids
+        '''
+        p = []
+        i = 0
+        prev_id = ""
+        # for i, node in enumerate(path[:-1]):
+        while i < len(path)-1:
+            if path[i] not in {"s", "t"}:
+                id = path[i].partition("-")[0]
+                if id != prev_id:
+                    p.append(id)
+                    prev_id = id
+            i += 1
+        return p
                 
     def draw_graph(self, G, collapse = True):
         '''

@@ -104,25 +104,7 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
                 elif cost > -999:
                     curr_fragment.add_suc(cost, fragment)
                     fragment.add_pre(cost, curr_fragment)
-        
-        # for curr_id in curr_fragments:
-        #     curr_fragment = P.get_fragment(curr_id)
-        #     print("ID: ", curr_fragment.ID, "pre: ", curr_fragment.pre, "suc: ",curr_fragment.suc)
-        # if fragment:
-        #     if fragment.ID == 200161:
-        #         f1 = P.get_fragment(fragment.id)
-        #     if fragment.ID == 200164:
-        #         f2 = P.get_fragment(fragment.id)  
-        #     try:
-        #         print("161 pre: ", f1.pre)
-        #         print("161 suc: ", f1.suc)
-        #     except:
-        #         pass
-        #     try:
-        #         print("164 pre: ", f2.pre)
-        #         print("164 suc: ", f2.suc)
-        #     except:
-        #         pass
+    
                 
         prev_size = 0
         curr_size = len(past_fragments)

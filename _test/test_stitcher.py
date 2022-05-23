@@ -13,8 +13,10 @@ from i24_database_api.db_writer import DBWriter
 from i24_configparse.parse import parse_cfg
 sys.path.append('../')
 from stitcher import stitch_raw_trajectory_fragments
+from min_cost_flow_online import min_cost_flow_online
 from collections import defaultdict
 import bson
+import time
 
 import unittest
 import warnings
@@ -59,7 +61,7 @@ class T(unittest.TestCase):
         print("connected to stitched collection")
         
         # specify ground truth ids and the corresponding fragment ids
-        gt_ids = [1, 2,3,4,5]
+        gt_ids = [1, 2,3,4,5,6,7,8,9,10]
         fragment_ids = []
         gt_res = gt.read_query(query_filter = {"ID": {"$in": gt_ids}},
                                 limit = 0)
@@ -111,7 +113,11 @@ class T(unittest.TestCase):
         stitched_trajectories_queue = queue.Queue()
         
         # run stitcher, write to stitched collection
-        stitch_raw_trajectory_fragments("west", self.fragment_queue, stitched_trajectories_queue, parameters)
+        t1 = time.time()
+        min_cost_flow_online(self.fragment_queue, stitched_trajectories_queue, parameters)
+        # stitch_raw_trajectory_fragments("west", self.fragment_queue, stitched_trajectories_queue, parameters)
+        t2 = time.time()
+        print("run time: {:.2f}".format(t2-t1))
         print("{} fragments stitched to {} trajectories".format(len(self.fragment_set), stitched_trajectories_queue.qsize()))
         
     
