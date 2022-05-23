@@ -1,5 +1,9 @@
 import heapq
 import numpy as np
+import networkx as nx
+import queue
+from collections import deque
+from utils.stitcher_module import min_nll_cost
 
 class Node:
     '''
@@ -353,7 +357,7 @@ class PathCache(SortedDLL):
         for doc in docs:
             self.add_node(doc)
             
-    def add_node(self, node):
+    def add_node(self, node, attr = "id"):
         if not isinstance(node, Fragment):
             node = Fragment(node) # create a new node
         # self.cache[node.id] = node
@@ -361,7 +365,7 @@ class PathCache(SortedDLL):
         # try:
         #     self.path[node.ID] = node
         # except:
-        self.path[node.id] = node
+        self.path[getattr(node, attr)] = node
 
     def get_fragment(self, id):
         return self.path[id]
@@ -531,7 +535,293 @@ class PathCache(SortedDLL):
         return        
         
     
- 
+
+    
+
+
+class MOT_Graph:
+    
+    def __init__(self, parameters = None):
+        self.parameters = parameters
+        self.G = nx.DiGraph()
+        self.G.add_nodes_from(["s","t"])
+        self.fragment_dict = {} # keep track of current fragments in G
+        self.all_paths = []
+        
+       
+    def collapse_paths(self):
+        '''
+        Collapse all paths from s to t into single nodes, with the tail ID (the nodes that connect to t)
+        '''
+        # find all paths from "s" to "t"
+        self.find_all_post_paths( "t", "s")
+        for path in all_paths:
+            if len(path) > 3:
+                head = path[1]
+                tail = path[-2]
+        return
+
+
+
+    def add_node(self, fragment):
+        '''
+        fragment: a document
+        add fragment to existing graph with possible connections
+        Fragments are ordered by last_timestamp in queue
+        nodes: id = fragment_id
+        '''
+        TIME_WIN = self.parameters.time_win
+        VARX = self.parameters.varx
+        VARY = self.parameters.vary
+        THRESHOLD = self.parameters.thresh
+        INCLUSION = self.parameters.inclusion
+        
+        # G.add_nodes_from([str(fragment.ID)+"-pre", str(fragment.ID)+"-post"])
+        edge_list = []
+        for fgmt_id, fgmt in self.fragment_dict.items():
+            cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
+            if cost < THRESHOLD and cost > -999:
+                edge_list.append(((fgmt.ID, fragment.ID),cost))
+         
+            
+        # add transition edges
+        for e,c in edge_list:
+            if e[0] != e[1]:
+                self.G.add_edge(str(e[0]) + "-post", str(e[1]) + "-pre", weight = c-THRESHOLD, flipped=False)    
+        
+        # add observation edges
+        ID = fragment.ID
+        self.G.add_edge(str(ID)+"-pre", str(ID)+"-post", weight = INCLUSION, flipped=False)
+        
+        # add source node and sink node
+        self.G.add_edge("s", str(ID)+"-pre", weight = 0, flipped=False)
+        self.G.add_edge(str(ID)+"-post", "t", weight = 0, flipped=False)
+        
+        # add to current dictionary
+        self.fragment_dict[ID] = fragment
+        
+        return 
+                
+                
+
+    def shortest_path(self, s):
+        '''
+        Single source shortest path from s
+        # Dynamic programming cannot be used on residual graph because it is not a DAG
+        # Use Bellman-Ford algorithm to handle negative edges
+        '''
+
+        if s not in self.G:
+            print("Source not in graph")
+            return
+        
+        inf = 10e6
+        q = queue.Queue()
+        q.put(s)
+        d = {n: inf for n in self.G.nodes()} # keep track of the shortest distance from the source
+        d[s] = 0
+        p = {n: -1 for n in self.G.nodes()} # keep track of parent (path)
+        while not q.empty():
+            u = q.get()
+            for v in list(self.G.adj[u]):
+                if  d[v] > d[u] + self.G[u][v]["weight"]:
+                    d[v] = d[u] + self.G[u][v]["weight"]
+                    p[v] = u
+                    q.put(v) # for the next round of updates
+        
+        return d, p
+    
+    
+    def min_cost_flow(self, start, end):
+        '''
+        Edmond Karp algorithm for max flow
+        self.G is modified each iteration
+        '''
+        
+        tot_flow = 0
+        tot_cost = 0
+        inf = 10e6
+        while tot_flow < inf:
+            
+            # FIND THE SHORTEST PATH FROM S TO T
+            d, p = self.shortest_path("s")
+            if d["t"] >= 0:
+                break
+            
+            # print()
+            # FLIP THAT PATH 
+            n = "t"
+            path = deque()
+            path_cost = 0
+            while n != "s":
+                cost = self.G[p[n]][n]["weight"]
+                flipped = self.G[p[n]][n]["flipped"]
+                path_cost += cost
+                self.G.remove_edge(p[n], n)
+                self.G.add_edge(n,p[n], weight = -cost, flipped = not flipped)
+                # print("flipped {}-{}".format(p[n],n))
+                path.appendleft(n)
+                n = p[n]
+                
+            tot_flow += 1
+            tot_cost += path_cost # total cost so far
+            
+            # print("path: ", path)
+            # print("path cost: ",path_cost)
+            # plt.figure()
+            # self.draw_graph(self.G, collapse = False)
+            # plt.title(str(path))
+            # print("current shortest path: ", path)
+           
+        print("total flow: {}".format(tot_flow))
+        print("total cost: {}".format(tot_cost))
+        # self.find_all_post_paths(self.G, "t", "s")
+        # print("all paths: ", self.all_paths)
+        
+        # plt.figure()
+        # self.draw_graph(self.G, collapse = False)
+        # plt.title("final graph")
+        return tot_flow, tot_cost
+    
+    
+    def dfs_pre_order_flipped(self, G, node, destination):
+        # DFS traversal
+        # save paths in post-order
+        # only traverse on edges with "flipped" set to True
+        self.visited.add(node)
+        self.pre_order.append(node) 
+        if node == destination:
+            self.all_paths.append(list(self.pre_order))
+        else:
+            for n in G.adj[node]:
+                if n not in self.visited and G[node][n]["flipped"]:
+                    self.dfs_pre_order_flipped(G, n, destination)
+            
+        self.pre_order.pop()
+        try:
+            self.visited.remove(node)
+        except:
+            pass
+        
+    def dfs_pre_order(self, G, node, destination):
+        # DFS traversal
+        # save paths in post-order
+        self.visited.add(node)
+        self.pre_order.append(node) 
+        if node == destination:
+            self.all_paths.append(list(self.pre_order))
+        else:
+            for n in G.adj[node]:
+                if n not in self.visited:
+                    self.dfs_pre_order(G, n, destination)
+            
+        self.pre_order.pop()
+        try:
+            self.visited.remove(node)
+        except:
+            pass
+
+    def dfs_post_order(self, G, node, destination):
+        self.visited.add(node)
+        self.post_order.appendleft(node)
+        
+        if node == destination:
+            self.all_paths.append(list(self.post_order))
+        else:
+            for i in G.adj[node]:
+                if i not in self.visited :
+                    self.dfs_post_order(G, i, destination)
+        
+        self.post_order.popleft()
+        self.visited.remove(node)
+        
+    def dfs_post_order_flipped(self, G, node, destination, cost):
+        self.visited.add(node)
+        self.post_order.appendleft(node)
+        
+        if node == destination:
+            self.all_paths.append((list(self.post_order), cost))
+        else:
+            for i in G.adj[node]:
+                if i not in self.visited and G[node][i]["flipped"]:
+                    cost += G[node][i]["weight"]
+                    self.dfs_post_order_flipped(G, i, destination, cost)
+        
+        self.post_order.popleft()
+        self.visited.remove(node)
+   
+
+    def find_all_pre_paths(self, G, node, destination):
+        self.visited = set()
+        self.all_paths = []
+        self.pre_order = []
+        self.post_order = []
+        self.dfs_pre_order_flipped(G, node, destination)
+        # print(self.all_paths)
+        
+    def find_all_post_paths(self, G, node, destination):
+        self.visited = set()
+        self.all_paths = []
+        self.pre_order = []
+        self.post_order = deque()
+        self.dfs_post_order_flipped(G, node, destination, 0)
+        # print(self.all_paths)
+      
+        
+    def print_st_paths(self):
+        '''
+        print self.all_paths but make it prettier
+        '''
+        for path in self.all_paths:
+            p = []
+            i = 0
+            # for i, node in enumerate(path[:-1]):
+            while i < len(path)-1:
+                if path[i][-3:] == "pre" and path[i+1][-3:] == "ost":
+                    p.append(path[i][:-4])
+                    i += 2
+                elif path[i] == "s":
+                    i += 1
+                else:
+                    p.append(path[i])
+                    i += 1
+            print(p)
+                
+    def draw_graph(self, G, collapse = True):
+        '''
+        Collapse pre and post nodes into a single node when drawing
+        '''
+        # k controls the distance between the nodes and varies between 0 and 1
+        # iterations is the number of times simulated annealing is run
+        # default = 50
+        if not collapse:
+            if not self.pos:
+                self.pos=nx.spring_layout(G, k=0.2, iterations=100)
+            for u,v in G.edges():
+                if G[u][v]["flipped"]: G[u][v]['color']='r'
+                else: G[u][v]['color']='k'
+            colors = nx.get_edge_attributes(G,'color').values()
+            nx.draw(G, self.pos, edge_color = colors, node_color= "w", with_labels = True, node_size = 500)
+            labels = nx.get_edge_attributes(G,'weight')
+            labels = {key: labels[key] for key in labels if abs(labels[key]) > 0.2 }
+            nx.draw_networkx_edge_labels(G,self.pos,edge_labels=labels)
+        else:
+            n = int((len(G.nodes())-2)/2) # count pre-post as one node
+            for i in range(1, n+1):
+                G = nx.contracted_nodes(G, str(i)+"-pre", str(i)+"-post", self_loops=False, copy=True)
+            if not self.collapse_pos:
+                self.collapse_pos=nx.spring_layout(G, k=0.2, iterations=100)
+
+            for u,v in G.edges():
+                if G[u][v]["flipped"]: G[u][v]['color']='r'
+                else: G[u][v]['color']='k'
+            colors = nx.get_edge_attributes(G,'color').values()
+            nx.draw(G, self.collapse_pos, edge_color = colors, node_color= "y", with_labels = True, node_size = 500)
+            labels = nx.get_edge_attributes(G,'weight')
+            labels = {key: labels[key] for key in labels if abs(labels[key]) > 0.2  }
+            nx.draw_networkx_edge_labels(G,self.collapse_pos,edge_labels=labels)
+            
+            
 
 if __name__ == '__main__':
  

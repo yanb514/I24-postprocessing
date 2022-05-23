@@ -24,7 +24,8 @@ parameters = parse_cfg("DEBUG", cfg_name = "test_param.config")
 if __name__ == '__main__':
     
     # CHANGE NAME OF THE LOGGER
-    setattr(manager_logger, "_name", "manager")
+    # setattr(manager_logger, "_name", "manager")
+    manager_logger.set_name("manager")
     setattr(manager_logger, "_default_logger_extra",  {})
     mp_manager = mp.Manager()
     manager_logger.info("Post-processing manager starting up.")

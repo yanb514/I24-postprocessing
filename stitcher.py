@@ -15,7 +15,7 @@ from utils.data_structures import Fragment, PathCache
 import time
 
 
-
+# TODO: exiting condition needs to be tested
 
 def stitch_raw_trajectory_fragments(direction, fragment_queue,
                                     stitched_trajectory_queue, parameters):
@@ -28,12 +28,14 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
     :return: None
     """
     stitcher_logger = logger
+    stitcher_logger.set_name("stitcher_"+direction)
     # Get parameters
     TIME_WIN = parameters.time_win
     VARX = parameters.varx
     VARY = parameters.vary
     THRESH = parameters.thresh
     IDLE_TIME = parameters.idle_time
+    TIMEOUT = parameters.raw_trajectory_queue_get_timeout
     
     # Initialize some data structures
     curr_fragments = deque()  # fragments that are in current window (left, right), sorted by last_timestamp
@@ -48,41 +50,80 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
                schema_file=parameters.stitched_schema_path)
         
     stitcher_logger.info("** Stitching starts. fragment_queue size: {}".format(fragment_queue.qsize()),extra = None)
-
+    
 
     while True:
-        fragment = Fragment(fragment_queue.get(block = True)) # make object
-        
-        fragment.curr = True
-        P.add_node(fragment)
-        
-        # specify time window for curr_fragments
-        right = fragment.last_timestamp # right pointer: current end time
-        left = min(fragment.first_timestamp, right - TIME_WIN)
-        
-        # compute fragment statistics (1d motion model)
-        fragment.compute_stats()
-        
+        try: # grab a fragment from the queue if queue is not empty
+            fragment = Fragment(fragment_queue.get(block = True, timeout = TIMEOUT)) # make object
+            fragment.curr = True
+            P.add_node(fragment)
+            
+            # specify time window for curr_fragments
+            # right = fragment.last_timestamp # right pointer: current end time
+            left = fragment.first_timestamp - TIME_WIN
+            
+            # compute fragment statistics (1d motion model)
+            fragment.compute_stats()
+            
+        except: # if queue is empty, process the remaining
+            if not curr_fragments: # if all remaining fragments are processed
+                stitcher_logger.info("remaining fragments: {}".format(len(P.path)))
+                left += IDLE_TIME + 1e-6 # to make all fragments "ready" for tail matching
+                if len(P.path) == 0:# exit the stitcher if all fragments are written to database
+                    stitcher_logger.info("All remaining fragments are processed. Exiting stitcher")
+                    break
+            else: 
+                # specify time window for curr_fragments
+                left = P.get_fragment(curr_fragments[0]).last_timestamp + 1e-6
+            fragment = None
+           
+        # print("left: ", left)
+        # if fragment:
+        #     print("curr fragment ID: ", fragment.ID)
+        #     print("curr fragment time: {:.2f}-{:.2f}".format(fragment.first_timestamp, fragment.last_timestamp))
+            
+        # print("curr_fragment size (before): ", len(curr_fragments))
         # remove out of sight fragments 
-        # if len(curr_fragments) > 0:
         while curr_fragments and P.get_fragment(curr_fragments[0]).last_timestamp < left: 
             past_id = curr_fragments.popleft()
             past_fragment = P.get_fragment(past_id)
             past_fragment.curr = False
             past_fragment.past = True
             past_fragments[past_id] = past_fragment # could use keys only: past_fragments[past_id] = None if memory is an issue 
+        
+        # print("curr_fragment size (after): ", len(curr_fragments))
         # print("Past_fragments size: ", len(past_fragments))
         
         # compute score from every fragment in curr to fragment, update Cost
-        for curr_id in curr_fragments:
-            curr_fragment = P.get_fragment(curr_id)
-            cost = min_nll_cost(curr_fragment, fragment, TIME_WIN, VARX, VARY)
-            if cost > THRESH:
-                pass
-            elif cost > -999:
-                curr_fragment.add_suc(cost, fragment)
-                fragment.add_pre(cost, curr_fragment)
-         
+        if fragment is not None:
+            for curr_id in curr_fragments:
+                curr_fragment = P.get_fragment(curr_id)
+                cost = min_nll_cost(curr_fragment, fragment, TIME_WIN, VARX, VARY)
+                if cost > THRESH:
+                    pass
+                elif cost > -999:
+                    curr_fragment.add_suc(cost, fragment)
+                    fragment.add_pre(cost, curr_fragment)
+        
+        # for curr_id in curr_fragments:
+        #     curr_fragment = P.get_fragment(curr_id)
+        #     print("ID: ", curr_fragment.ID, "pre: ", curr_fragment.pre, "suc: ",curr_fragment.suc)
+        # if fragment:
+        #     if fragment.ID == 200161:
+        #         f1 = P.get_fragment(fragment.id)
+        #     if fragment.ID == 200164:
+        #         f2 = P.get_fragment(fragment.id)  
+        #     try:
+        #         print("161 pre: ", f1.pre)
+        #         print("161 suc: ", f1.suc)
+        #     except:
+        #         pass
+        #     try:
+        #         print("164 pre: ", f2.pre)
+        #         print("164 suc: ", f2.suc)
+        #     except:
+        #         pass
+                
         prev_size = 0
         curr_size = len(past_fragments)
         
@@ -124,18 +165,21 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
                 
             curr_size = len(past_fragments)
 
-        curr_fragments.append(fragment.id)    
+        if fragment is not None:
+            curr_fragments.append(fragment.id)    
         
         # write paths from P if time out is reached
-        # This block can be written as an async operation
         while True:
-            try:
+            try:  
                 root = P.first_node()
-                # print(root.ID, root.gone, root.tail_time, left)
+                if not root:
+                    break
+                # print(root.ID, root.tail_time, left)
+                
                 if root.gone and root.tail_time < left - IDLE_TIME:
                     # print("root's tail time: {:.2f}, current time window: {:.2f}-{:.2f}".format(root.tail_time, left, right))
                     path = P.pop_first_path()  
-                    # stitcher_logger.info("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
+                    stitcher_logger.info("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
                     stitched_trajectory_queue.put(path, timeout = parameters.stitched_trajectory_queue_put_timeout)
                     dbw.write_one_trajectory(thread = True, fragment_ids = path)
                 else: # break if first in cache is not timed out yet

@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 import heapq
-from utils.data_structures import Fragment
+# from utils.data_structures import Fragment
 from time import sleep
 
 
