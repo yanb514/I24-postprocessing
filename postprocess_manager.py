@@ -14,7 +14,8 @@ import time
 from live_data_feed import live_data_reader # change to live_data_read later
 from i24_logger.log_writer import logger as manager_logger
 from i24_configparse.parse import parse_cfg
-from stitcher import stitch_raw_trajectory_fragments
+# from stitcher import stitch_raw_trajectory_fragments
+from min_cost_flow_online import min_cost_flow_online
 import reconciliation
 
 config_path = os.path.join(os.getcwd(),"./config")
@@ -80,10 +81,16 @@ if __name__ == '__main__':
                                           parameters.range_increment, "west",
                                           raw_fragment_queue_w, 
                                           parameters.buffer_time, parameters.min_queue_size,)),
-                            "stitcher_e": (stitch_raw_trajectory_fragments,
+                            # "stitcher_e": (stitch_raw_trajectory_fragments,
+                            #                ("east", raw_fragment_queue_e, stitched_trajectory_queue,
+                            #                 parameters, )),
+                            # "stitcher_w": (stitch_raw_trajectory_fragments,
+                            #                ("west", raw_fragment_queue_w, stitched_trajectory_queue,
+                            #                 parameters, )),
+                            "stitcher_e": (min_cost_flow_online,
                                            ("east", raw_fragment_queue_e, stitched_trajectory_queue,
                                             parameters, )),
-                            "stitcher_w": (stitch_raw_trajectory_fragments,
+                            "stitcher_w": (min_cost_flow_online,
                                            ("west", raw_fragment_queue_w, stitched_trajectory_queue,
                                             parameters, )),
                             "reconciliation": (reconciliation.reconciliation_pool,

@@ -69,12 +69,12 @@ class T(unittest.TestCase):
         for gt_doc in gt_res:
             fragment_ids.extend(gt_doc["fragment_ids"])
         
-        raw_res = raw.read_query(query_filter = {"_id": {"$in": fragment_ids}},
-                                  query_sort = [("last_timestamp", "ASC")])
-        # raw_res = raw.read_query(query_filter = {"$and":[ {"last_timestamp": {"$gt": 545}}, 
-        #                                                   {"last_timestamp": {"$lt": 580}},
-        #                                                   {"_id": {"$in": fragment_ids}}]},
-                                  # query_sort = [("last_timestamp", "ASC")])
+        # raw_res = raw.read_query(query_filter = {"_id": {"$in": fragment_ids}},
+        #                           query_sort = [("last_timestamp", "ASC")])
+        raw_res = raw.read_query(query_filter = {"$and":[ {"last_timestamp": {"$gt": 545}}, 
+                                                          {"last_timestamp": {"$lt": 580}},
+                                                          {"_id": {"$in": fragment_ids}}]},
+                                   query_sort = [("last_timestamp", "ASC")])
         
         # write fragments to queue
         fragment_queue = queue.Queue()
@@ -127,10 +127,11 @@ class T(unittest.TestCase):
         Make sure the total number of stitched trajectories equals the ground truth trajectories
         Note that passing this test does not mean the stitcher works correctly, but failing this test means that the stitcher is definitely incorrect.
         '''
+        time.sleep(2)
         self.assertEqual(self.stitched.collection.count_documents({}), len(self.gt_ids), "Total number of stitched documents incorrect.")
  
     
-    # @unittest.skip("demonstrating skipping")
+    @unittest.skip("demonstrating skipping")
     def test_fragments(self):
         '''
         Count the number of fragments (under-stitch) from the output of the stitcher
@@ -163,7 +164,7 @@ class T(unittest.TestCase):
         self.assertEqual(len(not_in_stitched), 0, "Fragments cannot be found in stitched collection!")
         return
         
-    # @unittest.skip("demonstrating skipping")
+    @unittest.skip("demonstrating skipping")
     def test_ids(self):
         '''
         Count the number of times of overstitching (ID-switches) of the stitcher

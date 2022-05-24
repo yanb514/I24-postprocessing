@@ -13,6 +13,8 @@ import os
 from i24_configparse.parse import parse_cfg
 from utils.data_structures import Fragment, PathCache, MOT_Graph
 import time
+from i24_logger.log_writer import logger 
+
 
 # TODO:
     # 1. check if the answers agree with nx.edmond_karp
@@ -45,7 +47,7 @@ def read_to_queue(parameters):
     print("connected to stitched collection")
     
     # specify ground truth ids and the corresponding fragment ids
-    gt_ids = [1,2,3,4]
+    gt_ids = [i for i in range(150,220)]
     fragment_ids = []
     gt_res = gt.read_query(query_filter = {"ID": {"$in": gt_ids}},
                             limit = 0)
@@ -55,8 +57,8 @@ def read_to_queue(parameters):
     
     # raw_res = raw.read_query(query_filter = {"_id": {"$in": fragment_ids}},
     #                           query_sort = [("last_timestamp", "ASC")])
-    raw_res = raw.read_query(query_filter = {"$and":[ {"last_timestamp": {"$gt": 545}}, 
-                                                      {"last_timestamp": {"$lt": 620}},
+    raw_res = raw.read_query(query_filter = {"$and":[ {"last_timestamp": {"$gt": 300}}, 
+                                                      {"last_timestamp": {"$lt": 500}},
                                                       {"_id": {"$in": fragment_ids}}]},
                                 query_sort = [("last_timestamp", "ASC")])
     
@@ -102,7 +104,13 @@ def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
                schema_file=parameters.stitched_schema_path)
     
     count = 0
-    union_time = 0
+    # fgmt_count = 0
+    cache_size = 0
+    cache_arr = []
+    t0 = time.time()
+    time_arr = []
+    nodes_arr = []
+
     while True:
         
         try: # grab a fragment from the queue if queue is not empty
@@ -115,6 +123,12 @@ def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
             
             # compute fragment statistics (1d motion model)
             fragment.compute_stats()
+            # fgmt_count += 1
+            cache_size = len(P.path)
+            cache_arr.append(cache_size)
+            t1 = time.time()
+            time_arr.append(t1-t0)
+            nodes_arr.append(len(m.G.nodes()))
             
             
             
@@ -122,7 +136,6 @@ def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
             if not curr_fragments: # if all remaining fragments are processed
                 left += IDLE_TIME + 1e-6 # to make all fragments "ready" for tail matching
                 if len(P.path) == 0:# exit the stitcher if all fragments are written to database
-                    print("union time: ", union_time)
                     break
             else: 
                 # specify time window for curr_fragments
@@ -194,28 +207,28 @@ def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
                 
             
             
-            # Retrive paths, write to DB
-            while True:
-                
-                try:  
-                    root = P.first_node()
-                    if not root:
-                        break
-                    # print(root.ID, root.tail_time, left)
-                    
-                    if root.tail_time < left - IDLE_TIME:
-                        # print("root's tail time: {:.2f}, current time window: {:.2f}-{:.2f}".format(root.tail_time, left, right))
-                        path = P.pop_first_path() 
-                        # print(path)
-                        # print("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
-                        stitched_trajectory_queue.put(path, timeout = parameters.stitched_trajectory_queue_put_timeout)
-                        if ATTR_NAME == "id":
-                            dbw.write_one_trajectory(thread = True, fragment_ids = path)
-                    else: # break if first in cache is not timed out yet
-                        break
-                except StopIteration: # break if nothing in cache
+        # Retrive paths, write to DB
+        while True:
+            
+            try:  
+                root = P.first_node()
+                if not root:
                     break
+                # print(root.ID, root.tail_time, left)
                 
+                if root.tail_time < left - IDLE_TIME:
+                    # print("root's tail time: {:.2f}, current time window: {:.2f}-{:.2f}".format(root.tail_time, left, right))
+                    path = P.pop_first_path() 
+                    # print(path)
+                    print("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
+                    stitched_trajectory_queue.put(path, timeout = parameters.stitched_trajectory_queue_put_timeout)
+                    dbw.write_one_trajectory(thread = True, fragment_ids = path)
+                else: # break if first in cache is not timed out yet
+                    break
+            except StopIteration: # break if nothing in cache
+                break
+                
+    return time_arr, cache_arr, nodes_arr
         
         
     
@@ -229,6 +242,33 @@ if __name__ == '__main__':
     parameters = parse_cfg("DEBUG", cfg_name = "test_param.config")
     
     fragment_queue = read_to_queue(parameters)
+    s1 = fragment_queue.qsize()
     stitched_trajectory_queue = queue.Queue()
-    min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters)
+    t1 = time.time()
+    time_arr, cache_arr, nodes_arr = min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters)
+    s2 = stitched_trajectory_queue.qsize()
+    t2 = time.time()
+    print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
+    
+    # plot runtime
+    # fgmt = [154, 292, 431, 585]
+    # time = [1.05, 1.62, 2.77, 4.63]
+    import matplotlib.pyplot as plt
+    import numpy as np
+    plt.figure()
+    plt.scatter(np.arange(s1), time_arr, label="run time (sec)")
+    plt.xlabel("# fragments")
+    plt.ylabel("cumulative run time (sec)")
+    
+    plt.figure()
+    plt.scatter(np.arange(s1), cache_arr, label = "cache size")
+    plt.xlabel("# fragments")
+    plt.ylabel("memory size (# fragments)")
+    
+    plt.figure()
+    plt.scatter(np.arange(s1), nodes_arr, label = "cache size")
+    plt.xlabel("# fragments")
+    plt.ylabel("# nodes in G")
+    
+    
     
