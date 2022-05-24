@@ -606,6 +606,51 @@ class MOT_Graph:
                 
                 
 
+    def construct_graph_from_fragments(self, fragment_queue):
+        '''
+        batch construct a graph from fragment_queue
+        '''
+        TIME_WIN = self.parameters.time_win
+        VARX = self.parameters.varx
+        VARY = self.parameters.vary
+        THRESHOLD = self.parameters.thresh
+        INCLUSION = self.parameters.inclusion
+    
+        
+        G = nx.DiGraph()
+        fragment_dict = {}
+        edge_list = []
+        
+        while not fragment_queue.empty():
+            new_fgmt = Fragment(fragment_queue.get())
+            new_fgmt.compute_stats()
+            fragment_dict[new_fgmt.ID] = new_fgmt 
+            
+            for fgmt_id, fgmt in fragment_dict.items():
+                cost = min_nll_cost(fgmt, new_fgmt, TIME_WIN, VARX, VARY)
+                if cost < THRESHOLD and cost > -999:
+                    edge_list.append(((fgmt.ID, new_fgmt.ID),cost))
+         
+            
+        # add transition edges
+        for e,c in edge_list:
+            if e[0] != e[1]:
+                G.add_edge(str(e[0]) + "-post", str(e[1]) + "-pre", weight = c-THRESHOLD, flipped=False)    
+            
+        
+        # add observation edges
+        for i in fragment_dict:
+            G.add_edge(str(i)+"-pre", str(i)+"-post", weight = INCLUSION, flipped=False)
+            # add source node and sink node
+            G.add_edge("s", str(i)+"-pre", weight = 0, flipped=False)
+            G.add_edge(str(i)+"-post", "t", weight = 0, flipped=False)
+            
+        
+        self.G = G
+        self.fragment_dict = fragment_dict
+        self.edge_list = edge_list
+                
+    
     def shortest_path(self, s):
         '''
         Single source shortest path from s
