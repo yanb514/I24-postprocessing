@@ -41,8 +41,8 @@ class T(unittest.TestCase):
         parameters = parse_cfg("TEST", cfg_name = "test_param.config")
         
         # read to queue
-        gt_ids = [i for i in range(100,150)]
-        fragment_queue,actual_gt_ids = mcf.read_to_queue(gt_ids=gt_ids, gt_val=25, lt_val=45, parameters=parameters)
+        gt_ids = [i for i in range(130,150)]
+        fragment_queue,actual_gt_ids,fragment_set = mcf.read_to_queue(gt_ids=gt_ids, gt_val=25, lt_val=45, parameters=parameters)
         s1 = fragment_queue.qsize()
         print("{} fragments, actual_gt_ids: {} ".format(s1, len(actual_gt_ids)))
 
@@ -75,6 +75,7 @@ class T(unittest.TestCase):
         cls.stitched_reader = stitched_reader
         cls.fragment_queue = fragment_queue
         cls.gt_ids = actual_gt_ids
+        cls.fragment_set = fragment_set
         
         cls.run_stitcher(cls) # start stitching!
         
@@ -132,13 +133,15 @@ class T(unittest.TestCase):
         # if fragments associated to the same gt_id appear in multiple stitched_id, count as fragments
         FRAG = 0
         for gt_id in gt_id_st_fgm_ids:
-            FRAG += len(gt_id_st_fgm_ids[gt_id])-1
+            if len(gt_id_st_fgm_ids[gt_id]) > 1:
+                print("possible fragments: ", gt_id)
+                FRAG += len(gt_id_st_fgm_ids[gt_id])-1
         
         self.assertEqual(FRAG, 0, "Stitcher produces {} fragments!".format(FRAG))
         self.assertEqual(len(not_in_stitched), 0, "Fragments cannot be found in stitched collection!")
         return
         
-    # @unittest.skip("demonstrating skipping")
+    @unittest.skip("demonstrating skipping")
     def test_ids(self):
         '''
         Count the number of times of overstitching (ID-switches) of the stitcher
@@ -156,7 +159,9 @@ class T(unittest.TestCase):
         # Compute ID switches
         IDS = 0
         for pred_id in st_id_gt_fgm_ids:
-            IDS += len(st_id_gt_fgm_ids[pred_id])-1
+            if len(st_id_gt_fgm_ids[pred_id]) > 1:
+                print("possible ID switches: ", st_id_gt_fgm_ids[pred_id])
+                IDS += len(st_id_gt_fgm_ids[pred_id])-1
 
         self.assertEqual(IDS, 0, "Stitcher produces {} ID switches!".format(IDS))
 

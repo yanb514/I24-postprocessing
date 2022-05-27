@@ -3,7 +3,7 @@ import numpy as np
 import networkx as nx
 import queue
 from collections import deque
-from utils.stitcher_module import min_nll_cost
+from utils.stitcher_module import min_nll_cost, nll
 
 class Node:
     '''
@@ -273,11 +273,6 @@ class Fragment(Node):
             return 'Fragment({!r})'.format(self.id)
 
         
-    # def __del__(self):
-    #     '''
-    #     TODO: destroy this object and all reference to it at once?
-    #     '''
-    #     pass
 
     
     def compute_stats(self):
@@ -583,7 +578,8 @@ class MOT_Graph:
                 if fgmt_id not in node_set and fgmt_id in fragment_dict:
                     node_set.add(fgmt_id)
                     fgmt = fragment_dict[fgmt_id]
-                    cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
+                    # cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
+                    cost = nll(fgmt, fragment, TIME_WIN, VARX, VARY)
                     if cost < THRESHOLD and cost > -999:
                         edge_list.append(((fgmt_id, getattr(fragment, self.attr)),cost))
             
@@ -591,7 +587,7 @@ class MOT_Graph:
         # add transition edges
         for e,c in edge_list:
             if e[0] != e[1]:
-                self.G.add_edge(str(e[0]) + "-post", str(e[1]) + "-pre", weight = c-THRESHOLD, flipped=False)    
+                self.G.add_edge(str(e[0]) + "-post", str(e[1]) + "-pre", weight = c, flipped=False)    
         
         # add observation edges
         ID = getattr(fragment, self.attr)
@@ -624,18 +620,21 @@ class MOT_Graph:
         while not fragment_queue.empty():
             new_fgmt = Fragment(fragment_queue.get())
             new_fgmt.compute_stats()
-            fragment_dict[new_fgmt.ID] = new_fgmt 
+            fragment_dict[getattr(new_fgmt, self.attr)] = new_fgmt 
             
             for fgmt_id, fgmt in fragment_dict.items():
-                cost = min_nll_cost(fgmt, new_fgmt, TIME_WIN, VARX, VARY)
+                # if fgmt_id == "10800011.0" and new_fgmt.ID == "10800012.0":
+                #     print('here')
+                cost = nll(fgmt, new_fgmt, TIME_WIN, VARX, VARY)
+                # print(((getattr(fgmt, self.attr), getattr(new_fgmt, self.attr)),cost))
                 if cost < THRESHOLD and cost > -999:
-                    edge_list.append(((fgmt.ID, new_fgmt.ID),cost))
+                    edge_list.append(((getattr(fgmt, self.attr), getattr(new_fgmt, self.attr)),cost))
          
             
         # add transition edges
         for e,c in edge_list:
             if e[0] != e[1]:
-                G.add_edge(str(e[0]) + "-post", str(e[1]) + "-pre", weight = c-THRESHOLD, flipped=False)    
+                G.add_edge(str(e[0]) + "-post", str(e[1]) + "-pre", weight = c, flipped=False)    
             
         
         # add observation edges

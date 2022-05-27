@@ -40,7 +40,7 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
     # Initialize some data structures
     curr_fragments = deque()  # fragments that are in current window (left, right), sorted by last_timestamp
     past_fragments = dict()  # set of ids indicate end of fragment ready to be matched, insertion ordered
-    P = PathCache() # an LRU cache of Fragment object (see utils.data_structures)
+    P = PathCache(attr_name=parameters.fragment_attr_name) # an LRU cache of Fragment object (see utils.data_structures)
 
     # Make a database connection for writing
     dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
@@ -125,15 +125,15 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
                         continue
 
                     # if best_pre.id == ready.id and best_pre.id not in ready.conflicts_with:
-                    if best_pre.id == ready.id:
+                    if getattr(best_pre, parameters.fragment_attr_name) == getattr(ready, parameters.fragment_attr_name):
                         # stitcher_logger.info("** match tail of {} to head of {}".format(int(best_pre.ID), int(best_succ.ID)), extra = None)
                         # print("** match tail of {} to head of {}".format(int(best_pre.ID), int(best_succ.ID)))
                         # if best_succ.ID//100000 != best_pre.ID//100000:
                         #     print("wrong matching!")
                         try:
-                            P.union(best_pre.id, best_succ.id) # update path cache
+                            P.union(getattr(best_pre, parameters.fragment_attr_name), getattr(best_succ, parameters.fragment_attr_name)) # update path cache
                             Fragment.match_tail_head(best_pre, best_succ) # update both fragments
-                            gone_ids.add(ready.id) # 
+                            gone_ids.add(getattr(ready, parameters.fragment_attr_name)) # 
                         except KeyError: # a fragment is already stitched and written to queue pre-maturally
                             # stitcher_logger.warning("fragment {} is already written to queue".format(best_pre.id))
                             # print("fragment {} is already written to queue".format(best_pre.id))
@@ -148,7 +148,7 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
             curr_size = len(past_fragments)
 
         if fragment is not None:
-            curr_fragments.append(fragment.id)    
+            curr_fragments.append(getattr(fragment, parameters.fragment_attr_name))    
         
         # write paths from P if time out is reached
         while True:
@@ -161,9 +161,9 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
                 if root.gone and root.tail_time < left - IDLE_TIME:
                     # print("root's tail time: {:.2f}, current time window: {:.2f}-{:.2f}".format(root.tail_time, left, right))
                     path = P.pop_first_path()  
-                    stitcher_logger.info("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
+                    # stitcher_logger.info("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
                     stitched_trajectory_queue.put(path, timeout = parameters.stitched_trajectory_queue_put_timeout)
-                    dbw.write_one_trajectory(thread = True, fragment_ids = path)
+                    # dbw.write_one_trajectory(thread = True, fragment_ids = path)
                 else: # break if first in cache is not timed out yet
                     break
             except StopIteration: # break if nothing in cache

@@ -73,7 +73,7 @@ def read_to_queue(gt_ids, gt_val, lt_val, parameters):
     fragment_size = fragment_queue.qsize()
     print("Queue size: ", fragment_size)
 
-    return fragment_queue, actual_gt_ids   
+    return fragment_queue, actual_gt_ids,set(fragment_ids)  
 
 
 
@@ -87,7 +87,7 @@ def min_cost_flow_batch(fragment_queue, stitched_trajectory_queue, parameters):
     # Initialize some data structures
     m = MOT_Graph(ATTR_NAME, parameters)
     m.construct_graph_from_fragments(fragment_queue)
-    all_paths = []
+    # all_paths = []
     # Make a database connection for writing
     dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
                 username=parameters.default_username, password=parameters.default_password,
@@ -104,13 +104,14 @@ def min_cost_flow_batch(fragment_queue, stitched_trajectory_queue, parameters):
     
     for path, cost in m.all_paths:
         path = m.pretty_path(path)
-        all_paths.append(path)
+        # all_paths.append(path)
         # print(path)
         # print("** write to db: root {}, path length: {}".format(path[0], len(path)))
         stitched_trajectory_queue.put(path, timeout = parameters.stitched_trajectory_queue_put_timeout)
-        dbw.write_one_trajectory(thread = True, fragment_ids = path)
+        # dbw.write_one_trajectory(thread = True, fragment_ids = path)
         
-    return all_paths
+    # return all_paths
+    return
     
         
     
@@ -125,7 +126,6 @@ def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
     '''
     iteratively solving a MCF problem on a smaller graph
     '''
-    TIME_WIN = parameters.time_win
     
     # Get parameters
     TIME_WIN = parameters.time_win
@@ -146,6 +146,7 @@ def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
                server_id=1, process_name=1, process_id=1, session_config_id=1, max_idle_time_ms = None,
                schema_file=parameters.stitched_schema_path)
     
+    # book keeping stuff
     # count = 0
     # fgmt_count = 0
     cache_size = 0
@@ -170,9 +171,9 @@ def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
             # fgmt_count += 1
             cache_size = len(P.path)
             cache_arr.append(cache_size)
-            t1 = time.time()
-            time_arr.append(t1-t0)
-            nodes_arr.append(len(m.G.nodes()))
+            # t1 = time.time()
+            # time_arr.append(t1-t0)
+            # nodes_arr.append(len(m.G.nodes()))
             
             
             
@@ -249,7 +250,7 @@ def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
                 if root.tail_time < left - IDLE_TIME:
                     # print("root's tail time: {:.2f}, current time window: {:.2f}-{:.2f}".format(root.tail_time, left, right))
                     path = P.pop_first_path() # remove nodes from P
-                    all_paths.append(path)
+                    # all_paths.append(path)
                     # remove nodes from G
                     for node_id in path:
                         try: m.G.remove_node(node_id +"-pre")
@@ -266,9 +267,148 @@ def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
                 break
                 
     # return time_arr, cache_arr, nodes_arr
-    return all_paths
+    # return all_paths
+    return
 
 
+
+
+
+def min_cost_flow_online_slow(fragment_queue, stitched_trajectory_queue, parameters):
+    '''
+    run MCF on the entire (growing) graph as a new fragment is added in
+    print out the paths, just to see how paths change
+    how does the new fgmt modify the previous MCF solution?
+        1. the new fgmt creates a new trajectory (Y)
+        2. the new fgmt addes to the tail of an existing trajectory (Y)
+        3. the new fgmt breaks an existing trajectory (in theory should exist, but not observed)
+        4 ...?
+    '''
+    ATTR_NAME = parameters.fragment_attr_name
+    m = MOT_Graph(ATTR_NAME, parameters)
+    cache = {}
+    
+    while True:
+        try:
+            fgmt = Fragment(fragment_queue.get(block=False))
+        except:
+            all_paths = m.all_paths
+            for path,_ in all_paths:
+                path = m.pretty_path(path)
+                stitched_trajectory_queue.put(path)
+            break
+        fgmt.compute_stats()
+        m.add_node(fgmt, cache)
+        fgmt_id = getattr(fgmt, ATTR_NAME)
+        cache[fgmt_id] = fgmt
+        print("new fgmt: ", fgmt_id)
+        
+        # run MCF
+        m.min_cost_flow("s", "t")
+        m.find_all_post_paths(m.G, "t", "s") 
+        print(m.all_paths)
+        
+        # flip edges back
+        edge_list = list(m.G.edges)
+        for u,v in edge_list:
+            if m.G.edges[u,v]["flipped"]:
+                cost = m.G.edges[u,v]["weight"]
+                m.G.remove_edge(u,v)
+                m.G.add_edge(v,u, weight = -cost, flipped = False)
+    return
+
+
+
+
+
+
+
+def min_cost_flow_rolling(fragment_queue, stitched_trajectory_queue, parameters):
+    '''
+    solving a MCF problem on rolling window
+    node in graph has attributes:
+        "head_id": 
+        "status":
+            "r": initial status
+            "g": when a node's last timestamp < left, ready to be written to path cache (P)
+            "k": written to P
+    cache and G is always synced
+    '''
+    
+    # Get parameters
+    TIME_WIN = parameters.time_win
+    IDLE_TIME = parameters.idle_time
+    TIMEOUT = parameters.raw_trajectory_queue_get_timeout
+    ATTR_NAME = parameters.fragment_attr_name
+    INCREMENT = 15
+    
+    # Initialize some data structures
+    curr_fragments = deque()  # fragments that are in current window (left, right), sorted by last_timestamp
+    # past_fragments = dict()  # set of ids indicate end of fragment ready to be matched, insertion ordered
+    cache = {}
+    m = MOT_Graph(ATTR_NAME, parameters)
+    
+    # Make a database connection for writing
+    dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
+               username=parameters.default_username, password=parameters.default_password,
+               database_name=parameters.db_name, collection_name = parameters.stitched_collection, 
+               server_id=1, process_name=1, process_id=1, session_config_id=1, max_idle_time_ms = None,
+               schema_file=parameters.stitched_schema_path)
+    
+    # Initialize
+    first_fgmt = Fragment(fragment_queue.get())
+    curr_fragments.append(first_fgmt.id) # get attribute
+    cache[first_fgmt.id] = first_fgmt
+    m.add_node(first_fgmt, status = "r")
+    right = first_fgmt.last_timestamp
+    left = right - TIME_WIN
+    
+    while True:
+    		# refill curr_fragments to add to G
+        while cache[curr_fragments[-1]].last_timestamp < right: 
+            fgmt = Fragment(fragment_queue.get())
+            fgmt_id = getattr(fgmt, parameters.fragment_attr_name)
+            curr_fragments.append(fgmt_id) # hide details in api
+            m.add_node(fgmt, cache)
+            m.G.nodes[fgmt_id+"-pre"]["status"] = "r"
+            m.G.nodes[fgmt_id+"-post"]["status"] = "r"
+            cache[fgmt_id] = fgmt
+
+		# start MCF
+        m.min_cost_flow("s", "t")
+
+		# Update pointers
+        left += INCREMENT
+        right += INCREMENT
+
+		# Mark green nodes (past left pointer) and cache for path LRU
+        while cache[curr_fragments[0]].last_timestamp < left: 
+            fgmt_id = curr_fragments.popleft()
+            m.G.nodes[fgmt_id+"-pre"]["status"] = "g"
+            m.G.nodes[fgmt_id+"-post"]["status"] = "g"
+
+		# Find green paths to s, starting from the right-most fragment
+        m.find_all_post_paths(m.G, "t", "s") 
+        for path, cost in m.all_paths:
+            path = m.pretty_path(path)
+            head = path[0]
+            tail = path[-1]
+            
+            for i in range(0, len(path)-1):
+                # id1, id2 = path[-i], path[-i-1]
+                if m.G.nodes[path[i+1]+"-pre"]["status"] == "r":
+                    break # go the the next path
+                id1, id2 = path[i], path[i+1]
+                if id1 in P.path and id2 in P.path:
+                    # print("union: {} and {}".format(id1, id2))
+                    P.union(id1, id2)
+            
+		
+
+
+
+    
+    
     
 if __name__ == '__main__':
     

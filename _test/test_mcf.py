@@ -6,23 +6,45 @@ Created on Sun May 21 15:17:59 2022
 @author: yanbing_wang
 """
 import queue
-from collections import deque 
-from i24_database_api.db_reader import DBReader
-from i24_database_api.db_writer import DBWriter
 import os
 from i24_configparse.parse import parse_cfg
-from utils.data_structures import Fragment, PathCache, MOT_Graph
 import time
-from i24_logger.log_writer import logger 
 import min_cost_flow as mcf
+from collections import defaultdict
+from stitcher import stitch_raw_trajectory_fragments
 
 
-# TODO:
-    # 1. check if the answers agree with nx.edmond_karp
-    # 2. add more intelligent enter/exiting cost based on the direction and where they are relative to the road
-    # 3. collapse path into human-readable ones, e.g., [1001, 1002, etc]
+# Examine test results in ID
+# print fragments and ID switches
+base = 100000
+
+def test_fragments(gt_ids, paths):
+    '''
+    Count the number of fragments (under-stitch) from the output of the stitcher
+    '''        
+    gt_id_st_fgm_ids = defaultdict(set) # key: (int) gt_id, val: (set) corresponding stitcher fragment_ids
+    IDS = 0
+
+    for i,path in enumerate(paths):
+        corr_gt_ids = set()
+        for node in path:
+            node = float(node)
+            corr_gt_ids.add(node//base)
+            gt_id_st_fgm_ids[node//base].add(i)
+            
+        if len(corr_gt_ids) > 1:
+            print("ID switches: ", corr_gt_ids)
+            IDS += len(corr_gt_ids) - 1
     
- 
+    FGMT = 0
+    for key,val in gt_id_st_fgm_ids.items():
+        if len(val) > 1:
+            print("fragments: ", [paths[i] for i in val])
+            FGMT += len(val)-1
+                
+
+    return FGMT, IDS
+
 
 
         
@@ -35,11 +57,15 @@ if __name__ == '__main__':
     cfg = "../config"
     config_path = os.path.join(cwd,cfg)
     os.environ["user_config_directory"] = config_path
-    parameters = parse_cfg("TEST", cfg_name = "test_param.config")
+    parameters = parse_cfg("DEBUG", cfg_name = "test_param.config")
     
     # read to queue
-    gt_ids = [i for i in range(100,150)]
-    fragment_queue,actual_gt_ids = mcf.read_to_queue(gt_ids=gt_ids, gt_val=25, lt_val=45, parameters=parameters)
+    gt_ids = [i for i in range(100,110)]
+    # gt_ids = [132, 135]
+    gt_val = 30
+    lt_val = 40
+    
+    fragment_queue,actual_gt_ids,_ = mcf.read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
     print("actual_gt_ids: ", len(actual_gt_ids))
     s1 = fragment_queue.qsize()
     stitched_trajectory_queue = queue.Queue()
@@ -47,29 +73,40 @@ if __name__ == '__main__':
     # start stitching
     print("MCF Batch...")
     t1 = time.time()
-    online = mcf.min_cost_flow_batch(fragment_queue, stitched_trajectory_queue, parameters)
+    mcf.min_cost_flow_online_slow(fragment_queue, stitched_trajectory_queue, parameters)
+    # stitch_raw_trajectory_fragments("west", fragment_queue,stitched_trajectory_queue, parameters)
+    batch = list(stitched_trajectory_queue.queue)
     s2 = stitched_trajectory_queue.qsize()
     t2 = time.time()
     print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
     
-    
-    # read to queue
-    fragment_queue,actual_gt_ids = mcf.read_to_queue(gt_ids=gt_ids, gt_val=25, lt_val=45, parameters=parameters)
-    s1 = fragment_queue.qsize()
-    stitched_trajectory_queue = queue.Queue()
-    
-    # start stitching
-    print("MCF Online...")
-    t1 = time.time()
-    batch = mcf.min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters)
-    s2 = stitched_trajectory_queue.qsize()
-    t2 = time.time()
-    print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
+    # test
+    FGMT, IDS = test_fragments(gt_ids, batch)
+    print("FGMT: {}, IDS: {}".format(FGMT, IDS))
     
     
-    for path_o in online:
-        if path_o not in batch:
-            print(path_o)
+    # # read to queue
+    # fragment_queue,actual_gt_ids, _ = mcf.read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
+    # s1 = fragment_queue.qsize()
+    # stitched_trajectory_queue = queue.Queue()
+    
+    # # start stitching
+    # print("MCF Online...")
+    # t1 = time.time()
+    # mcf.min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters)
+    # online = list(stitched_trajectory_queue.queue)
+    # s2 = stitched_trajectory_queue.qsize()
+    # t2 = time.time()
+    # print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
+    
+    # # test
+    # FGMT, IDS = test_fragments(gt_ids, online)
+    # print("FGMT: {}, IDS: {}".format(FGMT, IDS))
+    
+    
+    # for path_o in online:
+    #     if path_o not in batch:
+    #         print("difference: ", path_o)
     
     # plot runtime
     # import matplotlib.pyplot as plt
