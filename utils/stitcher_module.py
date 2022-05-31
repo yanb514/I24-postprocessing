@@ -82,18 +82,19 @@ def nll(track1, track2, TIME_WIN, VARX, VARY):
     if track2.first_timestamp < track1.last_timestamp: # if track2 starts before track1 ends
         return INF
     if track2.first_timestamp - track1.last_timestamp > TIME_WIN: # if track2 starts TIME_WIN after track1 ends
-        return -INF
+        return INF
     
     n = min(len(track2.t), 30)
-    pt1 = track1.t[-1]-0.0001
+    pt1 = track1.t[-1]-1e-6
     tdiff = track2.t[:n] - pt1
 
     xx = np.vstack([track2.t[:n],np.ones(n)]).T # N x 2
     targetx = np.matmul(xx, track1.fitx)
     targety = np.matmul(xx, track1.fity)
     
-    nllx = n/2*np.log(2*np.pi) + n/2*np.log(VARX) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track2.x[:n]-targetx)**2)
-    nlly = n/2*np.log(2*np.pi) + n/2*np.log(VARY) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track2.y[:n]-targety)**2)
+    # const = n/2*np.log(2*np.pi)
+    nllx =  n/2*np.log(VARX) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track2.x[:n]-targetx)**2)
+    nlly =  n/2*np.log(VARY) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track2.y[:n]-targety)**2)
     
     return (nllx + nlly)/n
 

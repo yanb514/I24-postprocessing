@@ -567,22 +567,19 @@ class MOT_Graph:
         TIME_WIN = self.parameters.time_win
         VARX = self.parameters.varx
         VARY = self.parameters.vary
-        THRESHOLD = self.parameters.thresh
+        # THRESHOLD = self.parameters.thresh
         INCLUSION = self.parameters.inclusion
         
         edge_list = []
-        node_set = set()
-        for node in self.G.nodes():
-            if node not in {"s", "t"}:
-                fgmt_id = node.partition("-")[0]
-                if fgmt_id not in node_set and fgmt_id in fragment_dict:
-                    node_set.add(fgmt_id)
-                    fgmt = fragment_dict[fgmt_id]
-                    # cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
-                    cost = nll(fgmt, fragment, TIME_WIN, VARX, VARY)
-                    if cost < THRESHOLD and cost > -999:
-                        edge_list.append(((fgmt_id, getattr(fragment, self.attr)),cost))
+
+        for fgmt_id, fgmt in fragment_dict.items():
+            # cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
+            cost = nll(fgmt, fragment, TIME_WIN, VARX, VARY)
             
+            print(fgmt.ID, fragment.ID, cost)
+            if cost <= 0: # Natually, if cost > 0, it's preferable to break into different trajectories
+            # if cost < THRESHOLD: 
+                edge_list.append(((fgmt_id, getattr(fragment, self.attr)),cost))
             
         # add transition edges
         for e,c in edge_list:
@@ -620,16 +617,16 @@ class MOT_Graph:
         while not fragment_queue.empty():
             new_fgmt = Fragment(fragment_queue.get())
             new_fgmt.compute_stats()
-            fragment_dict[getattr(new_fgmt, self.attr)] = new_fgmt 
-            
+
             for fgmt_id, fgmt in fragment_dict.items():
                 # if fgmt_id == "10800011.0" and new_fgmt.ID == "10800012.0":
                 #     print('here')
                 cost = nll(fgmt, new_fgmt, TIME_WIN, VARX, VARY)
-                # print(((getattr(fgmt, self.attr), getattr(new_fgmt, self.attr)),cost))
-                if cost < THRESHOLD and cost > -999:
+                print("construct_graph ", ((getattr(fgmt, self.attr), getattr(new_fgmt, self.attr)),cost))
+                if cost < 0:
                     edge_list.append(((getattr(fgmt, self.attr), getattr(new_fgmt, self.attr)),cost))
-         
+                    
+            fragment_dict[getattr(new_fgmt, self.attr)] = new_fgmt 
             
         # add transition edges
         for e,c in edge_list:
@@ -712,24 +709,22 @@ class MOT_Graph:
             tot_flow += 1
             tot_cost += path_cost # total cost so far
             
-            # print("path: ", path)
-            # print("path cost: ",path_cost)
-            # plt.figure()
-            # self.draw_graph(self.G, collapse = False)
-            # plt.title(str(path))
-            # print("current shortest path: ", path)
-           
-        # print("total flow: {}".format(tot_flow))
-        # print("total cost: {}".format(tot_cost))
-        # self.find_all_post_paths(self.G, "t", "s")
-        # print("all paths: ", self.all_paths)
-        
-        # plt.figure()
-        # self.draw_graph(self.G, collapse = False)
-        # plt.title("final graph")
         return tot_flow, tot_cost
     
     
+    def flip_edge_along_path(self, path, flipped = None):
+        '''
+        flip all the edges along a given path, where edge cost is negated, and flipped is set to the given value
+        if flipped = None, simply negate the exising flipped flag
+        '''
+        for i in range(len(path)-1):
+            u,v = path[i], path[i+1]
+            cost = self.G[u][v]["weight"]
+            bool = self.G[u][v]["flipped"]
+            self.G.remove_edge(u,v)
+            self.G.add_edge(v,u , weight = -cost, flipped = not bool if not flipped else flipped)
+        return
+            
     def dfs_pre_order_flipped(self, G, node, destination):
         # DFS traversal
         # save paths in post-order

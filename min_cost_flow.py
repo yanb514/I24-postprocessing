@@ -11,8 +11,9 @@ from i24_database_api.db_reader import DBReader
 from i24_database_api.db_writer import DBWriter
 import os
 from i24_configparse.parse import parse_cfg
-from utils.data_structures import Fragment, PathCache, MOT_Graph
+from utils.data_structures import Fragment, PathCache, MOT_Graph, SortedDLL
 import time
+import heapq
 
 # TODO:
     # 1. check if the answers agree with nx.edmond_karp
@@ -274,6 +275,112 @@ def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
 
 
 
+def min_cost_flow_online_neg_cycle(fragment_queue, stitched_trajectory_queue, parameters):
+    '''
+    run MCF on the entire (growing) graph as a new fragment is added in
+    
+    '''
+    ATTR_NAME = parameters.fragment_attr_name
+    m = MOT_Graph(ATTR_NAME, parameters)
+    cache = {}
+    # curr_fragments = deque()
+    IDLE_TIME = parameters.idle_time
+    
+    cum_time = []
+    t0 = time.time()
+    cum_mem = []
+    
+    while True:
+        
+        t1 = time.time()
+        cum_time.append(t1-t0)
+        cum_mem.append(len(cache))
+        try:
+            fgmt = Fragment(fragment_queue.get(block=False))
+            fgmt.compute_stats()
+            m.add_node(fgmt, cache)
+            fgmt_id = getattr(fgmt, ATTR_NAME)
+            cache[fgmt_id] = fgmt
+            left = fgmt.first_timestamp
+        except:
+            # process the remaining in G
+            m.find_all_post_paths(m.G, "t", "s")
+            all_paths = m.all_paths
+            for path,_ in all_paths:
+                path = m.pretty_path(path)
+                stitched_trajectory_queue.put(path)
+                # print("final flush head tail: ", path[0], path[-1])
+            break
+        
+        # Finding all pivots (predecessor nodes of new_fgmt-pre such that the path cost pivot-new_fgmt-t is negative)
+        pivot_heap = []
+        for pred, data in m.G.pred[fgmt_id + "-pre"].items():
+            cost_new_path = data["weight"] + parameters.inclusion
+            if cost_new_path < 0: # favorable to attach fgmt after pred
+                heapq.heappush(pivot_heap, (cost_new_path, pred))
+           
+
+        # check the cost of old path from t->pivot along "flipped" edges
+        while pivot_heap:
+            cost_new_path, pred = heapq.heappop(pivot_heap) 
+            if pred == "s": # create a new trajectory
+                m.flip_edge_along_path([pred, fgmt_id+"-pre", fgmt_id+"-post", "t"], flipped = True)
+                break
+
+            m.find_all_post_paths(m.G, "t", pred)
+            old_path, cost_old_path = m.all_paths[0] # should have one path only
+            
+            # the new path that starts from pivot and includes the new fragment is better than the path starting from pivot and not including the new fgmt
+            # therefore, update the new path
+            
+            if cost_new_path < -cost_old_path:
+                # flip edges in path from pivot -> fgmt -> t
+                m.flip_edge_along_path([pred, fgmt_id+"-pre", fgmt_id+"-post", "t"], flipped = True)     
+                
+                succ = old_path[1]
+                m.flip_edge_along_path([succ, pred], flipped = False)# back to the original state
+                
+                # if sucessor of pivot in old path is not t, connect sucessor to s
+                if succ != "t":
+                    m.flip_edge_along_path(["s", succ], flipped = True)
+                    
+                break # no need to check further in heap
+        
+        
+        # Smart idea! look at all neighbors of "t", which are the tail nodes!
+        # if the tail is time-out, then pop the entire path!
+        m.find_all_post_paths(m.G, "t", "s")
+        print(m.all_paths)
+        
+        nodes_to_remove = []
+        for node in m.G.adj["t"]:
+            if m.G["t"][node]["flipped"]:
+                tail_id = node.partition("-")[0]
+                if cache[tail_id].last_timestamp + IDLE_TIME < left:
+                    m.find_all_post_paths(m.G, node, "s")
+                    path, cost = m.all_paths[0]
+                    path = m.pretty_path(path)
+                    # print("remove: ", path)
+                    stitched_trajectory_queue.put(path)
+                    # remove path from G and cache
+                    nodes_to_remove.extend(path)
+
+                        
+        for p in nodes_to_remove: # should not have repeats in nodes_to_remove
+            m.G.remove_node(p+"-pre")
+            m.G.remove_node(p+"-post")
+            cache.pop(p)
+          
+                
+        
+    return cum_time, cum_mem
+
+
+
+
+
+
+
 def min_cost_flow_online_slow(fragment_queue, stitched_trajectory_queue, parameters):
     '''
     run MCF on the entire (growing) graph as a new fragment is added in
@@ -316,96 +423,6 @@ def min_cost_flow_online_slow(fragment_queue, stitched_trajectory_queue, paramet
                 m.G.remove_edge(u,v)
                 m.G.add_edge(v,u, weight = -cost, flipped = False)
     return
-
-
-
-
-
-
-
-def min_cost_flow_rolling(fragment_queue, stitched_trajectory_queue, parameters):
-    '''
-    solving a MCF problem on rolling window
-    node in graph has attributes:
-        "head_id": 
-        "status":
-            "r": initial status
-            "g": when a node's last timestamp < left, ready to be written to path cache (P)
-            "k": written to P
-    cache and G is always synced
-    '''
-    
-    # Get parameters
-    TIME_WIN = parameters.time_win
-    IDLE_TIME = parameters.idle_time
-    TIMEOUT = parameters.raw_trajectory_queue_get_timeout
-    ATTR_NAME = parameters.fragment_attr_name
-    INCREMENT = 15
-    
-    # Initialize some data structures
-    curr_fragments = deque()  # fragments that are in current window (left, right), sorted by last_timestamp
-    # past_fragments = dict()  # set of ids indicate end of fragment ready to be matched, insertion ordered
-    cache = {}
-    m = MOT_Graph(ATTR_NAME, parameters)
-    
-    # Make a database connection for writing
-    dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
-               username=parameters.default_username, password=parameters.default_password,
-               database_name=parameters.db_name, collection_name = parameters.stitched_collection, 
-               server_id=1, process_name=1, process_id=1, session_config_id=1, max_idle_time_ms = None,
-               schema_file=parameters.stitched_schema_path)
-    
-    # Initialize
-    first_fgmt = Fragment(fragment_queue.get())
-    curr_fragments.append(first_fgmt.id) # get attribute
-    cache[first_fgmt.id] = first_fgmt
-    m.add_node(first_fgmt, status = "r")
-    right = first_fgmt.last_timestamp
-    left = right - TIME_WIN
-    
-    while True:
-    		# refill curr_fragments to add to G
-        while cache[curr_fragments[-1]].last_timestamp < right: 
-            fgmt = Fragment(fragment_queue.get())
-            fgmt_id = getattr(fgmt, parameters.fragment_attr_name)
-            curr_fragments.append(fgmt_id) # hide details in api
-            m.add_node(fgmt, cache)
-            m.G.nodes[fgmt_id+"-pre"]["status"] = "r"
-            m.G.nodes[fgmt_id+"-post"]["status"] = "r"
-            cache[fgmt_id] = fgmt
-
-		# start MCF
-        m.min_cost_flow("s", "t")
-
-		# Update pointers
-        left += INCREMENT
-        right += INCREMENT
-
-		# Mark green nodes (past left pointer) and cache for path LRU
-        while cache[curr_fragments[0]].last_timestamp < left: 
-            fgmt_id = curr_fragments.popleft()
-            m.G.nodes[fgmt_id+"-pre"]["status"] = "g"
-            m.G.nodes[fgmt_id+"-post"]["status"] = "g"
-
-		# Find green paths to s, starting from the right-most fragment
-        m.find_all_post_paths(m.G, "t", "s") 
-        for path, cost in m.all_paths:
-            path = m.pretty_path(path)
-            head = path[0]
-            tail = path[-1]
-            
-            for i in range(0, len(path)-1):
-                # id1, id2 = path[-i], path[-i-1]
-                if m.G.nodes[path[i+1]+"-pre"]["status"] == "r":
-                    break # go the the next path
-                id1, id2 = path[i], path[i+1]
-                if id1 in P.path and id2 in P.path:
-                    # print("union: {} and {}".format(id1, id2))
-                    P.union(id1, id2)
-            
-		
-
-
 
     
     
