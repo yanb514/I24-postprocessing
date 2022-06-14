@@ -9,11 +9,17 @@ import queue
 from collections import deque 
 from i24_database_api.db_reader import DBReader
 from i24_database_api.db_writer import DBWriter
+import i24_logger.log_writer as log_writer
 import os
-from i24_configparse.parse import parse_cfg
+from i24_configparse import parse_cfg
 from utils.data_structures import Fragment, PathCache, MOT_Graph, SortedDLL
 import time
 import heapq
+
+# config_path = os.path.join(os.getcwd(),"config")
+# os.environ["user_config_directory"] = config_path
+# parameters = parse_cfg("DEBUG", cfg_name = "test_param.config")
+
 
 # TODO:
     # 1. check if the answers agree with nx.edmond_karp
@@ -275,11 +281,26 @@ def min_cost_flow_online(fragment_queue, stitched_trajectory_queue, parameters):
 
 
 
-def min_cost_flow_online_neg_cycle(fragment_queue, stitched_trajectory_queue, parameters):
+def min_cost_flow_online_neg_cycle(direction, fragment_queue, stitched_trajectory_queue, parameters):
     '''
     run MCF on the entire (growing) graph as a new fragment is added in
+    this online version is an approximation of batch MCF
     
     '''
+    # Initiate a logger
+    stitcher_logger = log_writer.logger
+    stitcher_logger.set_name("stitcher_"+direction)
+    
+    # Make a database connection for writing
+    dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
+               username=parameters.default_username, password=parameters.default_password,
+               database_name=parameters.db_name, collection_name = parameters.stitched_collection, 
+               server_id=1, process_name=1, process_id=1, session_config_id=1, max_idle_time_ms = None,
+               schema_file=parameters.stitched_schema_path)
+        
+    stitcher_logger.info("** Stitching starts. fragment_queue size: {}".format(fragment_queue.qsize()),extra = None)
+    
+    
     ATTR_NAME = parameters.fragment_attr_name
     m = MOT_Graph(ATTR_NAME, parameters)
     cache = {}
@@ -295,6 +316,7 @@ def min_cost_flow_online_neg_cycle(fragment_queue, stitched_trajectory_queue, pa
         t1 = time.time()
         cum_time.append(t1-t0)
         cum_mem.append(len(cache))
+        
         try:
             fgmt = Fragment(fragment_queue.get(block=False))
             fgmt.compute_stats()
@@ -302,6 +324,7 @@ def min_cost_flow_online_neg_cycle(fragment_queue, stitched_trajectory_queue, pa
             fgmt_id = getattr(fgmt, ATTR_NAME)
             cache[fgmt_id] = fgmt
             left = fgmt.first_timestamp
+            
         except:
             # process the remaining in G
             m.find_all_post_paths(m.G, "t", "s")
@@ -350,7 +373,7 @@ def min_cost_flow_online_neg_cycle(fragment_queue, stitched_trajectory_queue, pa
         # Smart idea! look at all neighbors of "t", which are the tail nodes!
         # if the tail is time-out, then pop the entire path!
         m.find_all_post_paths(m.G, "t", "s")
-        print(m.all_paths)
+        # print(m.all_paths)
         
         nodes_to_remove = []
         for node in m.G.adj["t"]:
@@ -361,7 +384,9 @@ def min_cost_flow_online_neg_cycle(fragment_queue, stitched_trajectory_queue, pa
                     path, cost = m.all_paths[0]
                     path = m.pretty_path(path)
                     # print("remove: ", path)
+                    stitcher_logger.info("** write to queue. path length: {}".format(len(path)))
                     stitched_trajectory_queue.put(path)
+                    # dbw.write_one_trajectory(thread = True, fragment_ids = path)
                     # remove path from G and cache
                     nodes_to_remove.extend(path)
 
@@ -370,7 +395,8 @@ def min_cost_flow_online_neg_cycle(fragment_queue, stitched_trajectory_queue, pa
             m.G.remove_node(p+"-pre")
             m.G.remove_node(p+"-post")
             cache.pop(p)
-          
+            
+        stitcher_logger.info("graph size: {}".format(len(m.G)))
                 
         
     return cum_time, cum_mem

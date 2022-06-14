@@ -7,7 +7,7 @@ written to the database.
 
 # -----------------------------
 import os
-from i24_logger.log_writer import logger 
+import i24_logger.log_writer as log_writer
 from i24_database_api.db_writer import DBWriter
 from collections import deque
 from utils.stitcher_module import min_nll_cost
@@ -27,7 +27,7 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
     :param parameters: config_parse object
     :return: None
     """
-    stitcher_logger = logger
+    stitcher_logger = log_writer.logger
     stitcher_logger.set_name("stitcher_"+direction)
     # Get parameters
     TIME_WIN = parameters.time_win

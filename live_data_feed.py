@@ -6,7 +6,7 @@ Created on Tue May 10 14:55:04 2022
 @author: yanbing_wang
 """
 from i24_database_api.db_reader import DBReader
-from i24_logger.log_writer import logger 
+import i24_logger.log_writer as log_writer
 import time
 
 def format_flat(columns, document, impute_none_for_missing=False):
@@ -63,7 +63,7 @@ def live_data_reader(host, port, username, password, database_name, collection_n
     :return:
     """
     
-    # Connect to a replica set (the replica set has to be started first)
+    # Connect to a database reader
     dbr = DBReader(host=host, port=port, username=username,password=password,
                    database_name=database_name, collection_name=collection_name)
     # temporary: start from min and end at max
@@ -75,26 +75,34 @@ def live_data_reader(host, port, username, password, database_name, collection_n
     first_change_time = dbr.get_max("last_timestamp") # to keep track of the first change during each change stream event
     safe_query_time = first_change_time - t_buffer # guarantee time-order up until safe_query_time
 
+    logger = log_writer.logger
+    logger.set_name("live_data_reader_"+direction)
     
     while True:
         try:
-            # print("current queue size: {}, first_change_time: {:.2f}, range_iter_stop:{:.2f}, query: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, dbr.range_iter_stop, rri._current_lower_value, rri._current_upper_value))
+            logger.info("current queue size: {}, first_change_time: {:.2f}, range_iter_stop:{:.2f}, query: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, dbr.range_iter_stop, rri._current_lower_value, rri._current_upper_value))
             if ready_queue.qsize() <= min_queue_size: # only move to the next query range if queue is low in stock
                 stream = dbr.collection.watch(pipeline) 
                 first_insert_change = stream.try_next() # get the first insert since last listen
-                if first_insert_change is not None: # if there is updates by the time collection.watch() is called
+                logger.info("first_insert_change: {}".format(first_insert_change))
+  
+                if first_insert_change: # if there is updates by the time collection.watch() is called
                     first_change_time = max(first_insert_change["fullDocument"]["last_timestamp"], first_change_time)
                     safe_query_time = first_change_time - t_buffer
                     dbr.range_iter_stop = safe_query_time
     
                 if rri._current_upper_value < safe_query_time: # if safe to query
+                    logger.info("read next query range: {:.2f}-{:.2f}".format(rri._current_lower_value, rri._current_upper_value))
                     next_batch = next(rri)
+        
                     for doc in next_batch:
                         ready_queue.put(doc)
                 else: # if not safe to query, then wait 
-                    time.sleep(0.5)
+                    # logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))
+                    time.sleep(2)
             else: # if queue has sufficient number of items, then wait before the next iteration (throttle)
-                time.sleep(0.5)
+                logger.info("queue size is sufficient")     
+                time.sleep(10)
                         
         except StopIteration: # rri reaches the end
             logger.warning("live_data_reader reaches the end of query range iteration.")

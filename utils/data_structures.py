@@ -576,7 +576,7 @@ class MOT_Graph:
             # cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
             cost = nll(fgmt, fragment, TIME_WIN, VARX, VARY)
             
-            print(fgmt.ID, fragment.ID, cost)
+            # print(fgmt.ID, fragment.ID, cost)
             if cost <= 0: # Natually, if cost > 0, it's preferable to break into different trajectories
             # if cost < THRESHOLD: 
                 edge_list.append(((fgmt_id, getattr(fragment, self.attr)),cost))
@@ -622,7 +622,7 @@ class MOT_Graph:
                 # if fgmt_id == "10800011.0" and new_fgmt.ID == "10800012.0":
                 #     print('here')
                 cost = nll(fgmt, new_fgmt, TIME_WIN, VARX, VARY)
-                print("construct_graph ", ((getattr(fgmt, self.attr), getattr(new_fgmt, self.attr)),cost))
+                # print("construct_graph ", ((getattr(fgmt, self.attr), getattr(new_fgmt, self.attr)),cost))
                 if cost < 0:
                     edge_list.append(((getattr(fgmt, self.attr), getattr(new_fgmt, self.attr)),cost))
                     

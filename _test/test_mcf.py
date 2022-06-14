@@ -9,7 +9,7 @@ Created on Sun May 21 15:17:59 2022
 """
 import queue
 import os
-from i24_configparse.parse import parse_cfg
+from i24_configparse import parse_cfg
 import time
 from collections import defaultdict
 import sys
@@ -66,7 +66,8 @@ if __name__ == '__main__':
     cfg = "../config"
     config_path = os.path.join(cwd,cfg)
     os.environ["user_config_directory"] = config_path
-    parameters = parse_cfg("DEBUG", cfg_name = "test_param.config")
+    os.environ["my_config_section"] = "DEBUG"
+    parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
     # read to queue
     # gt_ids = [i for i in range(100,150)]
@@ -79,7 +80,7 @@ if __name__ == '__main__':
     # s1 = fragment_queue.qsize()
     # stitched_trajectory_queue = queue.Queue()
     
-    # # start stitching
+    # start stitching
     # print("MCF Batch...")
     # t1 = time.time()
     # mcf.min_cost_flow_batch(fragment_queue, stitched_trajectory_queue, parameters)
@@ -102,7 +103,7 @@ if __name__ == '__main__':
     # start stitching
     print("MCF Online...")
     t1 = time.time()
-    mcf.min_cost_flow_online_neg_cycle(fragment_queue, stitched_trajectory_queue, parameters)
+    mcf.min_cost_flow_online_neg_cycle("east", fragment_queue, stitched_trajectory_queue, parameters)
     online = list(stitched_trajectory_queue.queue)
     s2 = stitched_trajectory_queue.qsize()
     t2 = time.time()
