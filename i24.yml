@@ -1,4 +1,4 @@
-name: i24
+name: postproc
 channels:
   - anaconda
   - conda-forge
