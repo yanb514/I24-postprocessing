@@ -234,9 +234,6 @@ dependencies:
     - cycler==0.11.0
     - ecs-logging==1.1.0
     - fonttools==4.32.0
-    - i24-configparse==0.1.4
-    - i24-database-api==0.3
-    - i24-logger==1.1.2
     - kiwisolver==1.4.2
     - matplotlib==3.5.1
     - mplcursors==0.5.1
