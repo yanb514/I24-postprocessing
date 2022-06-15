@@ -70,8 +70,8 @@ if __name__ == '__main__':
     parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
     # read to queue
-    # gt_ids = [i for i in range(100,150)]
-    gt_ids = [131, 108]
+    gt_ids = [i for i in range(100,150)]
+    # gt_ids = [131, 108]
     gt_val = 30
     lt_val = 40
     
@@ -103,7 +103,7 @@ if __name__ == '__main__':
     # start stitching
     print("MCF Online...")
     t1 = time.time()
-    mcf.min_cost_flow_online_neg_cycle("east", fragment_queue, stitched_trajectory_queue, parameters)
+    mcf.min_cost_flow_online_neg_cycle("west", fragment_queue, stitched_trajectory_queue, parameters)
     online = list(stitched_trajectory_queue.queue)
     s2 = stitched_trajectory_queue.qsize()
     t2 = time.time()

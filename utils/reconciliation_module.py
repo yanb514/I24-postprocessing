@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from cvxopt import matrix, solvers, sparse,spdiag,spmatrix
 from bson.objectid import ObjectId
-from i24_logger.log_writer import logger
+from i24_logger.log_writer import logger, catch_critical, log_warnings, log_errors
 
 # TODO
 # add try except and put errors/warnings to log
@@ -11,6 +11,7 @@ solvers.options['show_progress'] = False
 dt = 1/30
 
 # ==================== CVX optimization for 2d dynamics ==================
+@catch_critical(errors = (Exception))
 def combine_fragments(raw_collection, stitched_doc):
     '''
     stack fragments from stitched_doc to a single document
@@ -23,64 +24,64 @@ def combine_fragments(raw_collection, stitched_doc):
     fields that need to be re-assigned: first_timestamp, last_timestamp, starting_x, ending_x, length, width, height
     '''
     
-    try:
-        stacked = {}
-        stacked["timestamp"] = []
-        stacked["x_position"] = []
-        stacked["y_position"] = []
-        stacked["road_segment_id"] = []
-        stacked["flags"] = []
-        stacked["length"] = []
-        stacked["width"] = []
-        stacked["height"] = []
-        
-        # print("here")
-        # print(stitched_doc["fragment_ids"])    # t0 = time.time()
-        if isinstance(stitched_doc, list):
-            fragment_ids = stitched_doc
-        else:
-            fragment_ids = stitched_doc["fragment_ids"]
-        if isinstance(fragment_ids[0], str):
-            fragment_ids = [ObjectId(_id) for _id in fragment_ids]
+    stacked = {}
+    stacked["timestamp"] = []
+    stacked["x_position"] = []
+    stacked["y_position"] = []
+    stacked["road_segment_id"] = []
+    stacked["flags"] = []
+    stacked["length"] = []
+    stacked["width"] = []
+    stacked["height"] = []
     
-        all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
-        # print("in takes", time.time()-t0)
+    # print("here")
+    # print(stitched_doc["fragment_ids"])    # t0 = time.time()
+    if isinstance(stitched_doc, list):
+        fragment_ids = stitched_doc
+    else:
+        fragment_ids = stitched_doc["fragment_ids"]
+    if isinstance(fragment_ids[0], str):
+        fragment_ids = [ObjectId(_id) for _id in fragment_ids]
+
+    all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
+    # print("in takes", time.time()-t0)
+
+    # tt = time.time()
+    for fragment in all_fragment:
+        # print(fragment["first_timestamp"], fragment["last_timestamp"])
+        # print(len(fragment["timestamp"]))
+        stacked["timestamp"].extend(fragment["timestamp"])
+        stacked["x_position"].extend(fragment["x_position"])
+        stacked["y_position"].extend(fragment["y_position"])
+        stacked["road_segment_id"].extend(fragment["road_segment_id"])
+        stacked["flags"].extend(fragment["flags"])
+        stacked["length"].extend(fragment["length"])
+        stacked["width"].extend(fragment["width"])
+        stacked["height"].extend(fragment["height"])
     
-        # tt = time.time()
-        for fragment in all_fragment:
-            # print(fragment["first_timestamp"], fragment["last_timestamp"])
-            # print(len(fragment["timestamp"]))
-            stacked["timestamp"].extend(fragment["timestamp"])
-            stacked["x_position"].extend(fragment["x_position"])
-            stacked["y_position"].extend(fragment["y_position"])
-            stacked["road_segment_id"].extend(fragment["road_segment_id"])
-            stacked["flags"].extend(fragment["flags"])
-            stacked["length"].extend(fragment["length"])
-            stacked["width"].extend(fragment["width"])
-            stacked["height"].extend(fragment["height"])
-        
-        # print("for loop: ", time.time()-tt)    
-        # first fragment
-        first_id = fragment_ids[0]
-        first_fragment = raw_collection.find_one({"_id": first_id})
-        stacked["starting_x"] = first_fragment["starting_x"]
-        stacked["first_timestamp"] = first_fragment["first_timestamp"]
-        
-        # last fragment
-        last_id = fragment_ids[-1]
-        last_fragment = raw_collection.find_one({"_id": last_id})
-        stacked["ending_x"] = last_fragment["ending_x"]
-        stacked["last_timestamp"] = last_fragment["last_timestamp"]
-        
-        # take the median of dimensions
-        stacked["length"] = np.median(stacked["length"])
-        stacked["width"] = np.median(stacked["width"])
-        stacked["height"] = np.median(stacked["height"])
-     
-    except Exception as e:
-        logger.error(e)
+    # print("for loop: ", time.time()-tt)    
+    # first fragment
+    first_id = fragment_ids[0]
+    first_fragment = raw_collection.find_one({"_id": first_id})
+    stacked["starting_x"] = first_fragment["starting_x"]
+    stacked["first_timestamp"] = first_fragment["first_timestamp"]
+    
+    # last fragment
+    last_id = fragment_ids[-1]
+    last_fragment = raw_collection.find_one({"_id": last_id})
+    stacked["ending_x"] = last_fragment["ending_x"]
+    stacked["last_timestamp"] = last_fragment["last_timestamp"]
+    
+    # take the median of dimensions
+    stacked["length"] = np.median(stacked["length"])
+    stacked["width"] = np.median(stacked["width"])
+    stacked["height"] = np.median(stacked["height"])
+    
     return stacked
-    
+
+
+
+@catch_critical(errors = (Exception))    
 def resample(car):
     # resample timestamps to 30hz, leave nans for missing data
     '''
@@ -108,7 +109,8 @@ def resample(car):
         logger.error(e)
     return car
 
-       
+  
+@catch_critical(errors = (Exception))     
 def _blocdiag(X, n):
     """
     makes diagonal blocs of X, for indices in [sub1,sub2]
@@ -127,6 +129,8 @@ def _blocdiag(X, n):
             mat.append(row)
         return sparse(mat)
 
+
+@catch_critical(errors = (Exception))
 def _getQPMatrices(x, t, lam2, lam1, reg="l2"):
     '''
     turn ridge regression (reg=l2) 

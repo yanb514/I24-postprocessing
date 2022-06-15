@@ -25,11 +25,12 @@ os.environ["my_config_section"] = "DEBUG"
 parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
 
 # initiate a dbw and dbr object
+schema_path = os.path.join(os.environ["user_config_directory"],parameters.reconciled_schema_path)
 dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
                 username=parameters.default_username, password=parameters.default_password,
                 database_name=parameters.db_name, collection_name=parameters.reconciled_collection,
                 server_id=1, process_name=1, process_id=1, session_config_id=1, 
-                max_idle_time_ms = 20000, schema_file=parameters.reconciled_schema_path)
+                max_idle_time_ms = 20000, schema_file=schema_path)
 raw = DBReader(host=parameters.default_host, port=parameters.default_port, 
             username=parameters.readonly_user, password=parameters.default_password,
             database_name=parameters.db_name, collection_name=parameters.raw_collection)
@@ -63,19 +64,19 @@ def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue
         
     next_to_reconcile = stitched_trajectory_queue.get(block=True) # path list
     # print("...got next...")
-    # rec_worker_logger.info("*** 1. Got a stitched trajectory document.", extra = None)
+    rec_worker_logger.info("*** 1. Got a stitched trajectory document.", extra = None)
     
     combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)
     # print("...combined...")
-    # rec_worker_logger.info("*** 2. Combined stitched fragments.", extra = None)
+    rec_worker_logger.info("*** 2. Combined stitched fragments.", extra = None)
 
     resampled_trajectory = resample(combined_trajectory)
     # print("...resampled...")
-    # rec_worker_logger.info("*** 3. Resampled.", extra = None)
+    rec_worker_logger.info("*** 3. Resampled.", extra = None)
     
     finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
     # print("...finished...")
-    # rec_worker_logger.info("*** 4. Reconciled a trajectory. duration = {:.2f}s.".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"]), extra = None)
+    rec_worker_logger.info("*** 4. Reconciled a trajectory. duration = {:.2f}s.".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"]), extra = None)
    
     # print("writing to db...")
     dbw.write_one_trajectory(**finished_trajectory)

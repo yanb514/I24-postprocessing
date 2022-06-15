@@ -13,27 +13,29 @@ import signal
 import time
 from live_data_feed import live_data_reader # change to live_data_read later
 from i24_configparse import parse_cfg
+from i24_logger.log_writer import logger
 # from stitcher import stitch_raw_trajectory_fragments
 from min_cost_flow import min_cost_flow_online_neg_cycle
 from reconciliation import reconciliation_pool
 
-import i24_logger.log_writer as log_writer
+
 config_path = os.path.join(os.getcwd(),"config")
-os.environ["user_config_directory"] = config_path
+# os.environ["user_config_directory"] = config_path
 os.environ["my_config_section"] = "DEBUG"
 parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
+
 
 if __name__ == '__main__':
     
     # CHANGE NAME OF THE LOGGER
-    manager_logger = log_writer.logger
-    # manager_logger.set_name("manager")
+    manager_logger = logger
+    manager_logger.set_name("postproc_manager")
     manager_logger.info("name is {}".format(manager_logger._logger.name))
     setattr(manager_logger, "_default_logger_extra",  {})
+    
+    # CREATE A MANAGER
     mp_manager = mp.Manager()
-    manager_logger.info("Post-processing manager starting up.")
-    manager_PID = os.getpid()
-    manager_logger.info("Post-processing manager has PID={}".format(manager_PID))
+    manager_logger.info("Post-processing manager has PID={}".format(os.getpid()))
 
     # SHARED DATA STRUCTURES
     # ----------------------------------
@@ -69,13 +71,13 @@ if __name__ == '__main__':
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {
-                            "live_data_reader_e": (live_data_reader,
-                                        (parameters.default_host, parameters.default_port, 
-                                        parameters.readonly_user, parameters.default_password,
-                                        parameters.db_name, parameters.raw_collection, 
-                                        parameters.range_increment, "east",
-                                        raw_fragment_queue_e, 
-                                        parameters.buffer_time, parameters.min_queue_size,)),
+                            # "live_data_reader_e": (live_data_reader,
+                            #             (parameters.default_host, parameters.default_port, 
+                            #             parameters.readonly_user, parameters.default_password,
+                            #             parameters.db_name, parameters.raw_collection, 
+                            #             parameters.range_increment, "east",
+                            #             raw_fragment_queue_e, 
+                            #             parameters.buffer_time, parameters.min_queue_size,)),
                             "live_data_reader_w": (live_data_reader,
                                           (parameters.default_host, parameters.default_port, 
                                           parameters.readonly_user, parameters.default_password,
@@ -84,17 +86,17 @@ if __name__ == '__main__':
                                           raw_fragment_queue_w, 
                                           parameters.buffer_time, parameters.min_queue_size,)),
                             # "stitcher_e": (stitch_raw_trajectory_fragments,
-                            #                ("east", raw_fragment_queue_e, stitched_trajectory_queue,
+                            #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
                             #                 parameters, )),
                             # "stitcher_w": (stitch_raw_trajectory_fragments,
-                            #                ("west", raw_fragment_queue_w, stitched_trajectory_queue,
+                            #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
                             #                 parameters, )),
                             # "stitcher_e": (min_cost_flow_online_neg_cycle,
-                            #                ("east", raw_fragment_queue_e, stitched_trajectory_queue,
+                            #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
                             #                 parameters, )),
-                            # "stitcher_w": (min_cost_flow_online_neg_cycle,
-                            #                ("west", raw_fragment_queue_w, stitched_trajectory_queue,
-                            #                 parameters, )),
+                            "stitcher_w": (min_cost_flow_online_neg_cycle,
+                                            ("west", raw_fragment_queue_w, stitched_trajectory_queue,
+                                            parameters, )),
                             # "reconciliation": (reconciliation_pool,
                             #             (stitched_trajectory_queue,)),
                           }
