@@ -21,9 +21,9 @@ username = urllib.parse.quote_plus('i24-data')
 password = urllib.parse.quote_plus('mongodb@i24')
 client = MongoClient('mongodb://%s:%s@10.2.218.56' % (username, password))
 db=client["trajectories"]
-col=db["raw_trajectories_one"]
+col=db["raw_trajectories_two"]
 col.drop()
-col=db["raw_trajectories_one"]
+col=db["raw_trajectories_two"]
 #GTFilePath='/isis/home/teohz/Desktop/data_for_mongo/GT_sort_by_ID/'
 TMFilePath='/isis/home/teohz/Desktop/data_for_mongo/pollute/'
 
@@ -32,7 +32,7 @@ write_probability = 0.8 # 80% of the fragments are written to db, 20% missing
 
 #%%
 #files=['0-12min.csv','12-23min.csv','23-34min.csv','34-45min.csv','45-56min.csv','56-66min.csv','66-74min.csv','74-82min.csv','82-89min.csv']
-files1=['0-12min.csv']
+files1=['12-23min.csv']
 lru = OrderedDict()
 idle_time = 1
 
