@@ -29,6 +29,7 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
     """
     stitcher_logger = log_writer.logger
     stitcher_logger.set_name("stitcher_"+direction)
+    
     # Get parameters
     TIME_WIN = parameters.time_win
     VARX = parameters.varx
@@ -43,18 +44,19 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
     P = PathCache(attr_name=parameters.fragment_attr_name) # an LRU cache of Fragment object (see utils.data_structures)
 
     # Make a database connection for writing
+    schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
     dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
                username=parameters.default_username, password=parameters.default_password,
                database_name=parameters.db_name, collection_name = parameters.stitched_collection, 
                server_id=1, process_name=1, process_id=1, session_config_id=1, max_idle_time_ms = None,
-               schema_file=parameters.stitched_schema_path)
-        
+               schema_file=schema_path)
+    
     stitcher_logger.info("** Stitching starts. fragment_queue size: {}".format(fragment_queue.qsize()),extra = None)
     
 
     while True:
         try: # grab a fragment from the queue if queue is not empty
-            fragment = Fragment(fragment_queue.get(block = True, timeout = TIMEOUT)) # make object
+            fragment = Fragment(fragment_queue.get(block = True)) # make object
             fragment.curr = True
             P.add_node(fragment)
             
@@ -161,7 +163,7 @@ def stitch_raw_trajectory_fragments(direction, fragment_queue,
                 if root.gone and root.tail_time < left - IDLE_TIME:
                     # print("root's tail time: {:.2f}, current time window: {:.2f}-{:.2f}".format(root.tail_time, left, right))
                     path = P.pop_first_path()  
-                    # stitcher_logger.info("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
+                    stitcher_logger.info("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
                     stitched_trajectory_queue.put(path, timeout = parameters.stitched_trajectory_queue_put_timeout)
                     # dbw.write_one_trajectory(thread = True, fragment_ids = path)
                 else: # break if first in cache is not timed out yet

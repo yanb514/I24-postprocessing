@@ -97,13 +97,13 @@ def live_data_reader(host, port, username, password, database_name, collection_n
         
                     for doc in next_batch:
                         ready_queue.put(doc)
-                        logger.info("read doc id: {}, collection size: {}".format(doc["ID"], dbr.count()))
+                        # logger.info("read doc id: {}, collection size: {}".format(doc["ID"], dbr.count()))
                 else: # if not safe to query, then wait 
                     # logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))
                     time.sleep(2)
             else: # if queue has sufficient number of items, then wait before the next iteration (throttle)
                 logger.info("queue size is sufficient")     
-                time.sleep(10)
+                time.sleep(2)
                         
         except StopIteration: # rri reaches the end
             logger.warning("live_data_reader reaches the end of query range iteration.")

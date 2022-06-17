@@ -75,43 +75,43 @@ if __name__ == '__main__':
     gt_val = 30
     lt_val = 40
     
-    # fragment_queue,actual_gt_ids,_ = mcf.read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
-    # print("actual_gt_ids: ", len(actual_gt_ids))
-    # s1 = fragment_queue.qsize()
-    # stitched_trajectory_queue = queue.Queue()
-    
-    # start stitching
-    # print("MCF Batch...")
-    # t1 = time.time()
-    # mcf.min_cost_flow_batch(fragment_queue, stitched_trajectory_queue, parameters)
-    # # stitch_raw_trajectory_fragments("west", fragment_queue,stitched_trajectory_queue, parameters)
-    # batch = list(stitched_trajectory_queue.queue)
-    # s2 = stitched_trajectory_queue.qsize()
-    # t2 = time.time()
-    # print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
-    
-    # # test
-    # FGMT, IDS = test_fragments(gt_ids, batch)
-    # print("FGMT: {}, IDS: {}".format(FGMT, IDS))
-    
-    
-    # read to queue
-    fragment_queue,actual_gt_ids, _ = mcf.read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
+    fragment_queue,actual_gt_ids,_ = mcf.read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
+    print("actual_gt_ids: ", len(actual_gt_ids))
     s1 = fragment_queue.qsize()
     stitched_trajectory_queue = queue.Queue()
     
     # start stitching
-    print("MCF Online...")
+    print("MCF Batch...")
     t1 = time.time()
-    mcf.min_cost_flow_online_neg_cycle("west", fragment_queue, stitched_trajectory_queue, parameters)
-    online = list(stitched_trajectory_queue.queue)
+    mcf.min_cost_flow_batch("west", fragment_queue, stitched_trajectory_queue, parameters)
+    # stitch_raw_trajectory_fragments("west", fragment_queue,stitched_trajectory_queue, parameters)
+    batch = list(stitched_trajectory_queue.queue)
     s2 = stitched_trajectory_queue.qsize()
     t2 = time.time()
     print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
     
     # test
-    FGMT, IDS = test_fragments(gt_ids, online)
+    FGMT, IDS = test_fragments(gt_ids, batch)
     print("FGMT: {}, IDS: {}".format(FGMT, IDS))
+    
+    
+    # read to queue
+    # fragment_queue,actual_gt_ids, _ = mcf.read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
+    # s1 = fragment_queue.qsize()
+    # stitched_trajectory_queue = queue.Queue()
+    
+    # # start stitching
+    # print("MCF Online...")
+    # t1 = time.time()
+    # mcf.min_cost_flow_online_neg_cycle("west", fragment_queue, stitched_trajectory_queue, parameters)
+    # online = list(stitched_trajectory_queue.queue)
+    # s2 = stitched_trajectory_queue.qsize()
+    # t2 = time.time()
+    # print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
+    
+    # # test
+    # FGMT, IDS = test_fragments(gt_ids, online)
+    # print("FGMT: {}, IDS: {}".format(FGMT, IDS))
     
     
     # for path_o in online:

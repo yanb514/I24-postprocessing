@@ -15,7 +15,7 @@ from live_data_feed import live_data_reader # change to live_data_read later
 from i24_configparse import parse_cfg
 from i24_logger.log_writer import logger
 # from stitcher import stitch_raw_trajectory_fragments
-from min_cost_flow import min_cost_flow_online_neg_cycle
+import min_cost_flow as mcf
 from reconciliation import reconciliation_pool
 
 
@@ -91,14 +91,14 @@ if __name__ == '__main__':
                             # "stitcher_w": (stitch_raw_trajectory_fragments,
                             #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
                             #                 parameters, )),
-                            # "stitcher_e": (min_cost_flow_online_neg_cycle,
+                            # "stitcher_e": (min_cost_flow_online_alt_path,
                             #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
                             #                 parameters, )),
-                            "stitcher_w": (min_cost_flow_online_neg_cycle,
+                            "stitcher_w": (mcf.min_cost_flow_online_alt_path,
                                             ("west", raw_fragment_queue_w, stitched_trajectory_queue,
                                             parameters, )),
-                            # "reconciliation": (reconciliation_pool,
-                            #             (stitched_trajectory_queue,)),
+                            "reconciliation": (reconciliation_pool,
+                                        (stitched_trajectory_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.

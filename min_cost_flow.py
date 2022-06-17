@@ -13,9 +13,13 @@ from i24_database_api.db_reader import DBReader
 from i24_database_api.db_writer import DBWriter
 import i24_logger.log_writer as log_writer
 from i24_configparse import parse_cfg
-from utils.data_structures import Fragment, PathCache, MOT_Graph, SortedDLL
+from utils.data_structures import Fragment, PathCache, MOT_Graph, MOTGraphSingle, SortedDLL
 import time
 import heapq
+from collections import defaultdict
+import sys
+sys.path.append('../')
+
 
 # config_path = os.path.join(os.getcwd(),"config")
 # os.environ["user_config_directory"] = config_path
@@ -344,7 +348,7 @@ def min_cost_flow_online_neg_cycle(direction, fragment_queue, stitched_trajector
             fgmt_id = getattr(fgmt, ATTR_NAME)
             cache[fgmt_id] = fgmt
             left = fgmt.first_timestamp
-            stitcher_logger.info("fgmt_id: {}, first timestamp: {:.2f}".format(fgmt_id, left))
+            # stitcher_logger.info("fgmt_id: {}, first timestamp: {:.2f}".format(fgmt_id, left))
             
         except:
             # process the remaining in G
@@ -353,8 +357,11 @@ def min_cost_flow_online_neg_cycle(direction, fragment_queue, stitched_trajector
             for path,_ in all_paths:
                 path = m.pretty_path(path)
                 stitched_trajectory_queue.put(path)
-                # stitcher_logger.info("stitched qsize: {}".format(stitched_trajectory_queue.qsize()))
-                stitcher_logger.info("** write to queue. path length: {}, head id: {}".format(len(path), path[0]))
+                for p in path: # should not have repeats in nodes_to_remove
+                    m.G.remove_node(p+"-pre")
+                    m.G.remove_node(p+"-post")
+                    cache.pop(p)
+                stitcher_logger.info("** no new fgmt, write to queue. path length: {}, head id: {}, graph size: {}".format(len(path), path[0], len(cache)))
                 # print("final flush head tail: ", path[0], path[-1])
             break
         
@@ -407,7 +414,7 @@ def min_cost_flow_online_neg_cycle(direction, fragment_queue, stitched_trajector
                     path, cost = m.all_paths[0]
                     path = m.pretty_path(path)
                     # print("remove: ", path)
-                    # stitcher_logger.info("** write to queue. path length: {}, head id: {}".format(path, path[0]))
+                    stitcher_logger.info("** write to queue. path length: {}, head id: {}, graph size: {}".format(len(path), path[0], len(cache)))
                     stitched_trajectory_queue.put(path)
                     # dbw.write_one_trajectory(thread = True, fragment_ids = path)
                     # remove path from G and cache
@@ -493,30 +500,150 @@ def min_cost_flow_online_slow(direction, fragment_queue, stitched_trajectory_que
     return
 
     
+
+def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory_queue, parameters):
+    '''
+    incrementally fixing the matching
+    '''
+    # Initiate a logger
+    stitcher_logger = log_writer.logger
+    stitcher_logger.set_name("stitcher_"+direction)
+
+    # Make a database connection for writing
+    schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
+    dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
+               username=parameters.default_username, password=parameters.default_password,
+               database_name=parameters.db_name, collection_name = parameters.stitched_collection, 
+               server_id=1, process_name=1, process_id=1, session_config_id=1, max_idle_time_ms = None,
+               schema_file=schema_path)
+        
+    stitcher_logger.info("** min_cost_flow_online_alt_path starts. fragment_queue size: {}".format(fragment_queue.qsize()),extra = None)
     
+    ATTR_NAME = parameters.fragment_attr_name
+    TIME_WIN = parameters.time_win
+    
+    m = MOTGraphSingle(ATTR_NAME, parameters)
+    
+    counter = 0 # for log
+    
+    while True:
+        try:
+            fgmt = Fragment(fragment_queue.get(timeout = 3))
+        except:
+            all_paths = m.get_all_traj()
+            for path in all_paths:
+                stitched_trajectory_queue.put(path[::-1])
+            break
+        
+        fgmt.compute_stats()
+        m.add_node(fgmt)
+        
+        # run MCF
+        fgmt_id = getattr(fgmt, ATTR_NAME)
+        m.augment_path(fgmt_id)
+
+        # pop path if a path is ready
+        all_paths = m.pop_path(time_thresh = fgmt.first_timestamp - TIME_WIN)
+        for path in all_paths:
+            stitched_trajectory_queue.put(path[::-1])
+            m.clean_graph(path)
+            stitcher_logger.info("** stitched {} fragments into one trajectory".format(len(path)),extra = None)
+         
+        
+        if counter % 100 == 0:
+            stitcher_logger.info("graph size: {}, deque size: {}".format(len(m.G), len(m.in_graph_deque)),extra = None)
+            counter = 0
+        counter += 1
+    return   
+
+
+
+
+def test_fragments(gt_ids, paths):
+    '''
+    Count the number of fragments (under-stitch) from the output of the stitcher
+    '''   
+    base = 100000     
+    gt_id_st_fgm_ids = defaultdict(set) # key: (int) gt_id, val: (set) corresponding stitcher fragment_ids
+    IDS = 0
+
+    for i,path in enumerate(paths):
+        corr_gt_ids = set()
+        for node in path:
+            node = float(node)
+            corr_gt_ids.add(node//base)
+            gt_id_st_fgm_ids[node//base].add(i)
+            
+        if len(corr_gt_ids) > 1:
+            print("ID switches: ", corr_gt_ids)
+            IDS += len(corr_gt_ids) - 1
+    
+    FGMT = 0
+    for key,val in gt_id_st_fgm_ids.items():
+        if len(val) > 1:
+            print("fragments: ", [paths[i] for i in val])
+            FGMT += len(val)-1
+                
+
+    return FGMT, IDS
     
 if __name__ == '__main__':
     
     # get parameters
     cwd = os.getcwd()
-    cfg = "./config"
+    cfg = "config"
     config_path = os.path.join(cwd,cfg)
     os.environ["user_config_directory"] = config_path
-    parameters = parse_cfg("DEBUG", cfg_name = "test_param.config")
+    os.environ["my_config_section"] = "DEBUG"
+    parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
     # read to queue
-    gt_ids = [i for i in range(100,150)]
-    fragment_queue,actual_gt_ids = read_to_queue(gt_ids=gt_ids, gt_val=25, lt_val=45, parameters=parameters)
+    # gt_ids = [i for i in range(150, 180)]
+    gt_ids = [150]
+    gt_val = 30
+    lt_val = 100
+    
+    fragment_queue,actual_gt_ids,_ = read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
+    stitched_trajectory_queue = queue.Queue()
     print("actual_gt_ids: ", len(actual_gt_ids))
     s1 = fragment_queue.qsize()
-    stitched_trajectory_queue = queue.Queue()
     
-    # start stitching
+
+    # --------- start batch stitching --------- 
+    # print("MCF Batch...")
+    # t1 = time.time()
+    # min_cost_flow_batch("west", fragment_queue, stitched_trajectory_queue, parameters)
+    # # stitch_raw_trajectory_fragments("west", fragment_queue,stitched_trajectory_queue, parameters)
+    # batch = list(stitched_trajectory_queue.queue)
+    # s2 = stitched_trajectory_queue.qsize()
+    # t2 = time.time()
+    # print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
+    # # test
+    # FGMT, IDS = test_fragments(gt_ids, batch)
+    # print("FGMT: {}, IDS: {}".format(FGMT, IDS))
+    
+    
+
+    # --------- start online stitching --------- 
+    fragment_queue,actual_gt_ids,_ = read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
+    stitched_trajectory_queue = queue.Queue()
     t1 = time.time()
-    all_paths = min_cost_flow_batch(fragment_queue, stitched_trajectory_queue, parameters)
+    min_cost_flow_online_alt_path("west", fragment_queue, stitched_trajectory_queue, parameters)
+    online = list(stitched_trajectory_queue.queue)
     s2 = stitched_trajectory_queue.qsize()
     t2 = time.time()
     print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
+    
+    # test
+    FGMT, IDS = test_fragments(gt_ids, online)
+    print("FGMT: {}, IDS: {}".format(FGMT, IDS))
+    
+    
+    
+    # for path_o in online:
+    #     if path_o not in batch:
+    #         print("difference: ", path_o)
+    
     
     # plot runtime
     # import matplotlib.pyplot as plt

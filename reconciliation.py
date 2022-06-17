@@ -44,8 +44,6 @@ reconciliation_args = {"lam2_x": parameters.lam2_x,
 
 
 
-
-
 def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue) -> None:
     """
     Resample and reconcile a single trajectory, and write the result to DB
@@ -112,4 +110,4 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
         time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
 
 
-    
+if __name__ 
