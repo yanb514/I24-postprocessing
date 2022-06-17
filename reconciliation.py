@@ -56,7 +56,7 @@ def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue
     rec_worker_logger.set_name("rec_worker")
     
     # Establish db connections (# connections = # pool workers)
-    rec_worker_logger.info("*** Reconciliation worker started", extra = None)
+    # rec_worker_logger.info("*** Reconciliation worker started", extra = None)
     
     # while True:
         
@@ -74,7 +74,7 @@ def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue
     
     finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
     # print("...finished...")
-    rec_worker_logger.info("*** 4. Reconciled a trajectory. duration = {:.2f}s.".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"]), extra = None)
+    rec_worker_logger.info("*** 4. Reconciled a trajectory. Trajectory duration: {:.2f}s.".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"]), extra = None)
    
     # print("writing to db...")
     dbw.write_one_trajectory(**finished_trajectory)

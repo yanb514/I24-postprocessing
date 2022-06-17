@@ -6,7 +6,7 @@ from i24_logger.log_writer import logger, catch_critical, log_warnings, log_erro
 
 # TODO
 # add try except and put errors/warnings to log
-
+logger.set_name("reconciliation_module")
 solvers.options['show_progress'] = False
 dt = 1/30
 
@@ -168,8 +168,11 @@ def _getQPMatrices(x, t, lam2, lam1, reg="l2"):
         H = I[idx,:]
         DD = lam2*D3.trans() * D3
         HH = H.trans() * H
-        Q = 2*(HH/M+DD/N)
-        p = -2*H.trans() * matrix(x)/M
+        try:
+            Q = 2*(HH/M+DD/N)
+            p = -2*H.trans() * matrix(x)/M
+        except ZeroDivisionError:
+            logger.error("Zero division: M = {}, N = {}".format(M, N) )
         return Q, p, H, N, M
     else:
         DD = lam2 * D3.trans() * D3
