@@ -21,6 +21,7 @@ from reconciliation import reconciliation_pool
 
 config_path = os.path.join(os.getcwd(),"config")
 # os.environ["user_config_directory"] = config_path
+os.environ["USER_CONFIG_DIRECTORY"] = config_path
 os.environ["my_config_section"] = "DEBUG"
 parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
 
