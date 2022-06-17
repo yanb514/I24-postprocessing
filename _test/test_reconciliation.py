@@ -14,7 +14,7 @@ from i24_logger.log_writer import logger
 reconciliation_logger = logger
 from i24_database_api.db_writer import DBWriter
 from i24_database_api.db_reader import DBReader
-from i24_configparse.parse import parse_cfg
+from i24_configparse import parse_cfg
 import sys
 sys.path.append('../')
 from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments

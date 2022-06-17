@@ -110,4 +110,5 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
         time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
 
 
-if __name__ 
+# if __name__ == '__main__':
+#     some testing code
