@@ -130,7 +130,7 @@ def _blocdiag(X, n):
         return sparse(mat)
 
 
-@catch_critical(errors = (Exception))
+# @catch_critical(errors = (Exception))
 def _getQPMatrices(x, t, lam2, lam1, reg="l2"):
     '''
     turn ridge regression (reg=l2) 
@@ -156,6 +156,8 @@ def _getQPMatrices(x, t, lam2, lam1, reg="l2"):
     x = x[idx]
     M = len(x)
     
+    if M == 0:
+        raise ZeroDivisionError
     # differentiation operator
     # D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
     # D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
@@ -168,11 +170,10 @@ def _getQPMatrices(x, t, lam2, lam1, reg="l2"):
         H = I[idx,:]
         DD = lam2*D3.trans() * D3
         HH = H.trans() * H
-        try:
-            Q = 2*(HH/M+DD/N)
-            p = -2*H.trans() * matrix(x)/M
-        except ZeroDivisionError:
-            logger.error("Zero division: M = {}, N = {}".format(M, N) )
+
+        Q = 2*(HH/M+DD/N)
+        p = -2*H.trans() * matrix(x)/M
+
         return Q, p, H, N, M
     else:
         DD = lam2 * D3.trans() * D3
@@ -292,7 +293,7 @@ def rectify_2d(car, reg = "l2", **kwargs):
 
 # =================== RECEDING HORIZON RECTIFICATION =========================
 
-def receding_horizon_1d(car, lam2, PH, IH, axis="x"):
+def receding_horizon_1d(x, lam2, PH, IH):
     '''
     rolling horizon version of rectify_1d
     car: dict
@@ -304,7 +305,6 @@ def receding_horizon_1d(car, lam2, PH, IH, axis="x"):
     # TODO: compute matrices once
 
     # get data
-    x = car[axis+"_position"]
     n_total = len(x)
     # Q, p, H, N,M = _getQPMatrices(x[:PH], 0, lam, reg="l2")
     # sol=solvers.qp(P=Q, q=p)
@@ -330,6 +330,7 @@ def receding_horizon_1d(car, lam2, PH, IH, axis="x"):
         nn = len(xx)
         try:
             Q, p, H, N,M = _getQPMatrices(xx, 0, lam2, None, reg="l2")
+            # logger.info("**N={}, M={}".format(N,M))
         except ZeroDivisionError:
             # print("This particular moving window has no valid data, try longer PH")
             Q, p = _getQPMatrices_nan(xx, 0, lam2, None, reg="l2")
@@ -368,11 +369,9 @@ def receding_horizon_2d(car, lam2_x, lam2_y, PH, IH):
     car['x_position'] = xhat
     car['y_position'] = yhat
     
-    # TODO: replace with schema validation in dbw before insert
     car["timestamp"] = list(car["timestamp"])
     car["x_position"] = list(car["x_position"])
     car["y_position"] = list(car["y_position"])
-    
     
 
     return car
@@ -456,4 +455,32 @@ def receding_horizon_2d_l1(car, lam2_x, lam2_y, lam1_x, lam1_y, PH, IH):
 
 
 
+    
+if __name__ == '__main__':
+    PH = 120
+    IH = 30
+    N = 410
+    l = 0
+    r = l+PH
+    
+    while True:
+        
+        # termination criterion
+        if r > N:
+            r = N
+            IH = N - l
+            print(l, r)
+            break
+        
+        print(l, l+IH, r)
+        # update
+        l += IH
+        r = l+PH
+
+        
+    
+    
+    
+    
+    
     

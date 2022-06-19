@@ -23,7 +23,9 @@ cwd = os.getcwd()
 cfg = "../config"
 config_path = os.path.join(cwd,cfg)
 os.environ["user_config_directory"] = config_path
-parameters = parse_cfg("TEST", cfg_name = "test_param.config")
+os.environ["my_config_section"] = "DEBUG"
+parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
+
 
 #%%
 reconciliation_args = {"lam2_x": parameters.lam2_x,
@@ -42,23 +44,25 @@ gt = DBReader(host=parameters.default_host, port=parameters.default_port,
             username=parameters.readonly_user, password=parameters.default_password,
             database_name=parameters.db_name, collection_name=parameters.gt_collection)
 
-gt_ids = [1,2]
+gt_ids = [86]
 fragment_ids = []
 gt_res = gt.read_query(query_filter = {"ID": {"$in": gt_ids}},
                        limit = 0)
 
 stitched_queue = queue.Queue()
+# for gt_doc in gt.collection.find({}):
 for gt_doc in gt_res:
     print(gt_doc["ID"])
     stitched_doc = {key: gt_doc[key] for key in ["_id", "ID", "fragment_ids"]}
     stitched_queue.put(stitched_doc)
 print("Queue size: ", stitched_queue.qsize())
 
+schema_path = os.path.join(os.environ["user_config_directory"],parameters.reconciled_schema_path)
 dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
            username=parameters.default_username, password=parameters.default_password,
            database_name=parameters.db_name, collection_name = parameters.reconciled_collection, 
            server_id=1, process_name=1, process_id=1, session_config_id=1, 
-           schema_file=parameters.reconciled_schema_path)
+           schema_file=schema_path)
 
 # %% start reconciliation worker
 
@@ -69,7 +73,7 @@ while True:
     except:
         break
     plt.figure()
-    
+    print("** processing {}".format(next_to_reconcile["ID"]))
     t0 = time.time()
     combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)
     plt.scatter(combined_trajectory["timestamp"],combined_trajectory["x_position"], s=0.1, label = "raw")
@@ -89,10 +93,6 @@ while True:
     print("combine: {:.2f}, resample: {:.2f}, rectify: {:.2f}".format(t1-t0, t2-t1, t3-t2))
     
 #%% examin stitched_trajectories collection
-dbw = dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
-                username=parameters.default_username, password=parameters.default_password,
-                database_name=parameters.db_name, collection_name=parameters.reconciled_collection,
-                server_id=1, process_name=1, process_id=1, session_config_id=1, schema_file=None)
 
 stitched = dbw.db["stitched_trajectories"]
 reconciled = dbw.db["reconciled_trajectories"]
