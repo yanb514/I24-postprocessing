@@ -96,7 +96,8 @@ def live_data_reader(host, port, username, password, database_name, collection_n
                     next_batch = next(rri)
         
                     for doc in next_batch:
-                        ready_queue.put(doc)
+                        if len(doc["timestamp"]) > 3:
+                            ready_queue.put(doc)
                         # logger.info("read doc id: {}, collection size: {}".format(doc["ID"], dbr.count()))
                 else: # if not safe to query, then wait 
                     # logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))

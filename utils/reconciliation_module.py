@@ -28,7 +28,7 @@ def combine_fragments(raw_collection, stitched_doc):
     stacked["timestamp"] = []
     stacked["x_position"] = []
     stacked["y_position"] = []
-    stacked["road_segment_id"] = []
+    stacked["road_segment_ids"] = []
     stacked["flags"] = []
     stacked["length"] = []
     stacked["width"] = []
@@ -53,7 +53,7 @@ def combine_fragments(raw_collection, stitched_doc):
         stacked["timestamp"].extend(fragment["timestamp"])
         stacked["x_position"].extend(fragment["x_position"])
         stacked["y_position"].extend(fragment["y_position"])
-        stacked["road_segment_id"].extend(fragment["road_segment_id"])
+        stacked["road_segment_ids"].extend(fragment["road_segment_ids"])
         stacked["flags"].extend(fragment["flags"])
         stacked["length"].extend(fragment["length"])
         stacked["width"].extend(fragment["width"])
@@ -194,7 +194,7 @@ def _getQPMatrices(x, t, lam2, lam1, reg="l2"):
         h = spmatrix([], [], [], (2*M,1))
         return Q, p, H, G, h, N,M
 
-def _getQPMatrices_nan(x, t, lam2, lam1, reg="l2"):
+def _getQPMatrices_nan(N, t, lam2, lam1, reg="l2"):
     '''
     same with _getQPMatrices, but dealt with x vector is all nans
     Q = 2(lam2 D^T D)
@@ -203,15 +203,6 @@ def _getQPMatrices_nan(x, t, lam2, lam1, reg="l2"):
     '''
     if reg == "l1" and lam1 is None:
         raise ValueError("lam1 must be specified when regularization is set to L1")
-        
-    # get data
-    N = len(x)
-    
-    # non-missing entries
-    idx = [i.item() for i in np.argwhere(~np.isnan(x)).flatten()]
-    x = x[idx]
-    M = len(x)
-    assert M == 0
     
     # differentiation operator
     # D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
@@ -296,65 +287,71 @@ def rectify_2d(car, reg = "l2", **kwargs):
 def receding_horizon_1d(x, lam2, PH, IH):
     '''
     rolling horizon version of rectify_1d
-    car: dict
+    x: a time series that needs to be reconciled.
     args: (lam2, PH, IH)
         PH: prediction horizon
         IH: implementation horizon
-    QP formulation with sparse matrix min ||y-x||_2^2 + \lam ||Dx||_2^2
+    QP formulation with sparse matrix min ||y-Hx||_2^2 + \lam ||Dx||_2^2
     '''
-    # TODO: compute matrices once
+    # TODO: compute matrices once -> need to flatten _getQPMatrices here
 
     # get data
     n_total = len(x)
-    # Q, p, H, N,M = _getQPMatrices(x[:PH], 0, lam, reg="l2")
-    # sol=solvers.qp(P=Q, q=p)
     
-    # additional equality constraint: state continuity
-    A = sparse([[spmatrix(1.0, range(4), range(4))], [spmatrix([], [], [], (4,PH-4))]])
+    # matrices that are not the first or last window -> compute once
+    A = sparse([[spmatrix(1.0, range(3), range(3))], [spmatrix([], [], [], (3,PH-3))]])
     A = matrix(A, tc="d")
+    # Q0, p0 = _getQPMatrices_nan(PH, 0, lam2, None, reg="l2")
     
     # save final answers
     xfinal = matrix([])
-    
-    n_win = max(0,(n_total-PH+IH)//IH)
+    x_prev = None
+    l = 0
+    r = l+PH
     last = False
     
-    cs = 3
-    for i in range(n_win+1):
-        # print(i,'/',n_total, flush=True)
-        if i == n_win: # last
-            xx =x[i*IH:]
+    while True:
+        
+        # termination criterion
+        if r > n_total:
+            r = n_total
+            IH = n_total - l
             last = True
-        else:
-            xx = x[i*IH: i*IH+PH]
+        
+        # print(l, l+IH, r)
+        xx = x[l: r]
         nn = len(xx)
         try:
             Q, p, H, N,M = _getQPMatrices(xx, 0, lam2, None, reg="l2")
-            # logger.info("**N={}, M={}".format(N,M))
-        except ZeroDivisionError:
-            # print("This particular moving window has no valid data, try longer PH")
-            Q, p = _getQPMatrices_nan(xx, 0, lam2, None, reg="l2")
-    
-        try:
-            A = sparse([[spmatrix(1.0, range(cs), range(cs))], [spmatrix([], [], [], (cs,nn-cs))]])
-            A = matrix(A, tc="d")
-            b = matrix(x_prev)
-            sol=solvers.qp(P=Q, q=p, A = A, b=b) 
-            
-        except: # if x_prev exists - not first window
+        except ZeroDivisionError: 
+            # M=0, all missing entries in this rolling window
+            # ... simply ignore the data fitting term, assume 0 jerk motion (constant accel)
+            Q, p = _getQPMatrices_nan(nn, 0, lam2, None, reg="l2")
+        
+        if not x_prev: # first window, no fixed initial conditions
             sol=solvers.qp(P=Q, q=p)  
-            
-        xhat = sol["x"][:N]
-
-        if last:
-            xfinal = matrix([xfinal, xhat])         
         else:
-            xfinal = matrix([xfinal, xhat[:IH]])
-            
-        # save for the next loop
-        x_prev = xhat[IH:IH+cs]
+            b = matrix(x_prev)
+            if last:
+                A = sparse([[spmatrix(1.0, range(3), range(3))], [spmatrix([], [], [], (3,nn-3))]])
+                A = matrix(A, tc="d")
+            sol=solvers.qp(P=Q, q=p, A=A, b=b) 
+        
+        xhat = sol["x"]
+        xfinal = matrix([xfinal, xhat[:IH]])
+        
+        # update
+        if last:
+            break
+        else:
+            l += IH
+            r = l+PH
+            # save for the next loop
+            x_prev = xhat[IH:IH+3]
     
     return xfinal
+
+
 
 
 def receding_horizon_2d(car, lam2_x, lam2_y, PH, IH):
@@ -363,8 +360,8 @@ def receding_horizon_2d(car, lam2_x, lam2_y, PH, IH):
     TODO: parallelize x and y?
     '''
     # get data    
-    xhat = receding_horizon_1d(car, lam2_x, PH, IH, "x")
-    yhat = receding_horizon_1d(car, lam2_y, PH, IH, "y")
+    xhat = receding_horizon_1d(car["x_position"], lam2_x, PH, IH)
+    yhat = receding_horizon_1d(car["y_position"], lam2_x, PH, IH)
     
     car['x_position'] = xhat
     car['y_position'] = yhat

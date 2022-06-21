@@ -468,7 +468,7 @@ def min_cost_flow_online_slow(direction, fragment_queue, stitched_trajectory_que
     
     while True:
         try:
-            fgmt = Fragment(fragment_queue.get(timeout=2))
+            fgmt = Fragment(fragment_queue.get(block=True))
         except:
             all_paths = m.all_paths
             for path,_ in all_paths:

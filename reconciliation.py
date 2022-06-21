@@ -31,6 +31,8 @@ dbw = DBWriter(host=parameters.default_host, port=parameters.default_port,
                 database_name=parameters.db_name, collection_name=parameters.reconciled_collection,
                 server_id=1, process_name=1, process_id=1, session_config_id=1, 
                 max_idle_time_ms = 20000, schema_file=schema_path)
+# dbw.collection.drop()
+
 raw = DBReader(host=parameters.default_host, port=parameters.default_port, 
             username=parameters.readonly_user, password=parameters.default_password,
             database_name=parameters.db_name, collection_name=parameters.raw_collection)
@@ -81,7 +83,7 @@ def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue
     # print("reconciled collection: ", dbw.db["reconciled_trajectories"].count_documents({}))
     rec_worker_logger.info("*** 5. Reconciliation worker writes to database", extra = None)
     
-    # rec_worker_logger.info("reconciliation raw: {}".format(id(raw)))
+    rec_worker_logger.info("reconciled_trajectories size: {}".format(dbw.collection.count_documents({})))
     # rec_worker_logger.info("reconciliation dbw: {}".format(id(dbw)))
     
     
@@ -107,7 +109,7 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
 
     while True: 
         worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
-        time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
+        # time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
 
 
 # if __name__ == '__main__':
