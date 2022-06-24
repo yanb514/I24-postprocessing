@@ -8,6 +8,8 @@ Created on Tue May 10 14:55:04 2022
 from i24_database_api.db_reader import DBReader
 import i24_logger.log_writer as log_writer
 import time
+import signal
+import sys
 
 def format_flat(columns, document, impute_none_for_missing=False):
     """
@@ -44,7 +46,7 @@ def read_query_once(host, port, username, password, database_name, collection_na
 
 
 
-def live_data_reader(host, port, username, password, database_name, collection_name, range_increment, direction,
+def live_data_reader(default_param, collection_name, range_increment, direction,
                      ready_queue, t_buffer = 100, min_queue_size = 1000):
     """
     Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
@@ -62,46 +64,68 @@ def live_data_reader(host, port, username, password, database_name, collection_n
     :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
     :return:
     """
+    logger = log_writer.logger
+    logger.set_name("live_data_reader_"+direction)
+    # logger.info("** current lower value: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+    
+    
+    # Signal handling
+    class SignalHandler:
+        '''
+        if SIGINT or SIGTERM is received, shut down
+        '''
+        run = True
+        def __init__(self):
+            signal.signal(signal.SIGINT, self.shut_down)
+            signal.signal(signal.SIGTERM, self.shut_down)
+        
+        def shut_down(self, *args):
+            self.run = False
+            logger.info("SIGINT / SIGTERM detected")
+
     
     # Connect to a database reader
-    dbr = DBReader(host=host, port=port, username=username,password=password,
-                   database_name=database_name, collection_name=collection_name)
+    dbr = DBReader(default_param, collection_name=collection_name)
     # temporary: start from min and end at max
     dir = 1 if direction == "east" else -1
     rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=range_increment,
-                               static_parameters = ["direction"], static_parameters_query = [("$eq", dir)])
+                               static_parameters = ["direction"], static_parameters_query = [("$eq", dir)]) 
     
     pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
     first_change_time = dbr.get_max("last_timestamp") # to keep track of the first change during each change stream event
     safe_query_time = first_change_time - t_buffer # guarantee time-order up until safe_query_time
 
-    logger = log_writer.logger
-    logger.set_name("live_data_reader_"+direction)
-    
-    while True:
+    sig_handler = SignalHandler()
+    while sig_handler.run:
         try:
-            logger.info("current queue size: {}, first_change_time: {:.2f}, range_iter_stop:{:.2f}, query: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, dbr.range_iter_stop, rri._current_lower_value, rri._current_upper_value))
+            logger.info("current queue size: {}, first_change_time: {:.2f}, query range: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, rri._current_lower_value, rri._current_upper_value))
             if ready_queue.qsize() <= min_queue_size: # only move to the next query range if queue is low in stock
                 stream = dbr.collection.watch(pipeline) 
                 first_insert_change = stream.try_next() # get the first insert since last listen
-                logger.info("first_insert_change: {}".format(first_insert_change))
+                logger.debug("first_insert_change: {}".format(first_insert_change))
   
                 if first_insert_change: # if there is updates by the time collection.watch() is called
                     first_change_time = max(first_insert_change["fullDocument"]["last_timestamp"], first_change_time)
                     safe_query_time = first_change_time - t_buffer
                     dbr.range_iter_stop = safe_query_time
     
-                if rri._current_upper_value < safe_query_time: # if safe to query
+                logger.info("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+                
+                if rri._current_upper_value > safe_query_time and rri._current_upper_value < rri._reader.range_iter_stop: # if not safe to query and current range is not the end, then wait 
+                    # logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))
+                    time.sleep(2)
+                    
+                else: # if safe to query
                     logger.info("read next query range: {:.2f}-{:.2f}".format(rri._current_lower_value, rri._current_upper_value))
+                    
                     next_batch = next(rri)
         
                     for doc in next_batch:
                         if len(doc["timestamp"]) > 3:
                             ready_queue.put(doc)
-                        # logger.info("read doc id: {}, collection size: {}".format(doc["ID"], dbr.count()))
-                else: # if not safe to query, then wait 
-                    # logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))
-                    time.sleep(2)
+                        else:
+                            logger.info("Discard a fragment with length less than 3")
+                
             else: # if queue has sufficient number of items, then wait before the next iteration (throttle)
                 logger.info("queue size is sufficient")     
                 time.sleep(2)
@@ -110,4 +134,5 @@ def live_data_reader(host, port, username, password, database_name, collection_n
             logger.warning("live_data_reader reaches the end of query range iteration.")
             pass
 
-    
+    logger.warning("Exiting system from signal handling")
+    sys.exit(0)

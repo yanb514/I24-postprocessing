@@ -505,17 +505,15 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     '''
     incrementally fixing the matching
     '''
+    # 
+    
     # Initiate a logger
     stitcher_logger = log_writer.logger
     stitcher_logger.set_name("stitcher_"+direction)
 
     # Make a database connection for writing
     schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
-    dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
-               username=parameters.default_username, password=parameters.default_password,
-               database_name=parameters.db_name, collection_name = parameters.stitched_collection, 
-               server_id=1, process_name=1, process_id=1, session_config_id=1, max_idle_time_ms = None,
-               schema_file=schema_path)
+    dbw = DBWriter(parameters, collection_name = parameters.stitched_collection, schema_file=schema_path)
         
     stitcher_logger.info("** min_cost_flow_online_alt_path starts. fragment_queue size: {}".format(fragment_queue.qsize()),extra = None)
     
@@ -549,7 +547,6 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             m.clean_graph(path)
             stitcher_logger.info("** stitched {} fragments into one trajectory".format(len(path)),extra = None)
          
-        
         if counter % 100 == 0:
             stitcher_logger.info("graph size: {}, deque size: {}".format(len(m.G), len(m.in_graph_deque)),extra = None)
             counter = 0

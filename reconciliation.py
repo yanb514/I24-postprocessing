@@ -26,16 +26,8 @@ parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
 
 # initiate a dbw and dbr object
 schema_path = os.path.join(os.environ["user_config_directory"],parameters.reconciled_schema_path)
-dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
-                username=parameters.default_username, password=parameters.default_password,
-                database_name=parameters.db_name, collection_name=parameters.reconciled_collection,
-                server_id=1, process_name=1, process_id=1, session_config_id=1, 
-                max_idle_time_ms = 20000, schema_file=schema_path)
-# dbw.collection.drop()
-
-raw = DBReader(host=parameters.default_host, port=parameters.default_port, 
-            username=parameters.readonly_user, password=parameters.default_password,
-            database_name=parameters.db_name, collection_name=parameters.raw_collection)
+dbw = DBWriter(parameters, collection_name = parameters.reconciled_collection, schema_file=schema_path)
+raw = DBReader(parameters, collection_name=parameters.raw_collection)
 
 reconciliation_args = {"lam2_x": parameters.lam2_x,
                        "lam2_y": parameters.lam2_y,
@@ -43,7 +35,6 @@ reconciliation_args = {"lam2_x": parameters.lam2_x,
                        # "lam1_y": parameters.lam1_y,
                        "PH": parameters.ph,
                        "IH": parameters.ih}
-
 
 
 def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue) -> None:

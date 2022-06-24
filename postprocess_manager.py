@@ -25,7 +25,16 @@ os.environ["USER_CONFIG_DIRECTORY"] = config_path
 os.environ["my_config_section"] = "DEBUG"
 parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
 
-
+class GracefulKiller:
+    kill_now = False
+    def __init__(self):
+      signal.signal(signal.SIGINT, self.exit_gracefully)
+      signal.signal(signal.SIGTERM, self.exit_gracefully)
+    
+    def exit_gracefully(self, *args):
+      self.kill_now = True
+      
+    
 if __name__ == '__main__':
     
     # CHANGE NAME OF THE LOGGER
@@ -60,7 +69,7 @@ if __name__ == '__main__':
     pid_tracker = mp_manager.dict()
     
 
-#%%
+#%% Define processes
     # ASSISTANT/CHILD PROCESSES
     # ----------------------------------
     # References to subsystem processes that will get spawned so that these can be recalled
@@ -72,17 +81,15 @@ if __name__ == '__main__':
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {
-                            "live_data_reader_e": (live_data_reader,
-                                        (parameters.default_host, parameters.default_port, 
-                                        parameters.readonly_user, parameters.default_password,
-                                        parameters.db_name, parameters.raw_collection, 
-                                        parameters.range_increment, "east",
-                                        raw_fragment_queue_e, 
-                                        parameters.buffer_time, parameters.min_queue_size,)),
+                            # "live_data_reader_e": (live_data_reader,
+                            #             (parameters.default_host, parameters.default_port, 
+                            #             parameters.readonly_user, parameters.default_password,
+                            #             parameters.db_name, parameters.raw_collection, 
+                            #             parameters.range_increment, "east",
+                            #             raw_fragment_queue_e, 
+                            #             parameters.buffer_time, parameters.min_queue_size,)),
                             "live_data_reader_w": (live_data_reader,
-                                          (parameters.default_host, parameters.default_port, 
-                                          parameters.readonly_user, parameters.default_password,
-                                          parameters.db_name, parameters.raw_collection, 
+                                          (parameters, parameters.raw_collection, 
                                           parameters.range_increment, "west",
                                           raw_fragment_queue_w, 
                                           parameters.buffer_time, parameters.min_queue_size,)),
@@ -92,14 +99,14 @@ if __name__ == '__main__':
                             # "stitcher_w": (stitch_raw_trajectory_fragments,
                             #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
                             #                 parameters, )),
-                            "stitcher_e": (mcf.min_cost_flow_online_alt_path,
-                                            ("east", raw_fragment_queue_e, stitched_trajectory_queue,
-                                            parameters, )),
-                            "stitcher_w": (mcf.min_cost_flow_online_alt_path,
-                                            ("west", raw_fragment_queue_w, stitched_trajectory_queue,
-                                            parameters, )),
-                            "reconciliation": (reconciliation_pool,
-                                        (stitched_trajectory_queue,)),
+                            # "stitcher_e": (mcf.min_cost_flow_online_alt_path,
+                            #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
+                            #                 parameters, )),
+                            # "stitcher_w": (mcf.min_cost_flow_online_alt_path,
+                            #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
+                            #                 parameters, )),
+                            # "reconciliation": (reconciliation_pool,
+                            #             (stitched_trajectory_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.
@@ -125,8 +132,20 @@ if __name__ == '__main__':
     print("Started all processes.")
     # print(pid_tracker)
 
+
+
+
+#%% Handle signals
+    # killer = GracefulKiller()
+    # while not killer.kill_now:
+    #     time.sleep(1)
+    #     print("doing something in a loop ...")
+
+    # print("End of the program. I was killed gracefully :)")
+  
     try:
         while True:
+        # while not killer.kill_now:
             # for each process that is being managed at this level, check if it's still running
             time.sleep(2)
             for child_key in subsystem_process_objects.keys():
@@ -153,8 +172,8 @@ if __name__ == '__main__':
             
     except KeyboardInterrupt:
         # Catch KeyboardInterrupt, which is the same thing as a SIGINT
-        # The command `kill -INT [PID]` with the AIDSS_manager PID, executed on the command line, will gracefully
-        # shut down the whole AI-DSS with its child processes.
+        # The command `kill -INT [PID]` with the manager PID, executed on the command line, will gracefully
+        # shut down the whole postprocess with its child processes.
         for pid_name, pid_val in pid_tracker.items():
             os.kill(pid_val, signal.SIGKILL)
             manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
