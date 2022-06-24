@@ -156,6 +156,7 @@ if __name__ == '__main__':
                     process_name = child_process.name
                     manager_logger.warning("Restarting process: {}".format(process_name))
                     print("Restarting process: {}".format(process_name))
+                    print(child_process)
                     # Get the function handle and function arguments to spawn this process again.
                     process_function, process_args = processes_to_spawn[process_name]
                     # Restart the process the same way we did originally.
