@@ -170,9 +170,10 @@ if __name__ == '__main__':
         # Catch KeyboardInterrupt, which is the same thing as a SIGINT
         # The command `kill -INT [PID]` with the manager PID, executed on the command line, will gracefully
         # shut down the whole postprocess with its child processes.
-        for pid_name, pid_val in pid_tracker.items():
-            os.kill(pid_val, signal.SIGKILL)
-            manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
+        # for pid_name, pid_val in pid_tracker.items():
+        #     os.kill(pid_val, signal.SIGKILL)
+        #     manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
+        pass
     
     
     
