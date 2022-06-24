@@ -133,7 +133,11 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
         
                     for doc in next_batch:
                         if len(doc["timestamp"]) > 3:
-                            ready_queue.put(doc)
+                            try:
+                                ready_queue.put(doc)
+                            except BrokenPipeError:
+                                logger.warning("BrokenPipeError in live_data_reader, signal: run={}".format(sig_handler.run))
+                                
                         else:
                             logger.info("Discard a fragment with length less than 3")
                 
@@ -145,8 +149,8 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
             logger.warning("live_data_reader reaches the end of query range iteration.")
             pass
         
-        else: #handle other exceptions
-            logger.warning("Other exceptions in live_data_reader, signal: run={}".format(sig_handler.run))
+       
+            
 
     logger.warning("Exiting live_data_reader while loop")
     sys.exit(-1)
