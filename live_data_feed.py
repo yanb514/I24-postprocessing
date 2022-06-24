@@ -10,6 +10,7 @@ import i24_logger.log_writer as log_writer
 import time
 import signal
 import sys
+import os
 
 def format_flat(columns, document, impute_none_for_missing=False):
     """
@@ -64,9 +65,10 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
     :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
     :return:
     """
+    running_mode = os.environ["my_config_section"]
     logger = log_writer.logger
     logger.set_name("live_data_reader_"+direction)
-    # logger.info("** current lower value: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+    setattr(logger, "_default_logger_extra",  {})
     
     
     # Signal handling
@@ -91,11 +93,17 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
     rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=range_increment,
                                static_parameters = ["direction"], static_parameters_query = [("$eq", dir)]) 
     
+    # for debug only
+    # if running_mode == "TEST":
+    # rri._reader.range_iter_stop = rri._reader.range_iter_start + 1
+    
+    
     pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
     first_change_time = dbr.get_max("last_timestamp") # to keep track of the first change during each change stream event
     safe_query_time = first_change_time - t_buffer # guarantee time-order up until safe_query_time
 
     sig_handler = SignalHandler()
+    
     while sig_handler.run:
         try:
             logger.info("current queue size: {}, first_change_time: {:.2f}, query range: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, rri._current_lower_value, rri._current_upper_value))
@@ -109,13 +117,16 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                     safe_query_time = first_change_time - t_buffer
                     dbr.range_iter_stop = safe_query_time
     
-                logger.info("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+                logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
                 
                 if rri._current_upper_value > safe_query_time and rri._current_upper_value < rri._reader.range_iter_stop: # if not safe to query and current range is not the end, then wait 
                     # logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))
                     time.sleep(2)
                     
                 else: # if safe to query
+                    if rri._current_lower_value >= rri._reader.range_iter_stop:
+                        logger.warning("Current query range is above iter stop. Break reader")
+                        break
                     logger.info("read next query range: {:.2f}-{:.2f}".format(rri._current_lower_value, rri._current_upper_value))
                     
                     next_batch = next(rri)
@@ -134,5 +145,9 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
             logger.warning("live_data_reader reaches the end of query range iteration.")
             pass
 
-    logger.warning("Exiting system from signal handling")
-    sys.exit(0)
+    logger.warning("Exiting live_data_reader while loop")
+    sys.exit(-1)
+    logger.info("ran sys.exit()")
+    
+    
+    

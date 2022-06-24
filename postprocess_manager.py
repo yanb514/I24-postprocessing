@@ -11,36 +11,32 @@ import multiprocessing as mp
 import os
 import signal
 import time
-from live_data_feed import live_data_reader # change to live_data_read later
+
+# Cusotmized APIs
 from i24_configparse import parse_cfg
 from i24_logger.log_writer import logger
-# from stitcher import stitch_raw_trajectory_fragments
+
+config_path = os.path.join(os.getcwd(),"config")
+# os.environ["USER_CONFIG_DIRECTORY"] = config_path 
+os.environ["user_config_directory"] = config_path
+os.environ["my_config_section"] = "TEST"
+parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
+
+# Customized modules
+from live_data_feed import live_data_reader # change to live_data_read later
 import min_cost_flow as mcf
 from reconciliation import reconciliation_pool
 
 
-config_path = os.path.join(os.getcwd(),"config")
-# os.environ["user_config_directory"] = config_path
-os.environ["USER_CONFIG_DIRECTORY"] = config_path
-os.environ["my_config_section"] = "DEBUG"
-parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
 
-class GracefulKiller:
-    kill_now = False
-    def __init__(self):
-      signal.signal(signal.SIGINT, self.exit_gracefully)
-      signal.signal(signal.SIGTERM, self.exit_gracefully)
-    
-    def exit_gracefully(self, *args):
-      self.kill_now = True
-      
+
     
 if __name__ == '__main__':
     
     # CHANGE NAME OF THE LOGGER
     manager_logger = logger
     manager_logger.set_name("postproc_manager")
-    manager_logger.info("name is {}".format(manager_logger._logger.name))
+    # manager_logger.info("name is {}".format(manager_logger._logger.name))
     setattr(manager_logger, "_default_logger_extra",  {})
     
     # CREATE A MANAGER
@@ -152,7 +148,7 @@ if __name__ == '__main__':
                 child_process = subsystem_process_objects[child_key]
                 if child_process.is_alive():
                     # Process is running; do nothing.
-                    # print(child_key)
+                    print(child_key)
                     pass
                 else:
                     # Process has died. Let's restart it.
