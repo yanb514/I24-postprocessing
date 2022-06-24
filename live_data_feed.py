@@ -95,7 +95,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
     
     # for debug only
     # if running_mode == "TEST":
-    # rri._reader.range_iter_stop = rri._reader.range_iter_start + 1
+    rri._reader.range_iter_stop = rri._reader.range_iter_start + 1
     
     
     pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
@@ -154,7 +154,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
             
 
     logger.warning("Exiting live_data_reader while loop")
-    sys.exit(-1)
+    sys.exit(2)
 
     
     
