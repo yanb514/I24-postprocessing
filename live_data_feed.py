@@ -137,6 +137,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                                 ready_queue.put(doc)
                             except BrokenPipeError:
                                 logger.warning("BrokenPipeError in live_data_reader, signal: run={}".format(sig_handler.run))
+                                logger.info("Queue size: {}".format(ready_queue.qsize()))
                                 
                         else:
                             logger.info("Discard a fragment with length less than 3")
