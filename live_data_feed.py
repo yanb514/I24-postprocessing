@@ -79,7 +79,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
         run = True
         def __init__(self):
             signal.signal(signal.SIGINT, self.shut_down)
-            signal.signal(signal.SIGTERM, self.shut_down)
+            # signal.signal(signal.SIGTERM, self.shut_down)
         
         def shut_down(self, *args):
             self.run = False
@@ -95,7 +95,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
     
     # for debug only
     # if running_mode == "TEST":
-    # rri._reader.range_iter_stop = rri._reader.range_iter_start + 1
+    rri._reader.range_iter_stop = rri._reader.range_iter_start + 1
     
     
     pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
