@@ -139,37 +139,64 @@ if __name__ == '__main__':
 
     # print("End of the program. I was killed gracefully :)")
   
-    try:
-        while True:
-        # while not killer.kill_now:
-            # for each process that is being managed at this level, check if it's still running
-            time.sleep(2)
-            for child_key in subsystem_process_objects.keys():
-                child_process = subsystem_process_objects[child_key]
-                if child_process.is_alive():
-                    # Process is running; do nothing.
-                    print(child_key)
-                    pass
-                else:
-                    # Process has died. Let's restart it.
-                    # Copy its name out of the existing process object for lookup and restart.
-                    process_name = child_process.name
-                    manager_logger.warning("Restarting process: {}".format(process_name))
-                    print("Restarting process: {}".format(process_name))
-                    # Get the function handle and function arguments to spawn this process again.
-                    process_function, process_args = processes_to_spawn[process_name]
-                    # Restart the process the same way we did originally.
-                    subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
-                    subsys_process.start()
-                    # Re-write the process object in the dictionary and update its PID.
-                    subsystem_process_objects[child_key] = subsys_process
-                    pid_tracker[process_name] = subsys_process.pid
+    # try:
+    #     while True:
+    #     # while not killer.kill_now:
+    #         # for each process that is being managed at this level, check if it's still running
+    #         time.sleep(2)
+    #         for child_key in subsystem_process_objects.keys():
+    #             child_process = subsystem_process_objects[child_key]
+    #             if child_process.is_alive():
+    #                 # Process is running; do nothing.
+    #                 # print(child_key)
+    #                 pass
+    #             else:
+    #                 # Process has died. Let's restart it.
+    #                 # Copy its name out of the existing process object for lookup and restart.
+    #                 process_name = child_process.name
+    #                 manager_logger.warning("Restarting process: {}".format(process_name))
+    #                 print("Restarting process: {}".format(process_name))
+    #                 # Get the function handle and function arguments to spawn this process again.
+    #                 process_function, process_args = processes_to_spawn[process_name]
+    #                 # Restart the process the same way we did originally.
+    #                 subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
+    #                 subsys_process.start()
+    #                 # Re-write the process object in the dictionary and update its PID.
+    #                 subsystem_process_objects[child_key] = subsys_process
+    #                 pid_tracker[process_name] = subsys_process.pid
       
             
-    except KeyboardInterrupt:
-        # Catch KeyboardInterrupt, which is the same thing as a SIGINT
-        # The command `kill -INT [PID]` with the manager PID, executed on the command line, will gracefully
-        # shut down the whole postprocess with its child processes.
-        for pid_name, pid_val in pid_tracker.items():
-            os.kill(pid_val, signal.SIGKILL)
-            manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
+    # except KeyboardInterrupt:
+    #     # Catch KeyboardInterrupt, which is the same thing as a SIGINT
+    #     # The command `kill -INT [PID]` with the manager PID, executed on the command line, will gracefully
+    #     # shut down the whole postprocess with its child processes.
+    #     for pid_name, pid_val in pid_tracker.items():
+    #         os.kill(pid_val, signal.SIGKILL)
+    #         manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
+    
+    
+    
+    
+#%%
+
+    for child_key in subsystem_process_objects.keys():
+        child_process = subsystem_process_objects[child_key]
+        if child_process.is_alive():
+            # Process is running; do nothing.
+            # print(child_key)
+            pass
+        else:
+            # Process has died. Let's restart it.
+            # Copy its name out of the existing process object for lookup and restart.
+            process_name = child_process.name
+            manager_logger.warning("Restarting process: {}".format(process_name))
+            print("Restarting process: {}".format(process_name))
+            # Get the function handle and function arguments to spawn this process again.
+            process_function, process_args = processes_to_spawn[process_name]
+            # Restart the process the same way we did originally.
+            subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
+            subsys_process.start()
+            # Re-write the process object in the dictionary and update its PID.
+            subsystem_process_objects[child_key] = subsys_process
+            pid_tracker[process_name] = subsys_process.pid
+      
