@@ -347,21 +347,21 @@ def dummy_stitcher(old_q, new_q):
     stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
 
     # Signal handling
-    # class SignalHandler:
-    #     '''
-    #     if SIGINT or SIGTERM is received, shut down
-    #     '''
-    #     run = True
-    #     def __init__(self):
+    class SignalHandler:
+        '''
+        if SIGINT or SIGTERM is received, shut down
+        '''
+        run = True
+        def __init__(self):
             
-    #         signal.signal(signal.SIGINT, self.graceful_shutdown)
-    #         # signal.signal(signal.SIGTERM, self.shut_down)
+            signal.signal(signal.SIGINT, self.graceful_shutdown)
+            # signal.signal(signal.SIGTERM, self.shut_down)
         
-    #     def graceful_shutdown(self, *args):
-    #         self.run = False
-    #         stitcher_logger.info("SIGINT / SIGTERM detected")
+        def graceful_shutdown(self, *args):
+            self.run = False
+            stitcher_logger.info("SIGINT / SIGTERM detected")
         
-    # sig_handler = SignalHandler()
+    sig_handler = SignalHandler()
     
     
     # class DelayedKeyboardInterrupt:
@@ -379,8 +379,8 @@ def dummy_stitcher(old_q, new_q):
     #         if self.signal_received:
     #             self.old_handler(*self.signal_received)
             
-    signal.signal(signal.SIGINT, signal.SIG_IGN)    
-    signal.signal(signal.SIGPIPE,signal.SIG_DFL)
+    # signal.signal(signal.SIGINT, signal.SIG_IGN)    
+    
     while True:
         try:
             x = old_q.get()
@@ -390,9 +390,17 @@ def dummy_stitcher(old_q, new_q):
         
         time.sleep(0.1)
         
-        # with DelayedKeyboardInterrupt():
-        new_q.put(x)
-        stitcher_logger.info("old_q size: {}, new_q size:{}".format(old_q.qsize(),new_q.qsize()))
+
+        try:
+            new_q.put(x)
+            stitcher_logger.info("old_q size: {}, new_q size:{}".format(old_q.qsize(),new_q.qsize()))
+            stitcher_logger.info("SIGINT run = {}".format(sig_handler.run))
+        except: # brokenpipe
+            signal.signal(signal.SIGPIPE,signal.SIG_DFL)
+            new_q.put(x)
+            stitcher_logger.info("IN EXCEPT old_q size: {}, new_q size:{}".format(old_q.qsize(),new_q.qsize()))
+            stitcher_logger.info("IN EXCEPT SIGINT run = {}".format(sig_handler.run))
+        
         
     stitcher_logger.info("Exiting dummy stitcher while loop")
     sys.exit(2)
