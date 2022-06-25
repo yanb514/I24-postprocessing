@@ -388,7 +388,7 @@ def dummy_stitcher(old_q, new_q):
             stitcher_logger.info("old_q is empty, exit")
             sys.exit(2)
         
-        # time.sleep(0.5)
+        time.sleep(0.1)
         
         # with DelayedKeyboardInterrupt():
         new_q.put(x)
