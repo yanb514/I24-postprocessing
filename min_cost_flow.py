@@ -347,39 +347,39 @@ def dummy_stitcher(old_q, new_q):
     stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
 
     # Signal handling
-    class SignalHandler:
-        '''
-        if SIGINT or SIGTERM is received, shut down
-        '''
-        run = True
-        def __init__(self):
+    # class SignalHandler:
+    #     '''
+    #     if SIGINT or SIGTERM is received, shut down
+    #     '''
+    #     run = True
+    #     def __init__(self):
             
-            signal.signal(signal.SIGINT, self.graceful_shutdown)
-            # signal.signal(signal.SIGTERM, self.shut_down)
+    #         signal.signal(signal.SIGINT, self.graceful_shutdown)
+    #         # signal.signal(signal.SIGTERM, self.shut_down)
         
-        def graceful_shutdown(self, *args):
-            self.run = False
-            stitcher_logger.info("SIGINT / SIGTERM detected")
+    #     def graceful_shutdown(self, *args):
+    #         self.run = False
+    #         stitcher_logger.info("SIGINT / SIGTERM detected")
         
-    sig_handler = SignalHandler()
+    # sig_handler = SignalHandler()
     
     
-    class DelayedKeyboardInterrupt:
+    # class DelayedKeyboardInterrupt:
 
-        def __enter__(self):
-            self.signal_received = False
-            self.old_handler = signal.signal(signal.SIGINT, self.handler)
+    #     def __enter__(self):
+    #         self.signal_received = False
+    #         self.old_handler = signal.signal(signal.SIGINT, self.handler)
                     
-        def handler(self, sig, frame):
-            self.signal_received = (sig, frame)
-            stitcher_logger.debug('SIGINT received. Delaying KeyboardInterrupt.')
+    #     def handler(self, sig, frame):
+    #         self.signal_received = (sig, frame)
+    #         stitcher_logger.debug('SIGINT received. Delaying KeyboardInterrupt.')
         
-        def __exit__(self, type, value, traceback):
-            signal.signal(signal.SIGINT, self.old_handler)
-            if self.signal_received:
-                self.old_handler(*self.signal_received)
+    #     def __exit__(self, type, value, traceback):
+    #         signal.signal(signal.SIGINT, self.old_handler)
+    #         if self.signal_received:
+    #             self.old_handler(*self.signal_received)
             
-            
+    signal.signal(signal.SIGINT, signal.SIG_IGN)       
     while True:
         try:
             x = old_q.get()
@@ -389,9 +389,9 @@ def dummy_stitcher(old_q, new_q):
         
         time.sleep(0.5)
         
-        with DelayedKeyboardInterrupt():
-            new_q.put(x)
-            stitcher_logger.info("old_q size: {}".format(old_q.qsize()))
+        # with DelayedKeyboardInterrupt():
+        new_q.put(x)
+        stitcher_logger.info("old_q size: {}".format(old_q.qsize()))
         
     stitcher_logger.info("Exiting dummy stitcher while loop")
     sys.exit(2)
