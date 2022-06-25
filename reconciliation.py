@@ -123,9 +123,9 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     signal.signal(signal.SIGINT, signal.SIG_IGN)    
     signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
     try:
-        while True: 
+        # while True: 
             # worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
-            worker_pool.apply_async(dummy_worker, (stitched_trajectory_queue, ))
+        worker_pool.apply_async(dummy_worker, (stitched_trajectory_queue, ))
             # time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
     except KeyboardInterrupt:
         worker_pool.terminate()
