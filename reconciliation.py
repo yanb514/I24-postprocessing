@@ -87,6 +87,7 @@ def dummy_worker(stitched_trajectory_queue: multiprocessing.Queue) -> None:
     rec_worker_logger.set_name("rec_worker")
     x = math.factorial(9999)
     rec_worker_logger.info("did some work")
+    rec_worker_logger.info("remaining qsize: {}".format(stitched_trajectory_queue.qsize()))
     
     
 
