@@ -379,7 +379,8 @@ def dummy_stitcher(old_q, new_q):
     #         if self.signal_received:
     #             self.old_handler(*self.signal_received)
             
-    signal.signal(signal.SIGINT, signal.SIG_IGN)       
+    signal.signal(signal.SIGINT, signal.SIG_IGN)    
+    signal.signal(signal.SIGPIPE,signal.SIG_DFL)
     while True:
         try:
             x = old_q.get()
