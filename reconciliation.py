@@ -83,9 +83,13 @@ def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue
     
     
 def dummy_worker(stitched_trajectory_queue: multiprocessing.Queue) -> None:
+
+    # Does worker automatically shutdown when queue is empty?
+    x = stitched_trajectory_queue.get(timeout = 2)
+
     rec_worker_logger = log_writer.logger
     rec_worker_logger.set_name("rec_worker")
-    x = math.factorial(9999)
+    val = math.factorial(9999)
     rec_worker_logger.info("did some work")
     rec_worker_logger.info("remaining qsize: {}".format(stitched_trajectory_queue.qsize()))
     
