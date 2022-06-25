@@ -108,18 +108,18 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
     
     while sig_handler.run:
         try:
-            logger.info("current queue size: {}, first_change_time: {:.2f}, query range: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, rri._current_lower_value, rri._current_upper_value))
+            # logger.info("current queue size: {}, first_change_time: {:.2f}, query range: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, rri._current_lower_value, rri._current_upper_value))
             if ready_queue.qsize() <= min_queue_size: # only move to the next query range if queue is low in stock
                 stream = dbr.collection.watch(pipeline) 
                 first_insert_change = stream.try_next() # get the first insert since last listen
-                logger.debug("first_insert_change: {}".format(first_insert_change))
+                # logger.debug("first_insert_change: {}".format(first_insert_change))
   
                 if first_insert_change: # if there is updates by the time collection.watch() is called
                     first_change_time = max(first_insert_change["fullDocument"]["last_timestamp"], first_change_time)
                     safe_query_time = first_change_time - t_buffer
                     dbr.range_iter_stop = safe_query_time
     
-                logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+                # logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
                 
                 if rri._current_upper_value > safe_query_time and rri._current_upper_value < rri._reader.range_iter_stop: # if not safe to query and current range is not the end, then wait 
                     # logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))
@@ -137,6 +137,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                         if len(doc["timestamp"]) > 3:
                             try:
                                 ready_queue.put(doc)
+                                logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))
                             except BrokenPipeError:
                                 logger.warning("BrokenPipeError in live_data_reader, signal: run={}".format(sig_handler.run))
                                 signal.signal(signal.SIGINT, signal.SIG_IGN)
