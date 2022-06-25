@@ -359,7 +359,7 @@ def dummy_stitcher(old_q, new_q):
         
         time.sleep(0.1)
         
-        new_q.put(x)
+        new_q.put([x["_id"]])
         stitcher_logger.info("old_q size: {}, new_q size:{}".format(old_q.qsize(),new_q.qsize()))
         
         
