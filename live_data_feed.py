@@ -78,6 +78,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
         '''
         run = True
         def __init__(self):
+            
             signal.signal(signal.SIGINT, self.shut_down)
             # signal.signal(signal.SIGTERM, self.shut_down)
         
@@ -103,6 +104,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
     safe_query_time = first_change_time - t_buffer # guarantee time-order up until safe_query_time
 
     sig_handler = SignalHandler()
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     
     while sig_handler.run:
         try:
