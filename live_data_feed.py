@@ -104,7 +104,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
     safe_query_time = first_change_time - t_buffer # guarantee time-order up until safe_query_time
 
     sig_handler = SignalHandler()
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
     
     while sig_handler.run:
         try:
@@ -135,10 +135,11 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
         
                     for doc in next_batch:
                         if len(doc["timestamp"]) > 3:
-                            # try:
-                            ready_queue.put(doc)
-                            # except BrokenPipeError:
-                            #     logger.warning("BrokenPipeError in live_data_reader, signal: run={}".format(sig_handler.run))
+                            try:
+                                ready_queue.put(doc)
+                            except BrokenPipeError:
+                                logger.warning("BrokenPipeError in live_data_reader, signal: run={}".format(sig_handler.run))
+                                signal.signal(signal.SIGINT, signal.SIG_IGN)
                             #     logger.info("Queue size: {}".format(ready_queue.qsize()))
                                 
                         else:
