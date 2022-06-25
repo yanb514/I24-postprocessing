@@ -121,10 +121,10 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
     first_change_time = dbr.get_max("last_timestamp") # to keep track of the first change during each change stream event
     safe_query_time = first_change_time - t_buffer # guarantee time-order up until safe_query_time
 
-    # sig_handler = SignalHandler()
+    sig_handler = SignalHandler()
 
     
-    while True:
+    while sig_handler.run:
         try:
             # logger.info("current queue size: {}, first_change_time: {:.2f}, query range: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, rri._current_lower_value, rri._current_upper_value))
             if ready_queue.qsize() <= min_queue_size: # only move to the next query range if queue is low in stock
