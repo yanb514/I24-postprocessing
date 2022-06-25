@@ -152,13 +152,16 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                     lower, upper = rri._current_lower_value, rri._current_upper_value
                     next_batch = next(rri)
                     
-                    with DelayedKeyboardInterrupt():
-                        # stuff here will not be interrupted by SIGINT
-                        for doc in next_batch:
-                            if len(doc["timestamp"]) > 3:         
-                                ready_queue.put(doc)
-                            else:
-                                logger.info("Discard a fragment with length less than 3")
+                    # with DelayedKeyboardInterrupt():
+                    s = signal.signal(signal.SIGINT, signal.SIG_IGN)
+                    # stuff here will not be interrupted by SIGINT
+                    for doc in next_batch:
+                        if len(doc["timestamp"]) > 3:         
+                            ready_queue.put(doc)
+                        else:
+                            logger.info("Discard a fragment with length less than 3")
+                    signal.signal(signal.SIGINT, s)
+                        
                     # except BrokenPipeError: # SIGINT detected
                     #     # if SIGINT is detected, finish writing the last batch and stop the process
                     #     # save current change stream and current query upper range for the next restart (#TODO: HOW?)  

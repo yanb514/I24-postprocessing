@@ -136,7 +136,7 @@ if __name__ == '__main__':
                 child_process = subsystem_process_objects[child_key]
                 if child_process.is_alive():
                     # Process is running; do nothing.
-                    print("Long live {}! {}".format(child_key, child_process))
+                    # print("Long live {}! {}".format(child_key, child_process))
                     pass
                 else:
                     # Process has died. Let's restart it.
