@@ -125,8 +125,7 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     
     while True:
         worker_pool.apply_async(dummy_worker, (stitched_trajectory_queue, ))
-        if stitched_trajectory_queue.empty():
-            break
+        time.sleep(0.5)
     worker_pool.close()
     rec_parent_logger.info("Graceful close")
     
