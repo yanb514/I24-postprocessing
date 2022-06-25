@@ -129,7 +129,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                     if rri._current_lower_value >= rri._reader.range_iter_stop:
                         logger.warning("Current query range is above iter stop. Break reader")
                         break
-                    logger.info("read next query range: {:.2f}-{:.2f}".format(rri._current_lower_value, rri._current_upper_value))
+                    # logger.info("read next query range: {:.2f}-{:.2f}".format(rri._current_lower_value, rri._current_upper_value))
                     
                     lower, upper = rri._current_lower_value, rri._current_upper_value
                     next_batch = next(rri)
@@ -139,8 +139,8 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                         for doc in next_batch:
                             if len(doc["timestamp"]) > 3:         
                                 ready_queue.put(doc)
-                            else:
-                                logger.info("Discard a fragment with length less than 3")
+                            # else:
+                            #     logger.info("Discard a fragment with length less than 3")
                        
                     except BrokenPipeError: # SIGINT detected
                     #     # if SIGINT is detected, finish writing the last batch and stop the process
