@@ -135,12 +135,16 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
         
         # Interruption mode
         if sig_handler.interrupt_flag:
+            # Stops the worker processes immediately without completing outstanding work. 
+            # When the pool object is garbage collected terminate() will be called immediately.
             worker_pool.terminate()
             worker_pool.join() # each worker should finish current task
             rec_parent_logger.warning("Interruption received. Close reconciliation pool.")
         
         # Graceful shutdown mode
         if sig_handler.finish_processing_flag and reconcile_single_trajectory.empty():
+            # pool.close() Prevents any more tasks from being submitted to the pool. 
+            # Once all the tasks have been completed the worker processes will exit.
             worker_pool.close()
             worker_pool.join()
             # TODO: close DBWriter?
