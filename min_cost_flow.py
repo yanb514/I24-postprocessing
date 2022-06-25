@@ -8,17 +8,19 @@ Created on Sun May 15 15:17:59 2022
 import queue
 from collections import deque 
 import os
+import signal
+import time
+import heapq
+from collections import defaultdict
+# import sys
+# sys.path.append('../')
 
 from i24_database_api.db_reader import DBReader
 from i24_database_api.db_writer import DBWriter
 import i24_logger.log_writer as log_writer
 from i24_configparse import parse_cfg
 from utils.data_structures import Fragment, PathCache, MOT_Graph, MOTGraphSingle, SortedDLL
-import time
-import heapq
-from collections import defaultdict
-import sys
-sys.path.append('../')
+
 
 
 # config_path = os.path.join(os.getcwd(),"config")
@@ -135,169 +137,6 @@ def min_cost_flow_batch(direction, fragment_queue, stitched_trajectory_queue, pa
     return
     
         
-    
-    
-    
-    
-    
-                
-
-
-def min_cost_flow_online(direction, fragment_queue, stitched_trajectory_queue, parameters):
-    '''
-    this version is bad. don't use
-    iteratively solving a MCF problem on a smaller graph
-    '''
-    # Initiate a logger
-    stitcher_logger = log_writer.logger
-    stitcher_logger.set_name("stitcher_"+direction)
-    stitcher_logger.info("** min_cost_flow_online starts. fragment_queue size: {}".format(fragment_queue.qsize()),extra = None)
-
-    # Make a database connection for writing
-    schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
-    dbw = DBWriter(host=parameters.default_host, port=parameters.default_port, 
-                username=parameters.default_username, password=parameters.default_password,
-                database_name=parameters.db_name, collection_name = parameters.stitched_collection, 
-                server_id=1, process_name=1, process_id=1, session_config_id=1, max_idle_time_ms = None,
-                schema_file=schema_path)
-    
-    
-    # Get parameters
-    TIME_WIN = parameters.time_win
-    IDLE_TIME = parameters.idle_time
-    TIMEOUT = parameters.raw_trajectory_queue_get_timeout
-    ATTR_NAME = parameters.fragment_attr_name
-    
-    # Initialize some data structures
-    curr_fragments = deque()  # fragments that are in current window (left, right), sorted by last_timestamp
-    # past_fragments = dict()  # set of ids indicate end of fragment ready to be matched, insertion ordered
-    P = PathCache(attr_name = ATTR_NAME) # an LRU cache of Fragment object (see utils.data_structures)
-    m = MOT_Graph(ATTR_NAME, parameters)
-    
-    # book keeping stuff
-    # count = 0
-    # fgmt_count = 0
-    cache_size = 0
-    cache_arr = []
-    t0 = time.time()
-    time_arr = []
-    nodes_arr = []
-    all_paths = []
-    
-    while True:
-        
-        try: # grab a fragment from the queue if queue is not empty
-            fragment = Fragment(fragment_queue.get(block = True, timeout = TIMEOUT)) # make object
-            P.add_node(fragment)
-            
-            # specify time window for curr_fragments
-            curr_fragments.append(getattr(fragment, ATTR_NAME)) 
-            left = fragment.first_timestamp - TIME_WIN   
-            
-            # compute fragment statistics (1d motion model)
-            fragment.compute_stats()
-            # fgmt_count += 1
-            cache_size = len(P.path)
-            cache_arr.append(cache_size)
-            # t1 = time.time()
-            # time_arr.append(t1-t0)
-            # nodes_arr.append(len(m.G.nodes()))
-            
-            
-            
-        except: # if queue is empty, process the remaining
-            if not curr_fragments: # if all remaining fragments are processed
-                left += IDLE_TIME + 1e-6 # to make all fragments "ready" for tail matching
-                if len(P.path) == 0:# exit the stitcher if all fragments are written to database
-                    break
-            else: 
-                # specify time window for curr_fragments
-                left = P.get_fragment(curr_fragments[0]).last_timestamp + 1e-6
-            fragment = None
-            
-        
-            
-            
-        # Add fragments to G if buffer time is reached
-        while curr_fragments and P.get_fragment(curr_fragments[0]).last_timestamp < left: 
-            
-            past_id = curr_fragments.popleft()
-            past_fragment = P.get_fragment(past_id)
-            m.add_node(past_fragment, P.path) # update G with the new fragment
-            # count += 1
- 
-        
-        # Start min-cost-flow
-        # if count >= 20 or fragment is None:
-            
-        # count = 0
-        m.min_cost_flow("s", "t")
-        
-        # Collapse paths
-        m.find_all_post_paths(m.G, "t", "s") 
-        
-        for path, cost in m.all_paths:
-            path = m.pretty_path(path)
-            head = path[0]
-            tail = path[-1]
-            
-            
-            for i in range(0, len(path)-1):
-                # id1, id2 = path[-i], path[-i-1]
-                id1, id2 = path[i], path[i+1]
-                if id1 in P.path and id2 in P.path:
-                    # print("union: {} and {}".format(id1, id2))
-                    P.union(id1, id2)
-            
-                    
-            # Delete nodes from G, only keep heads' pre and tail's post 
-            for node_id in path:
-                try: m.G.remove_node(node_id +"-pre")
-                except: pass
-                try: m.G.remove_node(node_id +"-post")
-                except: pass
-            
-            
-            # Flip the edge directions to s-t, aggregate edge cost
-            m.G.add_edge("s", head + "-pre", weight = 0, flipped = False)
-            m.G.add_edge(tail+"-post", "t", weight = 0, flipped = False)
-            m.G.add_edge(head+ "-pre", tail+"-post", weight = -cost, flipped = False)   
-            # print("path: ", path)
-            # m.fragment_dict[tail] = P.get_fragment(tail)
-                
-            
-            
-        # Retrive paths, write to DB
-        while True: 
-            try:  
-                root = P.first_node()
-                if not root:
-                    break
-                # print(root.ID, root.tail_time, left)
-                
-                if root.tail_time < left - IDLE_TIME:
-                    # print("root's tail time: {:.2f}, current time window: {:.2f}-{:.2f}".format(root.tail_time, left, right))
-                    path = P.pop_first_path() # remove nodes from P
-                    # all_paths.append(path)
-                    # remove nodes from G
-                    for node_id in path:
-                        try: m.G.remove_node(node_id +"-pre")
-                        except: pass
-                        try: m.G.remove_node(node_id +"-post")
-                        except: pass
-                    # print(path)
-                    # print("** write to db: root {}, last_modified {:.2f}, path length: {}".format(root.ID, root.tail_time,len(path)))
-                    stitched_trajectory_queue.put(path, timeout = parameters.stitched_trajectory_queue_put_timeout)
-                    # dbw.write_one_trajectory(thread = True, fragment_ids = path)
-                else: # break if first in cache is not timed out yet
-                    break
-            except StopIteration: # break if nothing in cache
-                break
-                
-    # return time_arr, cache_arr, nodes_arr
-    # return all_paths
-    return
-
 
 
 
@@ -501,33 +340,48 @@ def min_cost_flow_online_slow(direction, fragment_queue, stitched_trajectory_que
 
     
 
+        
+        
 def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory_queue, parameters):
     '''
     incrementally fixing the matching
     '''
-    # 
     
     # Initiate a logger
     stitcher_logger = log_writer.logger
     stitcher_logger.set_name("stitcher_"+direction)
+    stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
 
+    # Signal handling
+    class SignalHandler:
+        '''
+        if SIGINT or SIGTERM is received, shut down
+        '''
+        run = True
+        def __init__(self):
+            
+            signal.signal(signal.SIGINT, self.shut_down)
+            # signal.signal(signal.SIGTERM, self.shut_down)
+        
+        def shut_down(self, *args):
+            self.run = False
+            stitcher_logger.info("SIGINT / SIGTERM detected")
+        
+    sig_handler = SignalHandler()
+    
     # Make a database connection for writing
     schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
     dbw = DBWriter(parameters, collection_name = parameters.stitched_collection, schema_file=schema_path)
-        
-    stitcher_logger.info("** min_cost_flow_online_alt_path starts. fragment_queue size: {}".format(fragment_queue.qsize()),extra = None)
     
     ATTR_NAME = parameters.fragment_attr_name
     TIME_WIN = parameters.time_win
-    
     m = MOTGraphSingle(ATTR_NAME, parameters)
-    
     counter = 0 # for log
     
-    while True:
+    while sig_handler.run:
         try:
             fgmt = Fragment(fragment_queue.get(timeout = 3))
-        except:
+        except: # queue is empty
             all_paths = m.get_all_traj()
             for path in all_paths:
                 stitched_trajectory_queue.put(path[::-1])
@@ -552,6 +406,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             counter = 0
         counter += 1
     return   
+
 
 
 

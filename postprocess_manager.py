@@ -89,12 +89,6 @@ if __name__ == '__main__':
                                           parameters.range_increment, "west",
                                           raw_fragment_queue_w, 
                                           parameters.buffer_time, parameters.min_queue_size,)),
-                            # "stitcher_e": (stitch_raw_trajectory_fragments,
-                            #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
-                            #                 parameters, )),
-                            # "stitcher_w": (stitch_raw_trajectory_fragments,
-                            #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
-                            #                 parameters, )),
                             # "stitcher_e": (mcf.min_cost_flow_online_alt_path,
                             #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
                             #                 parameters, )),
@@ -132,12 +126,6 @@ if __name__ == '__main__':
 
 
 #%% Handle signals
-    # killer = GracefulKiller()
-    # while not killer.kill_now:
-    #     time.sleep(1)
-    #     print("doing something in a loop ...")
-
-    # print("End of the program. I was killed gracefully :)")
   
     try:
         while True:
@@ -177,28 +165,5 @@ if __name__ == '__main__':
         pass
     
     
-    manager_logger.info("keyboard interrupt, qsize: {}".format(raw_fragment_queue_w.qsize()))
+    # manager_logger.info("keyboard interrupt, qsize: {}".format(raw_fragment_queue_w.qsize()))
     
-#%%
-
-    # for child_key in subsystem_process_objects.keys():
-    #     child_process = subsystem_process_objects[child_key]
-    #     if child_process.is_alive():
-    #         # Process is running; do nothing.
-    #         # print(child_key)
-    #         pass
-    #     else:
-    #         # Process has died. Let's restart it.
-    #         # Copy its name out of the existing process object for lookup and restart.
-    #         process_name = child_process.name
-    #         manager_logger.warning("Restarting process: {}".format(process_name))
-    #         print("Restarting process: {}".format(process_name))
-    #         # Get the function handle and function arguments to spawn this process again.
-    #         process_function, process_args = processes_to_spawn[process_name]
-    #         # Restart the process the same way we did originally.
-    #         subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
-    #         subsys_process.start()
-    #         # Re-write the process object in the dictionary and update its PID.
-    #         subsystem_process_objects[child_key] = subsys_process
-    #         pid_tracker[process_name] = subsys_process.pid
-      

@@ -86,6 +86,24 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
             self.run = False
             logger.info("SIGINT / SIGTERM detected")
 
+    class DelayedKeyboardInterrupt:
+
+        def __enter__(self):
+            self.signal_received = False
+            self.old_handler = signal.signal(signal.SIGINT, self.handler)
+                    
+        def handler(self, sig, frame):
+            self.signal_received = (sig, frame)
+            logger.info('SIGINT received. Delaying KeyboardInterrupt.')
+        
+        def __exit__(self, type, value, traceback):
+            signal.signal(signal.SIGINT, self.old_handler)
+            if self.signal_received:
+                self.old_handler(*self.signal_received)
+    
+
+    
+    
     
     # Connect to a database reader
     dbr = DBReader(default_param, collection_name=collection_name)
@@ -134,16 +152,18 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                     lower, upper = rri._current_lower_value, rri._current_upper_value
                     next_batch = next(rri)
                     
-                    if sig_handler.run:
+                    with DelayedKeyboardInterrupt():
+                        # stuff here will not be interrupted by SIGINT
                         for doc in next_batch:
                             if len(doc["timestamp"]) > 3:         
                                 ready_queue.put(doc)
                             else:
                                 logger.info("Discard a fragment with length less than 3")
-                    else: # SIGINT detected
-                        # if SIGINT is detected, finish writing the last batch and stop the process
-                        # save current change stream and current query upper range for the next restart (#TODO: HOW?)  
-                        logger.warning("SIGINT is detected, try to restart with lower:{} upper:{}".format(lower, upper))
+                    # except BrokenPipeError: # SIGINT detected
+                    #     # if SIGINT is detected, finish writing the last batch and stop the process
+                    #     # save current change stream and current query upper range for the next restart (#TODO: HOW?)  
+                    #     logger.warning("BrokenPipeError detected, SIGINT = {}, try to restart with lower:{} upper:{}. Exit system.".format(sig_handler.run, lower, upper))
+                    #     sys.exit(2)
                         
                         
             else: # if queue has sufficient number of items, then wait before the next iteration (throttle)
@@ -154,10 +174,8 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
             logger.warning("live_data_reader reaches the end of query range iteration.")
             pass
         
-       
-            
 
-    logger.warning("Exiting live_data_reader while loop")
+    logger.info("Exiting live_data_reader while loop")
     sys.exit(2)
 
     
