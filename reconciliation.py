@@ -123,7 +123,10 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     signal.signal(signal.SIGINT, signal.SIG_IGN)    
     signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
     
-    worker_pool.apply_async(dummy_worker, (stitched_trajectory_queue, ))
+    while True:
+        worker_pool.apply_async(dummy_worker, (stitched_trajectory_queue, ))
+        if stitched_trajectory_queue.empty():
+            break
     worker_pool.close()
     rec_parent_logger.info("Graceful close")
     
