@@ -123,21 +123,24 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     signal.signal(signal.SIGINT, signal.SIG_IGN)    
     signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
     
-    while True:
-        try:
-            # while True: 
-                # worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
-            res = worker_pool.apply_async(dummy_worker, (stitched_trajectory_queue, ))
-            res.get(5)
-                # time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
-        except KeyboardInterrupt:
-            worker_pool.terminate()
-            rec_parent_logger.info("Keyboard terminate")
-            break
-        else:
-            worker_pool.close()
-            rec_parent_logger.info("Graceful close")
-            break
+    worker_pool.apply_async(dummy_worker, (stitched_trajectory_queue, ))
+    worker_pool.close()
+    rec_parent_logger.info("Graceful close")
+    
+    # while True:
+    #     try:
+    #         # while True: 
+    #             # worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
+    #         worker_pool.apply_async(dummy_worker, (stitched_trajectory_queue, ))
+    #             # time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
+    #     except KeyboardInterrupt:
+    #         worker_pool.terminate()
+    #         rec_parent_logger.info("Keyboard terminate")
+    #         break
+    #     else:
+    #         worker_pool.close()
+    #         rec_parent_logger.info("Graceful close")
+    #         break
         
     worker_pool.join()
     rec_parent_logger.info("joined pool. Exiting")
