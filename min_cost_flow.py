@@ -390,7 +390,7 @@ def dummy_stitcher(old_q, new_q):
         time.sleep(0.5)
         
         stitcher_logger.info("old_q size: {}".format(old_q.qsize()))
-        with DelayedKeyboardInterrupt:
+        with DelayedKeyboardInterrupt():
             new_q.put(x)
         
     stitcher_logger.info("Exiting dummy stitcher while loop")
