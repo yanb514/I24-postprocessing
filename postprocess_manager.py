@@ -89,6 +89,8 @@ if __name__ == '__main__':
                                           parameters.range_increment, "west",
                                           raw_fragment_queue_w, 
                                           parameters.buffer_time, parameters.min_queue_size,)),
+                            "dummy_stitcher": (mcf.dummy_stitcher,
+                                               (raw_fragment_queue_w, stitched_trajectory_queue,)),
                             # "stitcher_e": (mcf.min_cost_flow_online_alt_path,
                             #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
                             #                 parameters, )),

@@ -145,7 +145,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                     except BrokenPipeError: # SIGINT detected
                     #     # if SIGINT is detected, finish writing the last batch and stop the process
                     #     # save current change stream and current query upper range for the next restart (#TODO: HOW?)  
-                        logger.warning("BrokenPipeError detected, SIGINT = {}, try to restart with lower:{} upper:{}. Exit system.".format(sig_handler.run, lower, upper))
+                        logger.warning("BrokenPipeError detected, sig_handler.run = {}, try to restart with lower:{} upper:{}. Exit system.".format(sig_handler.run, lower, upper))
                         sys.exit(2)
                         
                         

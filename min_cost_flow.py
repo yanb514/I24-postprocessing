@@ -12,7 +12,7 @@ import signal
 import time
 import heapq
 from collections import defaultdict
-# import sys
+import sys
 # sys.path.append('../')
 
 from i24_database_api.db_reader import DBReader
@@ -340,6 +340,41 @@ def min_cost_flow_online_slow(direction, fragment_queue, stitched_trajectory_que
 
     
 
+def dummy_stitcher(old_q, new_q):
+    # Initiate a logger
+    stitcher_logger = log_writer.logger
+    stitcher_logger.set_name("dummy")
+    stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
+
+    # Signal handling
+    class SignalHandler:
+        '''
+        if SIGINT or SIGTERM is received, shut down
+        '''
+        run = True
+        def __init__(self):
+            
+            signal.signal(signal.SIGINT, self.graceful_shutdown)
+            # signal.signal(signal.SIGTERM, self.shut_down)
+        
+        def graceful_shutdown(self, *args):
+            self.run = False
+            stitcher_logger.info("SIGINT / SIGTERM detected")
+        
+    sig_handler = SignalHandler()
+    
+    while sig_handler.run:
+        try:
+            x = old_q.get()
+        except:
+            stitcher_logger.info("old_q is empty, exit")
+            sys.exit(2)
+        time.sleep(0.5)
+        
+        new_q.put(x)
+        
+        
+        
         
         
 def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory_queue, parameters):
@@ -360,10 +395,10 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
         run = True
         def __init__(self):
             
-            signal.signal(signal.SIGINT, self.shut_down)
+            signal.signal(signal.SIGINT, self.graceful_shutdown)
             # signal.signal(signal.SIGTERM, self.shut_down)
         
-        def shut_down(self, *args):
+        def graceful_shutdown(self, *args):
             self.run = False
             stitcher_logger.info("SIGINT / SIGTERM detected")
         
