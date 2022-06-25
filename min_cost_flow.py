@@ -363,16 +363,38 @@ def dummy_stitcher(old_q, new_q):
         
     sig_handler = SignalHandler()
     
-    while sig_handler.run:
+    
+    class DelayedKeyboardInterrupt:
+
+        def __enter__(self):
+            self.signal_received = False
+            self.old_handler = signal.signal(signal.SIGINT, self.handler)
+                    
+        def handler(self, sig, frame):
+            self.signal_received = (sig, frame)
+            stitcher_logger.debug('SIGINT received. Delaying KeyboardInterrupt.')
+        
+        def __exit__(self, type, value, traceback):
+            signal.signal(signal.SIGINT, self.old_handler)
+            if self.signal_received:
+                self.old_handler(*self.signal_received)
+            
+            
+    while True:
         try:
             x = old_q.get()
         except:
             stitcher_logger.info("old_q is empty, exit")
             sys.exit(2)
+        
         time.sleep(0.5)
         
-        new_q.put(x)
+        stitcher_logger.info("old_q size: {}".format(old_q.qsize()))
+        with DelayedKeyboardInterrupt:
+            new_q.put(x)
         
+    stitcher_logger.info("Exiting dummy stitcher while loop")
+    sys.exit(2)
         
         
         
