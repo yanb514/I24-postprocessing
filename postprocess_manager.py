@@ -157,7 +157,7 @@ if __name__ == '__main__':
           
             
     except KeyboardInterrupt:
-        manager_logger.info("keyboard interrupt, qsize: {}".format(raw_fragment_queue_w.qsize()))
+        manager_logger.info("keyboard interrupt, raw size: {}, stitched size: {}".format(raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize()))
     #     # Catch KeyboardInterrupt, which is the same thing as a SIGINT
     #     # The command `kill -INT [PID]` with the manager PID, executed on the command line, will gracefully
     #     # shut down the whole postprocess with its child processes.

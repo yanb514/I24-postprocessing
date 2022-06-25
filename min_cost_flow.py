@@ -388,11 +388,11 @@ def dummy_stitcher(old_q, new_q):
             stitcher_logger.info("old_q is empty, exit")
             sys.exit(2)
         
-        time.sleep(0.5)
+        # time.sleep(0.5)
         
         # with DelayedKeyboardInterrupt():
         new_q.put(x)
-        stitcher_logger.info("old_q size: {}".format(old_q.qsize()))
+        stitcher_logger.info("old_q size: {}, new_q size:{}".format(old_q.qsize(),new_q.qsize()))
         
     stitcher_logger.info("Exiting dummy stitcher while loop")
     sys.exit(2)
