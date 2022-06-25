@@ -153,8 +153,11 @@ if __name__ == '__main__':
                 # Copy its name out of the existing process object for lookup and restart.
                 
                 process_name = child_process.name
-                live_processes.remove(process_name)
-                manager_logger.warning("Restarting process: {}".format(process_name))
+                try:
+                    live_processes.remove(process_name)
+                except:
+                    pass
+                # manager_logger.warning("Restarting process: {}".format(process_name))
                 print("RIP {} {}".format(process_name, child_process))
 
                 
