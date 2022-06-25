@@ -382,7 +382,7 @@ def dummy_stitcher(old_q, new_q):
     signal.signal(signal.SIGINT, signal.SIG_IGN)    
     signal.signal(signal.SIGPIPE,signal.SIG_DFL)
     
-    while not old_q.empty():
+    while True:
         try:
             x = old_q.get()
         except:
