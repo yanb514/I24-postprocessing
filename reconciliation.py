@@ -19,7 +19,7 @@ from i24_configparse import parse_cfg
 import warnings
 warnings.filterwarnings("ignore")
 
-
+import math
 from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments
 
 # config_path = os.path.join(os.getcwd(),"config")
@@ -82,6 +82,11 @@ def reconcile_single_trajectory(stitched_trajectory_queue: multiprocessing.Queue
     # rec_worker_logger.info("reconciliation dbw: {}".format(id(dbw)))
     
     
+def dummy_worker(stitched_trajectory_queue: multiprocessing.Queue) -> None:
+    rec_worker_logger = log_writer.logger
+    rec_worker_logger.set_name("rec_worker")
+    x = math.factorial(9999)
+    rec_worker_logger.info("did some work")
     
     
 
@@ -110,7 +115,8 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
     try:
         while True: 
-            worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
+            # worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
+            worker_pool.apply_async(dummy_worker, (stitched_trajectory_queue, ))
             # time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
     except KeyboardInterrupt:
         worker_pool.terminate()
