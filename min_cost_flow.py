@@ -384,7 +384,7 @@ def dummy_stitcher(old_q, new_q):
     
     while True:
         try:
-            x = old_q.get()
+            x = old_q.get(timeout = 3)
         except:
             stitcher_logger.info("old_q is empty, exit")
             sys.exit(2)
