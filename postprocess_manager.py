@@ -97,8 +97,8 @@ if __name__ == '__main__':
                             # "stitcher_w": (mcf.min_cost_flow_online_alt_path,
                             #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
                             #                 parameters, )),
-                            # "reconciliation": (reconciliation_pool,
-                            #             (stitched_trajectory_queue,)),
+                            "reconciliation": (reconciliation_pool,
+                                        (stitched_trajectory_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.
@@ -130,12 +130,10 @@ if __name__ == '__main__':
 
 
 
-#%% Handle signals
+#%% CASE 1: [Graceful shutdown] Hands-off manager. Manager ignores all signals, and does not restart processes. All signals are handled in each process
     signal.signal(signal.SIGINT, signal.SIG_IGN)  
     
-    # # try:
     while True:
-    # while not killer.kill_now:
         # for each process that is being managed at this level, check if it's still running
         time.sleep(2)
         if not live_processes:
@@ -144,43 +142,57 @@ if __name__ == '__main__':
         
         for child_key in subsystem_process_objects.keys():
             child_process = subsystem_process_objects[child_key]
-            if child_process.is_alive():
-                # Process is running; do nothing.
-                # print("Long live {}! {}".format(child_key, child_process))
-                pass
-            else:
-                # Process has died. Let's restart it.
-                # Copy its name out of the existing process object for lookup and restart.
-                
+            if not child_process.is_alive():
                 process_name = child_process.name
                 try:
                     live_processes.remove(process_name)
                 except:
                     pass
-                # manager_logger.warning("Restarting process: {}".format(process_name))
-                print("RIP {} {}".format(process_name, child_process))
 
-                
-                # # Get the function handle and function arguments to spawn this process again.
-                # process_function, process_args = processes_to_spawn[process_name]
-                # # Restart the process the same way we did originally.
-                # subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
-                # subsys_process.start()
-                # # Re-write the process object in the dictionary and update its PID.
-                # subsystem_process_objects[child_key] = subsys_process
-                # pid_tracker[process_name] = subsys_process.pid
-          
-            
-    # except KeyboardInterrupt:
-    #     manager_logger.info("keyboard interrupt, raw size: {}, stitched size: {}".format(raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize()))
-    # #     # Catch KeyboardInterrupt, which is the same thing as a SIGINT
-    # #     # The command `kill -INT [PID]` with the manager PID, executed on the command line, will gracefully
-    # #     # shut down the whole postprocess with its child processes.
-    # #     # for pid_name, pid_val in pid_tracker.items():
-    # #     #     os.kill(pid_val, signal.SIGKILL)
-    # #     #     manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
-    #     pass
-    
     
     manager_logger.info("Exit manager while loop, raw size: {}, stitched size: {}".format(raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize()))
 
+#%% CASE 2:
+    # try:
+    #     while True:
+    #     # while not killer.kill_now:
+    #         # for each process that is being managed at this level, check if it's still running
+    #         time.sleep(2)
+    #         if not live_processes:
+    #             manager_logger.info("None of the processes is alive")
+    #             break
+            
+    #         for child_key in subsystem_process_objects.keys():
+    #             child_process = subsystem_process_objects[child_key]
+    #             if child_process.is_alive():
+    #                 # Process is running; do nothing.
+    #                 # print("Long live {}! {}".format(child_key, child_process))
+    #                 pass
+    #             else:
+    #                 # Process has died. Let's restart it.
+    #                 # Copy its name out of the existing process object for lookup and restart.
+                    
+    #                 process_name = child_process.name
+    #                 try:
+    #                     live_processes.remove(process_name)
+    #                 except:
+    #                     pass
+    #                 # manager_logger.warning("Restarting process: {}".format(process_name))
+    #                 # print("RIP {} {}".format(process_name, child_process))
+    
+                    
+    #                 # # Get the function handle and function arguments to spawn this process again.
+    #                 # process_function, process_args = processes_to_spawn[process_name]
+    #                 # # Restart the process the same way we did originally.
+    #                 # subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
+    #                 # subsys_process.start()
+    #                 # # Re-write the process object in the dictionary and update its PID.
+    #                 # subsystem_process_objects[child_key] = subsys_process
+    #                 # pid_tracker[process_name] = subsys_process.pid
+          
+            
+    # except KeyboardInterrupt:
+    #     for pid_name, pid_val in pid_tracker.items():
+    #         os.kill(pid_val, signal.SIGKILL)
+    #         manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
+    #     pass

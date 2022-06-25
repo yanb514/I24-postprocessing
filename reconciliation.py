@@ -99,57 +99,30 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     rec_parent_logger.set_name("rec_parent")
     setattr(rec_parent_logger, "_default_logger_extra",  {})
 
+    # Signal handling
+    original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
     worker_pool = Pool(processes=parameters.reconciliation_pool_size)
+    signal.signal(signal.SIGINT, original_sigint_handler)
+    
     rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(parameters.reconciliation_pool_size), extra = None)
 
-    # Signal handling
-    class SignalHandler:
-        '''
-        Kill
-        Interrupt
-        Finish processing
-        '''
-        finish_processing_flag = False
-        interrupt_flag = False
-        
-        def __init__(self):
-            signal.signal(signal.SIGINT, self.finish_processing)
-            signal.signal(signal.SIGTERM, self.finish_processing)
-            
-            signal.signal(signal.SIGINT, self.interrupt)
-            signal.signal(signal.SIGTERM, self.interrupt)
-        
-        def finish_processing(self, *args):
-            self.finish_processing_flag = True
-            rec_parent_logger.info("Received finish_processing signal")
-            
-        def interrupt(self, *args):
-            self.interrupt_flag = True
-            rec_parent_logger.info("Received interrupt signal")
-            
-    sig_handler = SignalHandler()
       
-    while True: 
-        worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
-        # time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
+    
+    # signal.signal(signal.SIGINT, signal.SIG_IGN)    
+    # signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+    try:
+        while True: 
+            worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
+            # time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
+    except KeyboardInterrupt:
+        worker_pool.terminate()
+        rec_parent_logger.info("Keyboard terminate")
+    else:
+        worker_pool.close()
+        rec_parent_logger.info("Graceful close")
         
-        # Interruption mode
-        if sig_handler.interrupt_flag:
-            # Stops the worker processes immediately without completing outstanding work. 
-            # When the pool object is garbage collected terminate() will be called immediately.
-            worker_pool.terminate()
-            worker_pool.join() # each worker should finish current task
-            rec_parent_logger.warning("Interruption received. Close reconciliation pool.")
-        
-        # Graceful shutdown mode
-        if sig_handler.finish_processing_flag and reconcile_single_trajectory.empty():
-            # pool.close() Prevents any more tasks from being submitted to the pool. 
-            # Once all the tasks have been completed the worker processes will exit.
-            worker_pool.close()
-            worker_pool.join()
-            # TODO: close DBWriter?
-            rec_parent_logger.warning("Interruption received. Close reconciliation pool.")
-
+    worker_pool.join()
+    rec_parent_logger.info("joined pool. Exiting")
     
     sys.exit(0)
 
