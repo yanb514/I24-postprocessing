@@ -128,7 +128,7 @@ if __name__ == '__main__':
 
 
 #%% Handle signals
-  
+    signal.signal(signal.SIGINT, signal.SIG_IGN)    
     # # try:
     while True:
     # while not killer.kill_now:
