@@ -88,7 +88,7 @@ def dummy_worker(stitched_trajectory_queue: multiprocessing.Queue) -> None:
     rec_worker_logger.set_name("rec_worker")
     # Does worker automatically shutdown when queue is empty?
     try:
-        x = stitched_trajectory_queue.get(timeout = 2)
+        x = stitched_trajectory_queue.get(timeout = 5)
     except:
         rec_worker_logger.info("exit PID={}".format(os.getpid()))
         sys.exit(2)
@@ -122,17 +122,20 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
 
     signal.signal(signal.SIGINT, signal.SIG_IGN)    
     signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
-    try:
-        # while True: 
-            # worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
-        worker_pool.apply_async(dummy_worker, (stitched_trajectory_queue, ))
-            # time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
-    except KeyboardInterrupt:
-        worker_pool.terminate()
-        rec_parent_logger.info("Keyboard terminate")
-    else:
-        worker_pool.close()
-        rec_parent_logger.info("Graceful close")
+    while True:
+        try:
+            # while True: 
+                # worker_pool.apply_async(reconcile_single_trajectory, (stitched_trajectory_queue, ))
+            worker_pool.apply_async(dummy_worker, (stitched_trajectory_queue, ))
+                # time.sleep(0.5) # put some throttle so that while waiting for a job this loop does run tooo fast
+        except KeyboardInterrupt:
+            worker_pool.terminate()
+            rec_parent_logger.info("Keyboard terminate")
+            break
+        else:
+            worker_pool.close()
+            rec_parent_logger.info("Graceful close")
+            break
         
     worker_pool.join()
     rec_parent_logger.info("joined pool. Exiting")
