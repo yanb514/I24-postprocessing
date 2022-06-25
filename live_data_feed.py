@@ -131,21 +131,21 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                         break
                     logger.info("read next query range: {:.2f}-{:.2f}".format(rri._current_lower_value, rri._current_upper_value))
                     
+                    lower, upper = rri._current_lower_value, rri._current_upper_value
                     next_batch = next(rri)
-        
-                    for doc in next_batch:
-                        if len(doc["timestamp"]) > 3:
-                            try:
+                    
+                    if sig_handler.run:
+                        for doc in next_batch:
+                            if len(doc["timestamp"]) > 3:         
                                 ready_queue.put(doc)
-                                logger.info("qsize for raw_data_queue: {}, doc last time: {:.2f}".format(ready_queue.qsize(), doc["last_timestamp"]))
-                            except BrokenPipeError:
-                                logger.warning("BrokenPipeError in live_data_reader, doc last time: {:.2f}".format(doc["last_timestamp"]))
-                                signal.signal(signal.SIGINT, signal.SIG_IGN)
-                            #     logger.info("Queue size: {}".format(ready_queue.qsize()))
-                                
-                        else:
-                            logger.info("Discard a fragment with length less than 3")
-                
+                            else:
+                                logger.info("Discard a fragment with length less than 3")
+                    else: # SIGINT detected
+                        # if SIGINT is detected, finish writing the last batch and stop the process
+                        # save current change stream and current query upper range for the next restart (#TODO: HOW?)  
+                        logger.warning("SIGINT is detected, try to restart with lower:{} upper:{}".format(lower, upper))
+                        
+                        
             else: # if queue has sufficient number of items, then wait before the next iteration (throttle)
                 logger.info("queue size is sufficient")     
                 time.sleep(2)
