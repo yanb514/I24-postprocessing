@@ -137,9 +137,9 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                         if len(doc["timestamp"]) > 3:
                             try:
                                 ready_queue.put(doc)
-                                logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))
+                                logger.info("qsize for raw_data_queue: {}, doc last time: {:.2f}".format(ready_queue.qsize(), doc["last_timestamp"]))
                             except BrokenPipeError:
-                                logger.warning("BrokenPipeError in live_data_reader, signal: run={}".format(sig_handler.run))
+                                logger.warning("BrokenPipeError in live_data_reader, doc last time: {:.2f}".format(doc["last_timestamp"]))
                                 signal.signal(signal.SIGINT, signal.SIG_IGN)
                             #     logger.info("Queue size: {}".format(ready_queue.qsize()))
                                 
