@@ -107,6 +107,7 @@ if __name__ == '__main__':
 
     # Start all processes for the first time and put references to those processes in `subsystem_process_objects`
     # manager_logger.info("Post-process manager beginning to spawn processes")
+    live_processes = set()
     for process_name, (process_function, process_args) in processes_to_spawn.items():
         manager_logger.info("Post-process manager spawning {}".format(process_name))
         # print("Post-process manager spawning {}".format(process_name))
@@ -119,6 +120,8 @@ if __name__ == '__main__':
         subsystem_process_objects[process_name] = subsys_process
         # Each process is responsible for putting its own children's PIDs in the tracker upon creation (if it spawns).
         pid_tracker[process_name] = subsys_process.pid
+        
+        live_processes.add(process_name)
 
     # manager_logger.info("Started all processes.")
     print("Started all processes.")
@@ -128,12 +131,17 @@ if __name__ == '__main__':
 
 
 #%% Handle signals
-    signal.signal(signal.SIGINT, signal.SIG_IGN)    
+    signal.signal(signal.SIGINT, signal.SIG_IGN)  
+    
     # # try:
     while True:
     # while not killer.kill_now:
         # for each process that is being managed at this level, check if it's still running
         time.sleep(2)
+        if not live_processes:
+            manager_logger.info("None of the processes is alive")
+            break
+        
         for child_key in subsystem_process_objects.keys():
             child_process = subsystem_process_objects[child_key]
             if child_process.is_alive():
@@ -143,10 +151,12 @@ if __name__ == '__main__':
             else:
                 # Process has died. Let's restart it.
                 # Copy its name out of the existing process object for lookup and restart.
+                
                 process_name = child_process.name
+                live_processes.remove(process_name)
                 manager_logger.warning("Restarting process: {}".format(process_name))
                 print("RIP {} {}".format(process_name, child_process))
-        manager_logger.info("Leftover processes: {}".format([key for key in subsystem_process_objects.keys()]))
+
                 
                 # # Get the function handle and function arguments to spawn this process again.
                 # process_function, process_args = processes_to_spawn[process_name]
@@ -169,5 +179,5 @@ if __name__ == '__main__':
     #     pass
     
     
-    manager_logger.info("keyboard interrupt, raw size: {}, stitched size: {}".format(raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize()))
+    manager_logger.info("Exit manager while loop, raw size: {}, stitched size: {}".format(raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize()))
 
