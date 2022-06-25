@@ -379,8 +379,8 @@ def dummy_stitcher(old_q, new_q):
     #         if self.signal_received:
     #             self.old_handler(*self.signal_received)
             
-    # signal.signal(signal.SIGINT, signal.SIG_IGN)    
-    
+    signal.signal(signal.SIGINT, signal.SIG_IGN)    
+    signal.signal(signal.SIGPIPE,signal.SIG_DFL)
     while True:
         try:
             x = old_q.get()
@@ -391,15 +391,15 @@ def dummy_stitcher(old_q, new_q):
         time.sleep(0.1)
         
 
-        try:
-            new_q.put(x)
-            stitcher_logger.info("old_q size: {}, new_q size:{}".format(old_q.qsize(),new_q.qsize()))
-            stitcher_logger.info("SIGINT run = {}".format(sig_handler.run))
-        except: # brokenpipe
-            signal.signal(signal.SIGPIPE,signal.SIG_DFL)
-            new_q.put(x)
-            stitcher_logger.info("IN EXCEPT old_q size: {}, new_q size:{}".format(old_q.qsize(),new_q.qsize()))
-            stitcher_logger.info("IN EXCEPT SIGINT run = {}".format(sig_handler.run))
+        # try:
+        new_q.put(x)
+        stitcher_logger.info("old_q size: {}, new_q size:{}".format(old_q.qsize(),new_q.qsize()))
+        stitcher_logger.info("SIGINT run = {}".format(sig_handler.run))
+        # except: # brokenpipe
+            
+        #     new_q.put(x)
+        #     stitcher_logger.info("IN EXCEPT old_q size: {}, new_q size:{}".format(old_q.qsize(),new_q.qsize()))
+        #     stitcher_logger.info("IN EXCEPT SIGINT run = {}".format(sig_handler.run))
         
         
     stitcher_logger.info("Exiting dummy stitcher while loop")

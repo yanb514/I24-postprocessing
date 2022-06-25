@@ -167,5 +167,5 @@ if __name__ == '__main__':
     #     pass
     
     
-    # manager_logger.info("keyboard interrupt, qsize: {}".format(raw_fragment_queue_w.qsize()))
-    
+    manager_logger.info("keyboard interrupt, raw size: {}, stitched size: {}".format(raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize()))
+
