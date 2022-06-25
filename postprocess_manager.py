@@ -128,7 +128,7 @@ if __name__ == '__main__':
 
 
 #%% Handle signals
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)    
+    signal.signal(signal.SIGINT, signal.SIG_IGN)    
     # # try:
     while True:
     # while not killer.kill_now:
@@ -146,14 +146,16 @@ if __name__ == '__main__':
                 process_name = child_process.name
                 manager_logger.warning("Restarting process: {}".format(process_name))
                 print("RIP {} {}".format(process_name, child_process))
-                # Get the function handle and function arguments to spawn this process again.
-                process_function, process_args = processes_to_spawn[process_name]
-                # Restart the process the same way we did originally.
-                subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
-                subsys_process.start()
-                # Re-write the process object in the dictionary and update its PID.
-                subsystem_process_objects[child_key] = subsys_process
-                pid_tracker[process_name] = subsys_process.pid
+                
+                
+                # # Get the function handle and function arguments to spawn this process again.
+                # process_function, process_args = processes_to_spawn[process_name]
+                # # Restart the process the same way we did originally.
+                # subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
+                # subsys_process.start()
+                # # Re-write the process object in the dictionary and update its PID.
+                # subsystem_process_objects[child_key] = subsys_process
+                # pid_tracker[process_name] = subsys_process.pid
           
             
     # except KeyboardInterrupt:
