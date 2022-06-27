@@ -86,11 +86,16 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     :param pid_tracker: a dictionary
     :return:
     """
-    dbw.reset_collection()
+    
     
     rec_parent_logger = log_writer.logger
     rec_parent_logger.set_name("rec_parent")
     setattr(rec_parent_logger, "_default_logger_extra",  {})
+
+    # Reset collection
+    rec_parent_logger.debug("before reset collection size: {}".format(dbw.count()))
+    dbw.reset_collection()
+    rec_parent_logger.debug("after reset collection size: {}".format(dbw.count()))
 
     # Signal handling
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
