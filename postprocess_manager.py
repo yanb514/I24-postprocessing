@@ -130,7 +130,7 @@ if __name__ == '__main__':
 
 
 
-#%% CASE 1: [Graceful shutdown] Hands-off manager. Manager ignores all signals, and does not restart processes. All signals are handled in each process
+    #%% CASE 1: [Graceful shutdown] Hands-off manager. Manager ignores all signals, and does not restart processes. All signals are handled in each process
     if parameters.mode == "finish_processing": 
         signal.signal(signal.SIGINT, signal.SIG_IGN)  
     
@@ -153,7 +153,9 @@ if __name__ == '__main__':
         
         manager_logger.info("Exit manager while loop, raw size: {}, stitched size: {}".format(raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize()))
 
-#%% CASE 2:
+
+
+    #%% CASE 2:
     elif parameters.mode == "kill":
         try:
             while True:

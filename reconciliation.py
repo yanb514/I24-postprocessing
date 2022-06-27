@@ -31,7 +31,6 @@ parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
 reconciled_schema_path = os.path.join(os.environ["user_config_directory"],parameters.reconciled_schema_path)
 
 dbw = DBWriter(parameters, collection_name = parameters.reconciled_collection, schema_file=reconciled_schema_path)
-dbw.reset_collection()
 raw = DBReader(parameters, collection_name=parameters.raw_collection)
 
 reconciliation_args = {"lam2_x": parameters.lam2_x,
@@ -87,7 +86,8 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     :param pid_tracker: a dictionary
     :return:
     """
-
+    dbw.reset_collection()
+    
     rec_parent_logger = log_writer.logger
     rec_parent_logger.set_name("rec_parent")
     setattr(rec_parent_logger, "_default_logger_extra",  {})
