@@ -24,7 +24,7 @@ from utils.reconciliation_module import receding_horizon_2d_l1, resample, recedi
 
 # config_path = os.path.join(os.getcwd(),"config")
 # os.environ["user_config_directory"] = config_path
-# os.environ["my_config_section"] = "DEBUG"
+os.environ["my_config_section"] = "TEST"
 parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
 
 # initiate a dbw and dbr object
@@ -111,7 +111,7 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
         try:
             traj = stitched_trajectory_queue.get(timeout = parameters.stitched_trajectory_queue_get_timeout)
         except: 
-            rec_parent_logger.warning("Getting from stitched trajectories queue is timed out. Close the reconciliation pool.")
+            rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters.stitched_trajectory_queue_get_timeout))
             break
         
         worker_pool.apply_async(reconcile_single_trajectory, (traj, ))
