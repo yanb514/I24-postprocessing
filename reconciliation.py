@@ -83,8 +83,8 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     signal.signal(signal.SIGINT, original_sigint_handler)
     
     rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(parameters.reconciliation_pool_size), extra = None)
-    # signal.signal(signal.SIGINT, signal.SIG_IGN)    
-    # signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+    signal.signal(signal.SIGINT, signal.SIG_IGN)    
+    signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
     
     # Create a shared queue to store workers results # TODO: max queue size
     reconciled_queue = multiprocessing.Manager().Queue()
