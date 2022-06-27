@@ -399,6 +399,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     # Make a database connection for writing
     schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
     dbw = DBWriter(parameters, collection_name = parameters.stitched_collection, schema_file=schema_path)
+    dbw.reset_collection()
     
     ATTR_NAME = parameters.fragment_attr_name
     TIME_WIN = parameters.time_win
@@ -412,6 +413,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             all_paths = m.get_all_traj()
             for path in all_paths:
                 stitched_trajectory_queue.put(path[::-1])
+                dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
             break
         
         fgmt.compute_stats()
@@ -425,6 +427,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
         all_paths = m.pop_path(time_thresh = fgmt.first_timestamp - TIME_WIN)
         for path in all_paths:
             stitched_trajectory_queue.put(path[::-1])
+            dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
             m.clean_graph(path)
             stitcher_logger.info("** stitched {} fragments into one trajectory".format(len(path)),extra = None)
          

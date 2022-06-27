@@ -29,7 +29,9 @@ parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
 
 # initiate a dbw and dbr object
 reconciled_schema_path = os.path.join(os.environ["user_config_directory"],parameters.reconciled_schema_path)
+
 dbw = DBWriter(parameters, collection_name = parameters.reconciled_collection, schema_file=reconciled_schema_path)
+dbw.reset_collection()
 raw = DBReader(parameters, collection_name=parameters.raw_collection)
 
 reconciliation_args = {"lam2_x": parameters.lam2_x,
