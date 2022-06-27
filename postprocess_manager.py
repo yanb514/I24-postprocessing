@@ -98,7 +98,7 @@ if __name__ == '__main__':
                             #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
                             #                 parameters, )),
                             "reconciliation": (reconciliation_pool,
-                                        (stitched_trajectory_queue,)),
+                                        (parameters, stitched_trajectory_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.

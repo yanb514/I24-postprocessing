@@ -31,7 +31,7 @@ from utils.reconciliation_module import receding_horizon_2d_l1, resample, recedi
 
 def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue) -> None:
     """
-    Resample and reconcile a single trajectory, and write the result to DB
+    Resample and reconcile a single trajectory, and write the result to a queue
     :param next_to_reconcile: a trajectory document
     :return:
     """
