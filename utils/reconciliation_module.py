@@ -44,6 +44,7 @@ def combine_fragments(raw_collection, stitched_doc):
         fragment_ids = [ObjectId(_id) for _id in fragment_ids]
 
     all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
+    
     # print("in takes", time.time()-t0)
 
     # tt = time.time()
@@ -214,7 +215,8 @@ def _getQPMatrices_nan(N, t, lam2, lam1, reg="l2"):
     p = matrix(p, tc="d")
     return Q, p
     
-    
+  
+@catch_critical(errors = (Exception))
 def rectify_1d(car, lam2, axis):
     '''                        
     solve solve for ||y-x||_2^2 + \lam ||Dx||_2^2
@@ -231,6 +233,8 @@ def rectify_1d(car, lam2, axis):
     # extract result
     xhat = sol["x"][:N]
     return xhat
+
+
 
 def rectify_1d_l1(car, lam2, lam1, axis):
     '''                        
@@ -252,6 +256,8 @@ def rectify_1d_l1(car, lam2, lam1, axis):
     
     return xhat
 
+
+@catch_critical(errors = (Exception))
 def rectify_2d(car, reg = "l2", **kwargs):
     '''
     rectify on x and y component independently
@@ -283,7 +289,7 @@ def rectify_2d(car, reg = "l2", **kwargs):
 
 
 # =================== RECEDING HORIZON RECTIFICATION =========================
-
+@catch_critical(errors = (Exception))
 def receding_horizon_1d(x, lam2, PH, IH):
     '''
     rolling horizon version of rectify_1d
@@ -353,19 +359,21 @@ def receding_horizon_1d(x, lam2, PH, IH):
 
 
 
-
+@catch_critical(errors = (Exception))
 def receding_horizon_2d(car, lam2_x, lam2_y, PH, IH):
     '''
     car: stitched fragments from data_q
     TODO: parallelize x and y?
     '''
-    # get data    
-    xhat = receding_horizon_1d(car["x_position"], lam2_x, PH, IH)
-    yhat = receding_horizon_1d(car["y_position"], lam2_x, PH, IH)
+    # get data   
+    if len(car["x_position"]) > 3:
+        xhat = receding_horizon_1d(car["x_position"], lam2_x, PH, IH)
+        yhat = receding_horizon_1d(car["y_position"], lam2_x, PH, IH)
+        
+        car['x_position'] = xhat
+        car['y_position'] = yhat
     
-    car['x_position'] = xhat
-    car['y_position'] = yhat
-    
+    # simply return the raw data if length is less than 3
     car["timestamp"] = list(car["timestamp"])
     car["x_position"] = list(car["x_position"])
     car["y_position"] = list(car["y_position"])
@@ -374,6 +382,7 @@ def receding_horizon_2d(car, lam2_x, lam2_y, PH, IH):
     return car
 
 
+@catch_critical(errors = (Exception))
 def receding_horizon_1d_l1(car, lam2, lam1, PH, IH, axis):
     '''
     rolling horizon version of rectify_1d_l1
@@ -432,6 +441,7 @@ def receding_horizon_1d_l1(car, lam2, lam1, PH, IH, axis):
     return xfinal
 
 
+@catch_critical(errors = (Exception))
 def receding_horizon_2d_l1(car, lam2_x, lam2_y, lam1_x, lam1_y, PH, IH):
     '''
     car: stitched fragments from data_q
