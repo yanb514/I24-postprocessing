@@ -93,9 +93,9 @@ def reconciliation_pool(stitched_trajectory_queue: multiprocessing.Queue,
     setattr(rec_parent_logger, "_default_logger_extra",  {})
 
     # Reset collection
-    rec_parent_logger.debug("before reset collection size: {}".format(dbw.count()))
-    dbw.reset_collection()
-    rec_parent_logger.debug("after reset collection size: {}".format(dbw.count()))
+    # rec_parent_logger.debug("before reset collection size: {}".format(dbw.count()))
+    # dbw.reset_collection()
+    # rec_parent_logger.debug("after reset collection size: {}".format(dbw.count()))
 
     # Signal handling
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
