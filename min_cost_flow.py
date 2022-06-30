@@ -402,7 +402,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 stitched_trajectory_queue.put(path[::-1])
                 dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
             
-            stitcher_logger.info("fragment_queue is empty, exit {}".format(stitcher_logger._name))
+            stitcher_logger.info("fragment_queue is empty, exit.")
             sys.exit(2)
         
         fgmt.compute_stats()
@@ -425,7 +425,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             counter = 0
         counter += 1
         
-    stitcher_logger.info("Exiting {} while loop".format(stitcher_logger._name))
+    stitcher_logger.info("Exiting while loop")
     sys.exit(2)
         
     return   

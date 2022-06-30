@@ -95,6 +95,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
             rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters.stitched_trajectory_queue_get_timeout))
             break
         
+        rec_parent_logger.debug("next_to_reconcile: {}".format(next_to_reconcile), extra = None)
         combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)
         rec_parent_logger.debug("*** 1. Combined stitched fragments.", extra = None)
         
