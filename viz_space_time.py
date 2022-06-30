@@ -20,6 +20,7 @@ import numpy as np
 import os
 import matplotlib.animation as animation
 from datetime import datetime
+from i24_logger.log_writer import logger, catch_critical
 
 
 class SpaceTimePlot():
@@ -42,6 +43,7 @@ class SpaceTimePlot():
         self.collection_name = collection_name
         self.window_size = window_size
         
+    @catch_critical(errors = (Exception))
     def get_collection_info(self):
         """
         To set the bounds on query and on visualization
@@ -55,8 +57,8 @@ class SpaceTimePlot():
             "count": dbr.count(),
             "tmin": dbr.get_min("first_timestamp"),
             "tmax": dbr.get_max("last_timestamp"),
-            # "xmin": min(dbr.get_min("starting_x"), dbr.get_min("ending_x"),dbr.get_max("starting_x"), dbr.get_max("ending_x")),
-            "xmin": -100,
+            "xmin": min(dbr.get_min("starting_x"), dbr.get_min("ending_x"),dbr.get_max("starting_x"), dbr.get_max("ending_x")),
+            # "xmin": -100,
             "xmax": max(dbr.get_max("starting_x"), dbr.get_max("ending_x"),dbr.get_min("starting_x"), dbr.get_min("ending_x")),
             "ymin": -5,
             "ymax": 200
@@ -69,12 +71,14 @@ class SpaceTimePlot():
         self.collection_info = collection_info
         
         
+    @catch_critical(errors = (Exception))
     def animate(self, tmin=None, tmax=None, increment=0.3):
         """
         Advance time window by delta second, update left and right pointer, and cache
         """     
         # Initialize ax
         # TODO: initialize time range
+        print("in animate")
         self.get_collection_info()
         if not tmin:
             tmin = self.collection_info["tmin"]
@@ -102,17 +106,18 @@ class SpaceTimePlot():
         # frame_text = ax1.text(max(ax1.get_xlim()), max(ax1.get_ylim()), "range {:.2f}-{:.2f}".format(steps[0], steps[1]), fontsize=12)
         
         # initialize qeury
+
         traj_data_e = self.dbr.read_query(query_filter= { "first_timestamp" : {"$gte" : self.left, "$lt" : self.right}, "direction": {"$eq": 1}},
                                         query_sort = [("last_timestamp", "ASC")])
         traj_data_w = self.dbr.read_query(query_filter= { "first_timestamp" : {"$gte" : self.left, "$lt" : self.right}, "direction": {"$eq": -1}},
                                         query_sort = [("last_timestamp", "ASC")])
         
-        
-        
+        @catch_critical(errors = (Exception))
         def init():
             return axs
               
 
+        @catch_critical(errors = (Exception))
         def update_cache(i, traj_data_e, traj_data_w, frame_text):
             """
             Returns
@@ -152,8 +157,8 @@ class SpaceTimePlot():
             for traj in traj_data_e:
                 # select sub-document for each lane
                 lane_idx = np.digitize(traj["y_position"], self.lanes)-1 # should be between 1-6
-                # print("east", traj["y_position"][:5])
-                # print(lane_idx[:5])
+                print("east", traj["y_position"][:5])
+                print(lane_idx[:5])
                 for idx in np.unique(lane_idx):
                     # print("east lane idx, ", idx)
                     select = lane_idx == idx # select only lane i
@@ -169,8 +174,8 @@ class SpaceTimePlot():
             for traj in traj_data_w:
                 # select sub-document for each lane
                 lane_idx = np.digitize(traj["y_position"], self.lanes)-1 # should be between 1-6
-                # print("west", traj["y_position"][:5])
-                # print(lane_idx[:5])
+                print("west", traj["y_position"][:5])
+                print(lane_idx[:5])
                 for idx in np.unique(lane_idx):
                     # print("west lane idx, ", idx)
                     select = lane_idx == idx # select only lane i
@@ -194,7 +199,7 @@ class SpaceTimePlot():
         plt.show()
         print("complete")
         
-        
+
         
     
 if True and __name__=="__main__":
@@ -205,7 +210,7 @@ if True and __name__=="__main__":
     os.environ["my_config_section"] = "TEST"
     parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
-    stp = SpaceTimePlot(parameters, "tracking_v1", window_size = 5)
+    stp = SpaceTimePlot(parameters, "tracking_v1_reconciled", window_size = 5)
     stp.animate(increment=0.1)
     
     
