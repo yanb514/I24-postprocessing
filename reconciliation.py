@@ -47,8 +47,6 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
    
     reconciled_queue.put(finished_trajectory)
     rec_worker_logger.debug("reconciled queue size: {}".format(reconciled_queue.qsize()))
-    
-
 
 
 def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Queue,) -> None:
@@ -111,7 +109,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     while not reconciled_queue.empty():
         reconciled_traj = reconciled_queue.get(block = False)
         dbw.write_one_trajectory(thread = True, **reconciled_traj)
-        # rec_parent_logger.debug("current count in stitched collection: {}".format(dbw.count()))
+        rec_parent_logger.debug("Current count in {}: {}".format(dbw.collection_name, dbw.count()))
     
     time.sleep(2)
     rec_parent_logger.info("Final count in stitched collection: {}".format(dbw.count()))
