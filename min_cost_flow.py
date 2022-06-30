@@ -385,7 +385,8 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     # Make a database connection for writing
     schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
     dbw = DBWriter(parameters, collection_name = parameters.stitched_collection, schema_file=schema_path)
-    dbw.reset_collection() # this line causes some problems
+    # dbw.reset_collection() # this line causes some problems
+    dbw.collection.drop()
     
     ATTR_NAME = parameters.fragment_attr_name
     TIME_WIN = parameters.time_win
