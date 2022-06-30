@@ -43,13 +43,14 @@ def combine_fragments(raw_collection, stitched_doc):
     if isinstance(fragment_ids[0], str):
         fragment_ids = [ObjectId(_id) for _id in fragment_ids]
 
-    logger.debug("if fragment_ids in raw_collection {}".format(raw_collection.find({'_id': { "$in": fragment_ids}}).count()))
+    logger.debug("fragment_ids type: {}".format(type(fragment_ids)))
     logger.debug("first doc {}".format(raw_collection.find_one(fragment_ids[0])))
     
     
     all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
 
     for fragment in all_fragment:
+        logger.debug("iterate all_fragments: {}".format(fragment["_id"]))
         stacked["timestamp"].extend(fragment["timestamp"])
         stacked["x_position"].extend(fragment["x_position"])
         stacked["y_position"].extend(fragment["y_position"])
