@@ -21,8 +21,8 @@ import i24_logger.log_writer as log_writer
 from i24_database_api.db_writer import DBWriter
 from i24_database_api.db_reader import DBReader
 from i24_configparse import parse_cfg
-import warnings
-warnings.filterwarnings("ignore")
+# import warnings
+# warnings.filterwarnings("ignore")
 
 import math
 from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments
@@ -40,10 +40,10 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     rec_worker_logger.set_name("rec_worker")
 
     resampled_trajectory = resample(combined_trajectory)
-    rec_worker_logger.debug("*** 3. Resampled.", extra = None)
+    rec_worker_logger.debug("*** 2. Resampled.", extra = None)
     
     finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
-    rec_worker_logger.debug("*** 4. Reconciled a trajectory. Trajectory duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
+    rec_worker_logger.debug("*** 3. Reconciled a trajectory. Trajectory duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
    
     reconciled_queue.put(finished_trajectory)
     rec_worker_logger.debug("reconciled queue size: {}".format(reconciled_queue.qsize()))
@@ -64,7 +64,6 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
                            "PH": parameters.ph,
                            "IH": parameters.ih}
     
-    
     rec_parent_logger = log_writer.logger
     rec_parent_logger.set_name("rec_parent")
     setattr(rec_parent_logger, "_default_logger_extra",  {})
@@ -81,8 +80,10 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     signal.signal(signal.SIGINT, original_sigint_handler)
     
     rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(parameters.reconciliation_pool_size), extra = None)
-    signal.signal(signal.SIGINT, signal.SIG_IGN)    
-    signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+    
+    if parameters.mode == "finish_processing":
+        signal.signal(signal.SIGINT, signal.SIG_IGN)    
+        signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
     
     # Create a shared queue to store workers results # TODO: max queue size
     reconciled_queue = multiprocessing.Manager().Queue()
@@ -95,10 +96,11 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
             break
         
         combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)
-        rec_parent_logger.debug("*** 2. Combined stitched fragments.", extra = None)
+        rec_parent_logger.debug("*** 1. Combined stitched fragments.", extra = None)
         
         worker_pool.apply_async(reconcile_single_trajectory, (reconciliation_args, combined_trajectory, reconciled_queue, ))
 
+    # Finish up
     worker_pool.close()
     rec_parent_logger.info("Closed the pool, waiting to join...")
         
