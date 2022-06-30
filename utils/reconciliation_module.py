@@ -57,8 +57,8 @@ def combine_fragments(raw_collection, stitched_doc):
        
     # first fragment
     first_id = fragment_ids[0]
-    logger.debug("** first_id: {}".format(first_id), extra = None)
-    logger.debug("** timestamp: {}".format(stacked["timestamp"]), extra = None)
+    logger.debug("** first_id: {}, type: {}".format(first_id, type(first_id)), extra = None)
+    logger.debug("** timestamp: {}, collection size: {}".format(stacked["timestamp"], raw_collection.count()), extra = None)
     
     first_fragment = raw_collection.find_one({"_id": first_id})
     stacked["starting_x"] = first_fragment["starting_x"]
