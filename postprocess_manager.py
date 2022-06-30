@@ -25,7 +25,7 @@ parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
 # Customized modules
 from live_data_feed import live_data_reader # change to live_data_read later
 import min_cost_flow as mcf
-from reconciliation import reconciliation_pool
+import reconciliation as rec
 
 
 
@@ -58,7 +58,8 @@ if __name__ == '__main__':
     # Stitched trajectory queue
     # -- populated by stitcher and consumed by reconciliation pool
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    stitched_trajectory_queue = mp_manager.Queue(maxsize=parameters.stitched_trajectory_queue_size)
+    stitched_trajectory_queue = mp_manager.Queue(maxsize=parameters.stitched_trajectory_queue_size) 
+    reconciled_queue = mp_manager.Queue(maxsize=parameters.reconciled_trajectory_queue_size)
     
     # PID tracker is a single dictionary of format {processName: PID}
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -95,8 +96,10 @@ if __name__ == '__main__':
                             "stitcher_w": (mcf.min_cost_flow_online_alt_path,
                                             ("west", raw_fragment_queue_w, stitched_trajectory_queue,
                                             parameters, )),
-                            "reconciliation": (reconciliation_pool,
+                            "reconciliation": (rec.reconciliation_pool,
                                         (parameters, stitched_trajectory_queue,)),
+                            "reconciliation_writer": (rec.write_reconciled_to_db,
+                                        (parameters, reconciled_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.

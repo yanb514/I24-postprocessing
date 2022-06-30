@@ -49,7 +49,8 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     rec_worker_logger.debug("reconciled queue size: {}".format(reconciled_queue.qsize()))
 
 
-def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Queue,) -> None:
+def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Queue, 
+                        reconciled_queue: multiprocessing.Queue, ) -> None:
     """
     Start a multiprocessing pool, each worker 
     :param stitched_trajectory_queue: results from stitchers, shared by mp.manager
@@ -68,9 +69,6 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     rec_parent_logger.set_name("rec_parent")
     setattr(rec_parent_logger, "_default_logger_extra",  {})
 
-    # Reset collection
-    reconciled_schema_path = os.path.join(os.environ["user_config_directory"],parameters.reconciled_schema_path)
-    dbw = DBWriter(parameters, collection_name = parameters.reconciled_collection, schema_file=reconciled_schema_path)
     raw = DBReader(parameters, collection_name=parameters.raw_collection)
     # dbw.reset_collection() # This line throws OperationFailure, not sure how to fix it
 
@@ -85,8 +83,8 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
         signal.signal(signal.SIGINT, signal.SIG_IGN)    
         signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
     
-    # Create a shared queue to store workers results # TODO: max queue size
-    reconciled_queue = multiprocessing.Manager().Queue()
+    # # Create a shared queue to store workers results # TODO: max queue size
+    # reconciled_queue = multiprocessing.Manager().Queue()
     
     while True:
         try:
@@ -95,7 +93,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
             rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters.stitched_trajectory_queue_get_timeout))
             break
         
-        rec_parent_logger.debug("next_to_reconcile: {}".format(next_to_reconcile), extra = None)
+        # rec_parent_logger.debug("next_to_reconcile: {}".format(next_to_reconcile), extra = None)
         combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)
         rec_parent_logger.debug("*** 1. Combined stitched fragments.", extra = None)
         
@@ -108,20 +106,39 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     worker_pool.join()
     rec_parent_logger.info("Joined the pool.")
     
+    sys.exit(0)
+
+
+
+def write_reconciled_to_db(parameters, reconciled_queue):
+    
+    
+    reconciled_writer = log_writer.logger
+    reconciled_writer.set_name("reconciled_writer")
+    
+    reconciled_schema_path = os.path.join(os.environ["user_config_directory"],parameters.reconciled_schema_path)
+    dbw = DBWriter(parameters, collection_name = parameters.reconciled_collection, schema_file=reconciled_schema_path)
+    
     # Write to db
     while not reconciled_queue.empty():
-        reconciled_traj = reconciled_queue.get(block = False)
+        reconciled_traj = reconciled_queue.get(timeout = parameters.reconciliation_timeout)
         dbw.write_one_trajectory(thread = True, **reconciled_traj)
-        rec_parent_logger.debug("Current count in {}: {}".format(dbw.collection_name, dbw.count()))
+        # rec_parent_logger.debug("Current count in {}: {}".format(dbw.collection_name, dbw.count()))
     
     time.sleep(2)
-    rec_parent_logger.info("Final count in stitched collection: {}".format(dbw.count()))
+    reconciled_writer.info("Final count in stitched collection: {}".format(dbw.count()))
     
     # TODO: Safely close the mongodb client connection?
     sys.exit(0)
 
 
 
+    
+    
+    
+    
+    
+    
 
 if __name__ == '__main__':
     
