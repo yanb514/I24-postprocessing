@@ -122,7 +122,6 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                 # logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
                 
                 if rri._current_upper_value > safe_query_time and rri._current_upper_value < rri._reader.range_iter_stop: # if not safe to query and current range is not the end, then wait 
-                    # logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))
                     time.sleep(2)
                     
                 else: # if safe to query
@@ -147,6 +146,8 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                     #     # save current change stream and current query upper range for the next restart (#TODO: HOW?)  
                         logger.warning("BrokenPipeError detected, sig_handler.run = {}, try to restart with lower:{} upper:{}. Exit system.".format(sig_handler.run, lower, upper))
                         sys.exit(2)
+                        
+                    logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))
                         
                         
             else: # if queue has sufficient number of items, then wait before the next iteration (throttle)
