@@ -46,7 +46,7 @@ def combine_fragments(raw_collection, stitched_doc):
     # logger.debug("fragment_ids type: {}".format(type(fragment_ids)))
     # logger.debug("first doc {}".format(raw_collection.find_one(fragment_ids[0]))) # this returns none
     
-    
+    stacked["fragment_ids"] = [fragment_ids]
     all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
 
     for fragment in all_fragment:
@@ -59,6 +59,10 @@ def combine_fragments(raw_collection, stitched_doc):
         stacked["length"].extend(fragment["length"])
         stacked["width"].extend(fragment["width"])
         stacked["height"].extend(fragment["height"])
+        
+        stacked["coarse_vehicle_class"].extend(fragment["coarse_vehicle_class"])
+        stacked["fine_vehicle_class"].extend(fragment["fine_vehicle_class"])
+        stacked["direction"].extend(fragment["direction"])
        
     # first fragment
     first_id = fragment_ids[0]
@@ -79,6 +83,11 @@ def combine_fragments(raw_collection, stitched_doc):
     stacked["length"] = np.median(stacked["length"])
     stacked["width"] = np.median(stacked["width"])
     stacked["height"] = np.median(stacked["height"])
+    
+    # Take the most frequent element of the list
+    stacked["coarse_vehicle_class"] = max(set(stacked["coarse_vehicle_class"]), key = stacked["coarse_vehicle_class"].count)
+    stacked["fine_vehicle_class"] = max(set(stacked["fine_vehicle_class"]), key = stacked["fine_vehicle_class"].count)
+    stacked["direction"] = max(set(stacked["direction"]), key = stacked["direction"].count)
     
     return stacked
 
