@@ -45,7 +45,7 @@ def combine_fragments(raw_collection, stitched_doc):
     if isinstance(fragment_ids[0], str):
         fragment_ids = [ObjectId(_id) for _id in fragment_ids]
 
-    # logger.debug("fragment_ids type: {}".format(type(fragment_ids)))
+    logger.info("fragment_ids type: {}, {}".format(type(fragment_ids), fragment_ids))
     # logger.debug("first doc {}".format(raw_collection.find_one(fragment_ids[0]))) # this returns none
     
     stacked["fragment_ids"] = fragment_ids
