@@ -43,14 +43,14 @@ def combine_fragments(raw_collection, stitched_doc):
     if isinstance(fragment_ids[0], str):
         fragment_ids = [ObjectId(_id) for _id in fragment_ids]
 
-    logger.debug("fragment_ids type: {}".format(type(fragment_ids)))
-    logger.debug("first doc {}".format(raw_collection.find_one(fragment_ids[0])))
+    # logger.debug("fragment_ids type: {}".format(type(fragment_ids)))
+    # logger.debug("first doc {}".format(raw_collection.find_one(fragment_ids[0]))) # this returns none
     
     
     all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
 
     for fragment in all_fragment:
-        logger.debug("iterate all_fragments: {}".format(fragment["_id"]))
+        # logger.debug("iterate all_fragments: {}".format(fragment["_id"]))
         stacked["timestamp"].extend(fragment["timestamp"])
         stacked["x_position"].extend(fragment["x_position"])
         stacked["y_position"].extend(fragment["y_position"])
@@ -62,8 +62,8 @@ def combine_fragments(raw_collection, stitched_doc):
        
     # first fragment
     first_id = fragment_ids[0]
-    logger.debug("** first_id: {}, type: {}".format(first_id, type(first_id)), extra = None)
-    logger.debug("** timestamp: {}, collection size: {}".format(stacked["timestamp"], raw_collection.count_documents({})), extra = None)
+    # logger.debug("** first_id: {}, type: {}".format(first_id, type(first_id)), extra = None)
+    # logger.debug("** timestamp: {}, collection size: {}".format(stacked["timestamp"], raw_collection.count_documents({})), extra = None)
     
     first_fragment = raw_collection.find_one({"_id": first_id})
     stacked["starting_x"] = first_fragment["starting_x"]

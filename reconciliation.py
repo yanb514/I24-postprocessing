@@ -71,7 +71,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     # Reset collection
     reconciled_schema_path = os.path.join(os.environ["user_config_directory"],parameters.reconciled_schema_path)
     dbw = DBWriter(parameters, collection_name = parameters.reconciled_collection, schema_file=reconciled_schema_path)
-    raw = DBReader(parameters, collection_name="garbage_dump_2")
+    raw = DBReader(parameters, collection_name=parameters.raw_collection)
     # dbw.reset_collection() # This line throws OperationFailure, not sure how to fix it
 
     # Signal handling
