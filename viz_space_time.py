@@ -129,10 +129,25 @@ class SpaceTimePlot():
             self.left = steps[i]
             old_right = self.right
             self.right = self.left + self.window_size
-            for row in axs:
-                for ax in row:
+            
+            for i,row in enumerate(axs):
+                for j, ax in enumerate(row):
+                    ax.set_aspect("auto")
+                    # ax.set(ylim=[self.collection_info["xmin"], self.collection_info["xmax"]])
                     ax.set(xlim=[self.left, self.right])
-                    ax.set(xlim=[self.left, self.right])
+                    axs[i,j].set_title(self.lane_name[i*6+j])
+                    
+                    labels = ax.get_xticks()
+                    labels = [datetime.utcfromtimestamp(int(t)).strftime('%H:%M:%S') for t in labels]
+                    ax.set_xticklabels(labels)
+                    
+                    
+                    
+                    
+            # for row in axs:
+            #     for ax in row:
+            #         ax.set(xlim=[self.left, self.right])
+            #         ax.set(xlim=[self.left, self.right])
             i += 1
             
             # re-query for those whose first_timestamp is in the incremented time window
@@ -157,8 +172,8 @@ class SpaceTimePlot():
             for traj in traj_data_e:
                 # select sub-document for each lane
                 lane_idx = np.digitize(traj["y_position"], self.lanes)-1 # should be between 1-6
-                print("east", traj["y_position"][:5])
-                print(lane_idx[:5])
+                # print("east", traj["y_position"][:5])
+                # print(lane_idx[:5])
                 for idx in np.unique(lane_idx):
                     # print("east lane idx, ", idx)
                     select = lane_idx == idx # select only lane i
@@ -174,8 +189,8 @@ class SpaceTimePlot():
             for traj in traj_data_w:
                 # select sub-document for each lane
                 lane_idx = np.digitize(traj["y_position"], self.lanes)-1 # should be between 1-6
-                print("west", traj["y_position"][:5])
-                print(lane_idx[:5])
+                # print("west", traj["y_position"][:5])
+                # print(lane_idx[:5])
                 for idx in np.unique(lane_idx):
                     # print("west lane idx, ", idx)
                     select = lane_idx == idx # select only lane i
