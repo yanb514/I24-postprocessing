@@ -80,7 +80,7 @@ if __name__ == '__main__':
                             "live_data_reader_e": (live_data_reader,
                                             (parameters, parameters.raw_collection, 
                                             parameters.range_increment, "east",
-                                            raw_fragment_queue_w, 
+                                            raw_fragment_queue_e, 
                                             parameters.buffer_time, parameters.min_queue_size,)),
                             "live_data_reader_w": (live_data_reader,
                                             (parameters, parameters.raw_collection, 

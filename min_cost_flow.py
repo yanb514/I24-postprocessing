@@ -378,6 +378,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
 
     # Signal handling - ignore SIGINT if in the finish_processing mode  
     if parameters.mode == "finish_processing":
+        stitcher_logger.debug("ignore SIGINT in finish_processing mode")
         signal.signal(signal.SIGINT, signal.SIG_IGN)    
         signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
     
@@ -386,7 +387,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
     dbw = DBWriter(parameters, collection_name = parameters.stitched_collection, schema_file=schema_path)
     # dbw.reset_collection() # this line causes some problems
-    dbw.collection.drop()
+    # dbw.collection.drop()
     
     ATTR_NAME = parameters.fragment_attr_name
     TIME_WIN = parameters.time_win
@@ -395,8 +396,10 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     
     while True:
         try:
-            fgmt = Fragment(fragment_queue.get(timeout = parameters.raw_trajectory_queue_get_timeout))
-            stitcher_logger.debug("get fragment id: {}".format(fgmt["_id"]))
+            raw_fgmt = fragment_queue.get(timeout = parameters.raw_trajectory_queue_get_timeout)
+            stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
+            fgmt = Fragment(raw_fgmt)
+            stitcher_logger.debug("get fragment id: {}".format(fgmt.id))
         except: # queue is empty
             all_paths = m.get_all_traj()
             for path in all_paths:
