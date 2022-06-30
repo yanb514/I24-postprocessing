@@ -48,7 +48,7 @@ def combine_fragments(raw_collection, stitched_doc):
     # logger.debug("fragment_ids type: {}".format(type(fragment_ids)))
     # logger.debug("first doc {}".format(raw_collection.find_one(fragment_ids[0]))) # this returns none
     
-    stacked["fragment_ids"] = [fragment_ids]
+    stacked["fragment_ids"] = fragment_ids
     all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
 
     for fragment in all_fragment:
