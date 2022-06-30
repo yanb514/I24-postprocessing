@@ -4,6 +4,9 @@
 Created on Tue May 10 14:55:04 2022
 
 @author: yanbing_wang
+6/30
+Live data read should be only one process, and distribute to 2 queues (east/west) based on document direction
+two seperate live_data_feed processes will mess up the change stream
 """
 from i24_database_api.db_reader import DBReader
 import i24_logger.log_writer as log_writer
@@ -47,8 +50,8 @@ def read_query_once(host, port, username, password, database_name, collection_na
 
 
 
-def live_data_reader(default_param, collection_name, range_increment, direction,
-                     ready_queue, t_buffer = 100, min_queue_size = 1000):
+def live_data_reader(default_param, collection_name, range_increment,
+                     east_queue, west_queue, t_buffer = 100, min_queue_size = 1000):
     """
     Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
         that it can be assured to be time-ordered. Refill data queue if the queue size is below a threshold AND the next query range is before change_stream t_max - t_buffer
@@ -65,9 +68,9 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
     :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
     :return:
     """
-    running_mode = os.environ["my_config_section"]
+    # running_mode = os.environ["my_config_section"]
     logger = log_writer.logger
-    logger.set_name("live_data_reader_"+direction)
+    logger.set_name("live_data_reader")
     setattr(logger, "_default_logger_extra",  {})
     
     
@@ -90,9 +93,9 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
     # Connect to a database reader
     dbr = DBReader(default_param, collection_name=collection_name)
     # temporary: start from min and end at max
-    dir = 1 if direction == "east" else -1
-    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=range_increment,
-                               static_parameters = ["direction"], static_parameters_query = [("$eq", dir)]) 
+    # dir = 1 if direction == "east" else -1
+    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=range_increment)
+                               # static_parameters = ["direction"], static_parameters_query = [("$eq", dir)]) 
     
     # for debug only
     # if running_mode == "TEST":
@@ -109,7 +112,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
     while sig_handler.run:
         try:
             # logger.info("current queue size: {}, first_change_time: {:.2f}, query range: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, rri._current_lower_value, rri._current_upper_value))
-            if ready_queue.qsize() <= min_queue_size: # only move to the next query range if queue is low in stock
+            if east_queue.qsize() <= min_queue_size or west_queue.qsize() <= min_queue_size: # only move to the next query range if queue is low in stock
                 stream = dbr.collection.watch(pipeline) 
                 first_insert_change = stream.try_next() # get the first insert since last listen
                 # logger.debug("first_insert_change: {}".format(first_insert_change))
@@ -133,12 +136,14 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                     lower, upper = rri._current_lower_value, rri._current_upper_value
                     next_batch = next(rri)
                     
-
                     try:
                         for doc in next_batch:
                             if len(doc["timestamp"]) > 3: 
-                                logger.debug("write a doc to queue, dir={}".format(doc["direction"]))
-                                ready_queue.put(doc)
+                                if doc["direction"] == 1:
+                                    logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
+                                    east_queue.put(doc)
+                                else:
+                                    west_queue.put(doc)
                             # else:
                             #     logger.info("Discard a fragment with length less than 3")
                        
@@ -148,7 +153,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
                         logger.warning("BrokenPipeError detected, sig_handler.run = {}, try to restart with lower:{} upper:{}. Exit system.".format(sig_handler.run, lower, upper))
                         sys.exit(2)
                         
-                    logger.info("qsize for raw_data_queue: {}".format(ready_queue.qsize()))
+                    logger.info("qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
                         
                         
             else: # if queue has sufficient number of items, then wait before the next iteration (throttle)
