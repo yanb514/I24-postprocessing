@@ -165,12 +165,9 @@ def min_cost_flow_online_neg_cycle(direction, fragment_queue, stitched_trajector
     ATTR_NAME = parameters.fragment_attr_name
     m = MOT_Graph(ATTR_NAME, parameters)
     cache = {}
-    # curr_fragments = deque()
+
     IDLE_TIME = parameters.idle_time
-    
-    # cum_time = []
-    # t0 = time.time()
-    # cum_mem = []
+
     
     while True:
         
@@ -379,42 +376,33 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     stitcher_logger.set_name("stitcher_"+direction)
     stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
 
-    # Signal handling
-    class SignalHandler:
-        '''
-        if SIGINT or SIGTERM is received, shut down
-        '''
-        run = True
-        def __init__(self):
-            
-            signal.signal(signal.SIGINT, self.graceful_shutdown)
-            # signal.signal(signal.SIGTERM, self.shut_down)
-        
-        def graceful_shutdown(self, *args):
-            self.run = False
-            stitcher_logger.info("SIGINT / SIGTERM detected")
-        
-    sig_handler = SignalHandler()
+    # Signal handling - ignore SIGINT if in the finish_processing mode  
+    if parameters.mode == "finish_processing":
+        signal.signal(signal.SIGINT, signal.SIG_IGN)    
+        signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+    
     
     # Make a database connection for writing
     schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
     dbw = DBWriter(parameters, collection_name = parameters.stitched_collection, schema_file=schema_path)
-    dbw.reset_collection()
+    dbw.reset_collection() # this line causes some problems
     
     ATTR_NAME = parameters.fragment_attr_name
     TIME_WIN = parameters.time_win
     m = MOTGraphSingle(ATTR_NAME, parameters)
     counter = 0 # for log
     
-    while sig_handler.run:
+    while True:
         try:
-            fgmt = Fragment(fragment_queue.get(timeout = 3))
+            fgmt = Fragment(fragment_queue.get(timeout = parameters.raw_trajectory_queue_get_timeout))
         except: # queue is empty
             all_paths = m.get_all_traj()
             for path in all_paths:
                 stitched_trajectory_queue.put(path[::-1])
                 dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
-            break
+            
+            stitcher_logger.info("fragment_queue is empty, exit {}".format(stitcher_logger._name))
+            sys.exit(2)
         
         fgmt.compute_stats()
         m.add_node(fgmt)
@@ -432,9 +420,13 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             stitcher_logger.info("** stitched {} fragments into one trajectory".format(len(path)),extra = None)
          
         if counter % 100 == 0:
-            stitcher_logger.info("graph size: {}, deque size: {}".format(len(m.G), len(m.in_graph_deque)),extra = None)
+            stitcher_logger.info("Graph nodes : {}, Graph edges: {}".format(m.G.number_of_nodes, m.G.number_of_edges()),extra = None)
             counter = 0
         counter += 1
+        
+    stitcher_logger.info("Exiting {} while loop".format(stitcher_logger._name))
+    sys.exit(2)
+        
     return   
 
 
@@ -469,6 +461,8 @@ def test_fragments(gt_ids, paths):
 
     return FGMT, IDS
     
+
+
 if __name__ == '__main__':
     
     # get parameters

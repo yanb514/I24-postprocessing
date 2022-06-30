@@ -44,13 +44,8 @@ def combine_fragments(raw_collection, stitched_doc):
         fragment_ids = [ObjectId(_id) for _id in fragment_ids]
 
     all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
-    
-    # print("in takes", time.time()-t0)
 
-    # tt = time.time()
     for fragment in all_fragment:
-        # print(fragment["first_timestamp"], fragment["last_timestamp"])
-        # print(len(fragment["timestamp"]))
         stacked["timestamp"].extend(fragment["timestamp"])
         stacked["x_position"].extend(fragment["x_position"])
         stacked["y_position"].extend(fragment["y_position"])
@@ -59,8 +54,7 @@ def combine_fragments(raw_collection, stitched_doc):
         stacked["length"].extend(fragment["length"])
         stacked["width"].extend(fragment["width"])
         stacked["height"].extend(fragment["height"])
-    
-    # print("for loop: ", time.time()-tt)    
+       
     # first fragment
     first_id = fragment_ids[0]
     first_fragment = raw_collection.find_one({"_id": first_id})

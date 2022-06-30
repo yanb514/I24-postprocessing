@@ -29,7 +29,7 @@ class SpaceTimePlot():
     Plot on matplotlib
     """
     
-    def __init__(self, config, collection_name=None, window_size = 10):
+    def __init__(self, config, collection_name, window_size = 10):
         """
         Initializes an SpaceTimePlot object
         
@@ -37,9 +37,6 @@ class SpaceTimePlot():
         ----------
         config : object
         """
-        if not collection_name:
-            collection_name = "garbage_dump_2"
-            
         self.dbr = DBReader(config, collection_name=collection_name)
         self.anim = None
         self.collection_name = collection_name
