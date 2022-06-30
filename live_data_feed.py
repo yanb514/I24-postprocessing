@@ -140,7 +140,7 @@ def live_data_reader(default_param, collection_name, range_increment,
                         for doc in next_batch:
                             if len(doc["timestamp"]) > 3: 
                                 if doc["direction"] == 1:
-                                    logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
+                                    # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
                                     east_queue.put(doc)
                                 else:
                                     west_queue.put(doc)

@@ -146,6 +146,7 @@ if __name__ == '__main__':
                 child_process = subsystem_process_objects[child_key]
                 if not child_process.is_alive():
                     process_name = child_process.name
+                    manager_logger.warning("RIP process {}".format(process_name))
                     try:
                         live_processes.remove(process_name)
                     except:
