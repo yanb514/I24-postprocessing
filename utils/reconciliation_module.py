@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from cvxopt import matrix, solvers, sparse,spdiag,spmatrix
 from bson.objectid import ObjectId
+from collections import defaultdict
+
 from i24_logger.log_writer import logger, catch_critical, log_warnings, log_errors
 
 # TODO
@@ -24,15 +26,15 @@ def combine_fragments(raw_collection, stitched_doc):
     fields that need to be re-assigned: first_timestamp, last_timestamp, starting_x, ending_x, length, width, height
     '''
     
-    stacked = {}
-    stacked["timestamp"] = []
-    stacked["x_position"] = []
-    stacked["y_position"] = []
-    stacked["road_segment_ids"] = []
-    stacked["flags"] = []
-    stacked["length"] = []
-    stacked["width"] = []
-    stacked["height"] = []
+    stacked = defaultdict(list)
+    # stacked["timestamp"] = []
+    # stacked["x_position"] = []
+    # stacked["y_position"] = []
+    # stacked["road_segment_ids"] = []
+    # stacked["flags"] = []
+    # stacked["length"] = []
+    # stacked["width"] = []
+    # stacked["height"] = []
     
     # print("here")
     # print(stitched_doc["fragment_ids"])    # t0 = time.time()
