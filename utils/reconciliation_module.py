@@ -62,9 +62,9 @@ def combine_fragments(raw_collection, stitched_doc):
         stacked["width"].extend(fragment["width"])
         stacked["height"].extend(fragment["height"])
         
-        stacked["coarse_vehicle_class"].extend(fragment["coarse_vehicle_class"])
-        stacked["fine_vehicle_class"].extend(fragment["fine_vehicle_class"])
-        stacked["direction"].extend(fragment["direction"])
+        stacked["coarse_vehicle_class"].append(fragment["coarse_vehicle_class"])
+        stacked["fine_vehicle_class"].append(fragment["fine_vehicle_class"])
+        stacked["direction"].append(fragment["direction"])
        
     # first fragment
     first_id = fragment_ids[0]
