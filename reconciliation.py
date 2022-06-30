@@ -120,8 +120,12 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     dbw = DBWriter(parameters, collection_name = parameters.reconciled_collection, schema_file=reconciled_schema_path)
     
     # Write to db
-    while not reconciled_queue.empty():
-        reconciled_traj = reconciled_queue.get(timeout = parameters.reconciliation_timeout)
+    while True:
+        try:
+            reconciled_traj = reconciled_queue.get(timeout = parameters.reconciliation_timeout)
+        except:
+            reconciled_writer.warning("Getting from reconciled_queue reaches timeout.")
+            break
         dbw.write_one_trajectory(thread = True, **reconciled_traj)
         # rec_parent_logger.debug("Current count in {}: {}".format(dbw.collection_name, dbw.count()))
     
@@ -129,6 +133,7 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     reconciled_writer.info("Final count in stitched collection: {}".format(dbw.count()))
     
     # TODO: Safely close the mongodb client connection?
+    reconciled_writer.info("Exit reconciled_writer")
     sys.exit(0)
 
 
