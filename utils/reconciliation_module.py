@@ -52,7 +52,7 @@ def combine_fragments(raw_collection, stitched_doc):
     all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
 
     for fragment in all_fragment:
-        logger.info("fragment keys: {}".format(fragment.keys()))
+        # logger.debug("fragment keys: {}".format(fragment.keys()))
         stacked["timestamp"].extend(fragment["timestamp"])
         stacked["x_position"].extend(fragment["x_position"])
         stacked["y_position"].extend(fragment["y_position"])
