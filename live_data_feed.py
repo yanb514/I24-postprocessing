@@ -136,7 +136,8 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
 
                     try:
                         for doc in next_batch:
-                            if len(doc["timestamp"]) > 3:         
+                            if len(doc["timestamp"]) > 3: 
+                                logger.debug("write a doc to queue, dir={}".format(doc["direction"]))
                                 ready_queue.put(doc)
                             # else:
                             #     logger.info("Discard a fragment with length less than 3")
