@@ -90,7 +90,7 @@
             "fragment_ids": {
                 "bsonType": "array",
                 "items": {
-                    "bsonType": ["string", "object"]
+                    "bsonType": ["string", "objectId"]
                     },
                 "description": "Fragments that are stitched to this trajectory."
                 } 

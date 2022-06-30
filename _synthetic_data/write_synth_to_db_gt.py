@@ -138,27 +138,27 @@ col.insert_one(traj)
 
 
 #%%
-#import sys
-#sys.path.append('../')
-#from data_handler import DataReader
+import sys
+sys.path.append('../')
+from data_handler import DataReader
 
-#print("Adding fragment IDs")
-#
-#colraw = db["raw_trajectories_two"]
-#colgt = db['ground_truth_two']
-#
-#indices = ["_id", "ID"]
-#for index in indices:
-#    colraw.create_index(index)
-#    colgt.create_index(index)
-#    
-#for rawdoc in colraw.find({}): # loop through all raw fragments
-#    _id = rawdoc.get('_id')
-#    raw_ID=rawdoc.get('ID')
-#    gt_ID=raw_ID//100000
-#    if colgt.count_documents({ 'ID': gt_ID }, limit = 1) != 0: # if gt_ID exists in colgt
-#        # update
-#        colgt.update_one({'ID':gt_ID},{'$push':{'fragment_ids':_id}},upsert=True)
+print("Adding fragment IDs")
+
+colraw = db["raw_trajectories_two"]
+colgt = db['ground_truth_two']
+
+indices = ["_id", "ID"]
+for index in indices:
+    colraw.create_index(index)
+    colgt.create_index(index)
+    
+for rawdoc in colraw.find({}): # loop through all raw fragments
+    _id = rawdoc.get('_id')
+    raw_ID=rawdoc.get('ID')
+    gt_ID=raw_ID//100000
+    if colgt.count_documents({ 'ID': gt_ID }, limit = 1) != 0: # if gt_ID exists in colgt
+        # update
+        colgt.update_one({'ID':gt_ID},{'$push':{'fragment_ids':_id}},upsert=True)
 
     
     

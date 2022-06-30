@@ -10,7 +10,7 @@
         "fragment_ids": {
             "bsonType": "array",
             "items": {
-                "bsonType": ["string", "object"]
+                "bsonType": ["string", "objectId"]
                 },
             "description": "list of indices pointing to fragment IDs associated to current vehicle ID, sorted by start_timestamp"
             }
