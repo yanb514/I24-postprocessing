@@ -159,7 +159,7 @@ def live_data_reader(default_param, collection_name, range_increment, direction,
             pass
         
 
-    logger.info("Exiting live_data_reader while loop")
+    logger.warning("Exiting live_data_reader while loop")
     sys.exit(2)
 
     

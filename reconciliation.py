@@ -133,7 +133,7 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     reconciled_writer.info("Final count in stitched collection: {}".format(dbw.count()))
     
     # TODO: Safely close the mongodb client connection?
-    reconciled_writer.info("Exit reconciled_writer")
+    reconciled_writer.warning("Exit reconciled_writer")
     sys.exit(0)
 
 
