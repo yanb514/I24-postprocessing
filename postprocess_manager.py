@@ -77,26 +77,24 @@ if __name__ == '__main__':
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {
-                            # "live_data_reader_e": (live_data_reader,
-                            #             (parameters.default_host, parameters.default_port, 
-                            #             parameters.readonly_user, parameters.default_password,
-                            #             parameters.db_name, parameters.raw_collection, 
-                            #             parameters.range_increment, "east",
-                            #             raw_fragment_queue_e, 
-                            #             parameters.buffer_time, parameters.min_queue_size,)),
+                            "live_data_reader_e": (live_data_reader,
+                                            (parameters, parameters.raw_collection, 
+                                            parameters.range_increment, "east",
+                                            raw_fragment_queue_w, 
+                                            parameters.buffer_time, parameters.min_queue_size,)),
                             "live_data_reader_w": (live_data_reader,
-                                          (parameters, parameters.raw_collection, 
-                                          parameters.range_increment, "west",
-                                          raw_fragment_queue_w, 
-                                          parameters.buffer_time, parameters.min_queue_size,)),
-                            "dummy_stitcher": (mcf.dummy_stitcher,
-                                               (raw_fragment_queue_w, stitched_trajectory_queue,)),
-                            # "stitcher_e": (mcf.min_cost_flow_online_alt_path,
-                            #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
-                            #                 parameters, )),
-                            # "stitcher_w": (mcf.min_cost_flow_online_alt_path,
-                            #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
-                            #                 parameters, )),
+                                            (parameters, parameters.raw_collection, 
+                                            parameters.range_increment, "west",
+                                            raw_fragment_queue_w, 
+                                            parameters.buffer_time, parameters.min_queue_size,)),
+                            # "dummy_stitcher": (mcf.dummy_stitcher,
+                            #                    (raw_fragment_queue_w, stitched_trajectory_queue,)),
+                            "stitcher_e": (mcf.min_cost_flow_online_alt_path,
+                                            ("east", raw_fragment_queue_e, stitched_trajectory_queue,
+                                            parameters, )),
+                            "stitcher_w": (mcf.min_cost_flow_online_alt_path,
+                                            ("west", raw_fragment_queue_w, stitched_trajectory_queue,
+                                            parameters, )),
                             "reconciliation": (reconciliation_pool,
                                         (parameters, stitched_trajectory_queue,)),
                           }
@@ -156,46 +154,46 @@ if __name__ == '__main__':
 
 
     #%% CASE 2:
-    elif parameters.mode == "kill":
-        try:
-            while True:
-                # for each process that is being managed at this level, check if it's still running
-                time.sleep(2)
-                if not live_processes:
-                    manager_logger.info("None of the processes is alive")
-                    break
+    # elif parameters.mode == "kill":
+    #     try:
+    #         while True:
+    #             # for each process that is being managed at this level, check if it's still running
+    #             time.sleep(2)
+    #             if not live_processes:
+    #                 manager_logger.info("None of the processes is alive")
+    #                 break
                 
-                for child_key in subsystem_process_objects.keys():
-                    child_process = subsystem_process_objects[child_key]
-                    if child_process.is_alive():
-                        # Process is running; do nothing.
-                        # print("Long live {}! {}".format(child_key, child_process))
-                        pass
-                    else:
-                        # Process has died. Let's restart it.
-                        # Copy its name out of the existing process object for lookup and restart.
+    #             for child_key in subsystem_process_objects.keys():
+    #                 child_process = subsystem_process_objects[child_key]
+    #                 if child_process.is_alive():
+    #                     # Process is running; do nothing.
+    #                     # print("Long live {}! {}".format(child_key, child_process))
+    #                     pass
+    #                 else:
+    #                     # Process has died. Let's restart it.
+    #                     # Copy its name out of the existing process object for lookup and restart.
                         
-                        process_name = child_process.name
-                        try:
-                            live_processes.remove(process_name)
-                        except:
-                            pass
-                        # manager_logger.warning("Restarting process: {}".format(process_name))
-                        # print("RIP {} {}".format(process_name, child_process))
+    #                     process_name = child_process.name
+    #                     try:
+    #                         live_processes.remove(process_name)
+    #                     except:
+    #                         pass
+    #                     # manager_logger.warning("Restarting process: {}".format(process_name))
+    #                     # print("RIP {} {}".format(process_name, child_process))
         
                         
-                        # # Get the function handle and function arguments to spawn this process again.
-                        # process_function, process_args = processes_to_spawn[process_name]
-                        # # Restart the process the same way we did originally.
-                        # subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
-                        # subsys_process.start()
-                        # # Re-write the process object in the dictionary and update its PID.
-                        # subsystem_process_objects[child_key] = subsys_process
-                        # pid_tracker[process_name] = subsys_process.pid
+    #                     # # Get the function handle and function arguments to spawn this process again.
+    #                     # process_function, process_args = processes_to_spawn[process_name]
+    #                     # # Restart the process the same way we did originally.
+    #                     # subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
+    #                     # subsys_process.start()
+    #                     # # Re-write the process object in the dictionary and update its PID.
+    #                     # subsystem_process_objects[child_key] = subsys_process
+    #                     # pid_tracker[process_name] = subsys_process.pid
               
                 
-        except KeyboardInterrupt: # Allows early termination
-            for pid_name, pid_val in pid_tracker.items():
-                os.kill(pid_val, signal.SIGKILL)
-                manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
-            pass
+    #     except KeyboardInterrupt: # Allows early termination
+    #         for pid_name, pid_val in pid_tracker.items():
+    #             os.kill(pid_val, signal.SIGKILL)
+    #             manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
+    #         pass
