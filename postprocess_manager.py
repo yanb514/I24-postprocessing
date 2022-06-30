@@ -98,8 +98,8 @@ if __name__ == '__main__':
                                             parameters, )),
                             "reconciliation": (rec.reconciliation_pool,
                                         (parameters, stitched_trajectory_queue, reconciled_queue,)),
-                            "reconciliation_writer": (rec.write_reconciled_to_db,
-                                        (parameters, reconciled_queue,)),
+                            # "reconciliation_writer": (rec.write_reconciled_to_db,
+                            #             (parameters, reconciled_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.
