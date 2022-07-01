@@ -56,12 +56,14 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
     rec_worker_logger.debug("*** 3. Reconciled a trajectory. Trajectory duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
    
-    
-    idx = [i.item() for i in np.argwhere(~np.isnan(finished_trajectory["x_position"])).flatten()]
-    x = finished_trajectory["x_position"][idx]
-    M = len(x)
-    rec_worker_logger.debug("Finished traj: {} / {}".format(M, len(finished_trajectory["x_position"])), extra = None)
-    
+    try:
+        idx = [i.item() for i in np.argwhere(~np.isnan(finished_trajectory["x_position"])).flatten()]
+        x = finished_trajectory["x_position"][idx]
+        M = len(x)
+        rec_worker_logger.debug("Finished traj: {} / {}".format(M, len(finished_trajectory["x_position"])), extra = None)
+    except Exception as e:
+        rec_worker_logger.debug(e)
+        pass
     
     
     
