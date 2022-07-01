@@ -184,7 +184,9 @@ class SpaceTimePlot():
             
             # add new lines west
             for traj in traj_data_w:
-                print(traj["x_position"])
+                # dx = np.diff(np.array(traj["x_position"]))
+                # print(dx)
+                print(traj["direction"])
                 # select sub-document for each lane
                 lane_idx = np.digitize(traj["y_position"], self.lanes)-1 # should be between 1-6
                 # print("west", traj["y_position"][:5])

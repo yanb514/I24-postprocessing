@@ -400,11 +400,11 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
             fgmt = Fragment(raw_fgmt)
         except: # queue is empty
-            all_paths = m.get_all_traj()
-            for path in all_paths:
-                # stitcher_logger.info("Flushing out final trajectories in graph")
-                stitched_trajectory_queue.put(path[::-1])
-                dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
+            # all_paths = m.get_all_traj()
+            # for path in all_paths:
+            #     # stitcher_logger.info("Flushing out final trajectories in graph")
+            #     stitched_trajectory_queue.put(path[::-1])
+            #     dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
             
             stitcher_logger.info("fragment_queue is empty, exit.")
             break
