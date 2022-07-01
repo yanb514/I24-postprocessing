@@ -386,6 +386,7 @@ def receding_horizon_2d(car, lam2_x, lam2_y, PH, IH):
     idx = [i.item() for i in np.argwhere(~np.isnan(car["x_position"])).flatten()]
     x = car["x_position"][idx]
     M = len(x)
+    logger.debug("M {}".format(M))
     if M < 3:
         logger.warning("Not enough valid data in receding_horizon_2d")
         # TODO: raise exception
