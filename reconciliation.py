@@ -21,12 +21,8 @@ import i24_logger.log_writer as log_writer
 from i24_database_api.db_writer import DBWriter
 from i24_database_api.db_reader import DBReader
 from i24_configparse import parse_cfg
-import numpy as np
-# import warnings
-# warnings.filterwarnings("ignore")
 
-import math
-from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments
+from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments, rectify_2d
 
 
 
@@ -47,7 +43,8 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     # resampled_trajectory["x_position"] = list(resampled_trajectory["x_position"])
     # resampled_trajectory["y_position"] = list(resampled_trajectory["y_position"])
     
-    finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
+    # finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
+    finished_trajectory = rectify_2d(resampled_trajectory, **reconciliation_args)   
     rec_worker_logger.debug("*** 3. Reconciled a trajectory. Trajectory duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
     
     reconciled_queue.put(finished_trajectory)

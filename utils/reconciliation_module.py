@@ -295,8 +295,12 @@ def rectify_2d(car, reg = "l2", **kwargs):
         yhat = rectify_1d_l1(car, (lam2_y, lam1_y), "y")
         
     # write to document
-    car['x_position'] = xhat 
-    car['y_position'] = yhat   
+    # car['x_position'] = xhat 
+    # car['y_position'] = yhat  
+    car["timestamp"] = list(car["timestamp"])
+    car["x_position"] = list(xhat)
+    car["y_position"] = list(yhat)
+    
     return car           
 
 
@@ -390,9 +394,6 @@ def receding_horizon_2d(car, lam2_x, lam2_y, PH, IH):
     # if M < 3:
     #     logger.warning("Not enough valid data in receding_horizon_2d")
     #     # TODO: raise exception
-         
-    
-    
     
     if len(car["x_position"]) > 3:
         xhat = receding_horizon_1d(car["x_position"], lam2_x, PH, IH)
