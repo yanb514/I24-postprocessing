@@ -21,6 +21,7 @@ import i24_logger.log_writer as log_writer
 from i24_database_api.db_writer import DBWriter
 from i24_database_api.db_reader import DBReader
 from i24_configparse import parse_cfg
+import numpy as np
 # import warnings
 # warnings.filterwarnings("ignore")
 
@@ -42,6 +43,10 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     resampled_trajectory = resample(combined_trajectory)
     rec_worker_logger.debug("*** 2. Resampled.", extra = None)
     
+    idx = [i.item() for i in np.argwhere(~np.isnan(resampled_trajectory["x_position"])).flatten()]
+    x = resampled_trajectory["x_position"][idx]
+    M = len(x)
+    rec_worker_logger.debug("Resampled traj: {} / {}".format(M, len(resampled_trajectory["x_position"])), extra = None)
     
     # resampled_trajectory["timestamp"] = list(resampled_trajectory["timestamp"])
     # resampled_trajectory["x_position"] = list(resampled_trajectory["x_position"])
@@ -51,6 +56,15 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
     rec_worker_logger.debug("*** 3. Reconciled a trajectory. Trajectory duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
    
+    
+    idx = [i.item() for i in np.argwhere(~np.isnan(finished_trajectory["x_position"])).flatten()]
+    x = finished_trajectory["x_position"][idx]
+    M = len(x)
+    rec_worker_logger.debug("Finished traj: {} / {}".format(M, len(finished_trajectory["x_position"])), extra = None)
+    
+    
+    
+    
     reconciled_queue.put(finished_trajectory)
     rec_worker_logger.debug("reconciled queue size: {}".format(reconciled_queue.qsize()))
 
@@ -133,7 +147,7 @@ def write_reconciled_to_db(parameters, reconciled_queue):
             reconciled_writer.warning("Getting from reconciled_queue reaches timeout.")
             break
         dbw.write_one_trajectory(thread = True, **reconciled_traj)
-        reconciled_writer.debug("reconciled_traj keys: {}".format(reconciled_traj.keys()))
+        # reconciled_writer.debug("reconciled_traj keys: {}".format(reconciled_traj.keys()))
         # reconciled_writer.debug("Current count in {}: {}".format(dbw.collection_name, dbw.count()))
     
     time.sleep(2)
