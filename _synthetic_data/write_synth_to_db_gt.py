@@ -106,9 +106,9 @@ for file in files1:
                 traj['road_segment_id'].extend([float(row[49])])
                 traj['x_position'].extend([3.2808*float(row[41])])
                 traj['y_position'].extend([3.2808*float(row[42])])
-                traj['length']=[3.2808*float(row[45])]
-                traj['width']=[3.2808*float(row[44])]
-                traj['height']=[3.2808*float(row[46])]
+                traj['length']=3.2808*float(row[45])
+                traj['width']=3.2808*float(row[44])
+                traj['height']=3.2808*float(row[46])
             
             prevID = ID
             
@@ -126,9 +126,9 @@ traj['ending_x']=traj['x_position'][-1]
 traj['flags'] = ['gt']
 traj['direction']=int(float(row[37]))
 traj['ID']=ID
-traj['length']=[3.2808*float(row[45])]
-traj['width']=[3.2808*float(row[44])]
-traj['height']=[3.2808*float(row[46])]
+traj['length']=3.2808*float(row[45])
+traj['width']=3.2808*float(row[44])
+traj['height']=3.2808*float(row[46])
 
 print("** write {} to db".format(ID))
 col.insert_one(traj)

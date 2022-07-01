@@ -238,6 +238,8 @@ def rectify_1d(car, lam2, axis):
     '''  
     # get data and matrices
     x = car[axis + "_position"].values
+    
+    # TODO: if x is all nans, skip this trajectory
     Q, p, H, N,M = _getQPMatrices(x, 0, lam2, None, reg="l2")
     
     sol=solvers.qp(P=Q, q=p)
@@ -378,7 +380,19 @@ def receding_horizon_2d(car, lam2_x, lam2_y, PH, IH):
     car: stitched fragments from data_q
     TODO: parallelize x and y?
     '''
-    # get data   
+    # get data 
+    # TODO: if x is all nans, skip this trajectory
+    # non-missing entries
+    idx = [i.item() for i in np.argwhere(~np.isnan(car["x_position"])).flatten()]
+    x = car["x_position"][idx]
+    M = len(x)
+    if M < 3:
+        logger.warning("Not enough valid data in receding_horizon_2d")
+        # TODO: raise exception
+         
+    
+    
+    
     if len(car["x_position"]) > 3:
         xhat = receding_horizon_1d(car["x_position"], lam2_x, PH, IH)
         yhat = receding_horizon_1d(car["y_position"], lam2_x, PH, IH)

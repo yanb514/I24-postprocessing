@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import matplotlib.animation as animation
+import matplotlib.ticker as mticker
 from datetime import datetime
 from i24_logger.log_writer import logger, catch_critical
 
@@ -130,24 +131,20 @@ class SpaceTimePlot():
             old_right = self.right
             self.right = self.left + self.window_size
             
+            
+            
             for i,row in enumerate(axs):
                 for j, ax in enumerate(row):
                     ax.set_aspect("auto")
                     # ax.set(ylim=[self.collection_info["xmin"], self.collection_info["xmax"]])
                     ax.set(xlim=[self.left, self.right])
                     axs[i,j].set_title(self.lane_name[i*6+j])
-                    
+                    ticks_loc = ax.get_xticks().tolist()
                     labels = ax.get_xticks()
                     labels = [datetime.utcfromtimestamp(int(t)).strftime('%H:%M:%S') for t in labels]
+                    ax.xaxis.set_major_locator(mticker.FixedLocator(ticks_loc))                 
                     ax.set_xticklabels(labels)
                     
-                    
-                    
-                    
-            # for row in axs:
-            #     for ax in row:
-            #         ax.set(xlim=[self.left, self.right])
-            #         ax.set(xlim=[self.left, self.right])
             i += 1
             
             # re-query for those whose first_timestamp is in the incremented time window
@@ -195,7 +192,10 @@ class SpaceTimePlot():
                     # print("west lane idx, ", idx)
                     select = lane_idx == idx # select only lane i
                     time = np.array(traj["timestamp"])[select]
+                    
                     x = np.array(traj["x_position"])[select]
+                    # dx = np.diff(np.array(traj["x_position"]))
+                    # print(x)
                     try:
                         axs[1,idx-6].plot(time, x)
                     except:

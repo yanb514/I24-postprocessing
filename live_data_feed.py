@@ -161,8 +161,8 @@ def live_data_reader(default_param, collection_name, range_increment,
                 time.sleep(2)
                         
         except StopIteration: # rri reaches the end
-            logger.warning("live_data_reader reaches the end of query range iteration.")
-            pass
+            logger.warning("live_data_reader reaches the end of query range iteration. Exit")
+            break
         
 
     logger.warning("Exiting live_data_reader while loop")
