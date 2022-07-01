@@ -921,7 +921,7 @@ class MOTGraphSingle:
         for fgmt in reversed(self.in_graph_deque):
             # cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
             cost = nll(fgmt, fragment, TIME_WIN, VARX, VARY)
-            # print(fgmt.ID, fragment.ID, cost)
+            # print(getattr(fgmt, self.attr), getattr(fragment, self.attr), cost)
             
             if cost <= 0:  # new edge points from new_id to existing nodes, with postive cost
                 fgmt_id = getattr(fgmt, self.attr)

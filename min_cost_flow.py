@@ -400,18 +400,19 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
             fgmt = Fragment(raw_fgmt)
         except: # queue is empty
-            # all_paths = m.get_all_traj()
-            # for path in all_paths:
-            #     # stitcher_logger.info("Flushing out final trajectories in graph")
-            #     stitched_trajectory_queue.put(path[::-1])
-            #     dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
+            all_paths = m.get_all_traj()
+            
+            for path in all_paths:
+                # stitcher_logger.info("Flushing out final trajectories in graph")
+                stitched_trajectory_queue.put(path[::-1])
+                dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
             
             stitcher_logger.info("fragment_queue is empty, exit.")
             break
         
         fgmt.compute_stats()
         m.add_node(fgmt)
-        
+        # print(m.G.edges(data=True))
         # run MCF
         fgmt_id = getattr(fgmt, ATTR_NAME)
         m.augment_path(fgmt_id)
@@ -431,7 +432,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
         counter += 1
         
     stitcher_logger.info("Exiting stitcher")
-    sys.exit(2)
+    # sys.exit(2)
         
     return   
 
@@ -476,21 +477,29 @@ if __name__ == '__main__':
     cfg = "config"
     config_path = os.path.join(cwd,cfg)
     os.environ["user_config_directory"] = config_path
-    os.environ["my_config_section"] = "DEBUG"
+    os.environ["my_config_section"] = "TEST"
     parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
     # read to queue
     # gt_ids = [i for i in range(150, 180)]
-    gt_ids = [150]
-    gt_val = 30
-    lt_val = 100
+    # gt_ids = [150]
+    # gt_val = 30
+    # lt_val = 100
     
-    fragment_queue,actual_gt_ids,_ = read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
-    stitched_trajectory_queue = queue.Queue()
-    print("actual_gt_ids: ", len(actual_gt_ids))
-    s1 = fragment_queue.qsize()
+    # fragment_queue,actual_gt_ids,_ = read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
+    # stitched_trajectory_queue = queue.Queue()
+    # print("actual_gt_ids: ", len(actual_gt_ids))
+    # s1 = fragment_queue.qsize()
     
 
+    from bson.objectid import ObjectId
+    fragment_queue = queue.Queue()
+    f_ids = [ObjectId('62a37be318c10e37c2103ff8'), ObjectId('62a37c8018c10e37c21041f7'), ObjectId('62a37dd418c10e37c2104687'), ObjectId('62a37f2218c10e37c2104b1d'), ObjectId('62a3805318c10e37c2104e94'), ObjectId('62a3816718c10e37c2105213'), ObjectId('62a3824218c10e37c21054f7')]
+    raw = DBReader(parameters, collection_name="tracking_v1")
+    for f_id in f_ids:
+        f = raw.find_one("_id", f_id)
+        fragment_queue.put(f)
+    s1 = fragment_queue.qsize()
     # --------- start batch stitching --------- 
     # print("MCF Batch...")
     # t1 = time.time()
@@ -507,7 +516,7 @@ if __name__ == '__main__':
     
 
     # --------- start online stitching --------- 
-    fragment_queue,actual_gt_ids,_ = read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
+    # fragment_queue,actual_gt_ids,_ = read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
     stitched_trajectory_queue = queue.Queue()
     t1 = time.time()
     min_cost_flow_online_alt_path("west", fragment_queue, stitched_trajectory_queue, parameters)
@@ -517,18 +526,27 @@ if __name__ == '__main__':
     print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
     
     # test
-    FGMT, IDS = test_fragments(gt_ids, online)
-    print("FGMT: {}, IDS: {}".format(FGMT, IDS))
+    # FGMT, IDS = test_fragments(gt_ids, online)
+    # print("FGMT: {}, IDS: {}".format(FGMT, IDS))
     
     
     
     # for path_o in online:
     #     if path_o not in batch:
     #         print("difference: ", path_o)
-    
+    #%%
+    import matplotlib.pyplot as plt
+    plt.figure()
+
+    # d = stitched_trajectory_queue.get(block=False)
+    # plt.scatter(d["timestamp"], d["x_position"], c="r", s=0.2, label="reconciled")
+    for f_id in f_ids:
+        f = raw.find_one("_id", f_id)
+        plt.scatter(f["timestamp"], f["x_position"], c="b", s=0.5, label="raw")
+    plt.legend()
     
     # plot runtime
-    # import matplotlib.pyplot as plt
+    
     # import numpy as np
     # plt.figure()
     # plt.scatter(np.arange(s1), time_arr, label="run time (sec)")

@@ -58,8 +58,8 @@ class SpaceTimePlot():
             "count": dbr.count(),
             "tmin": dbr.get_min("first_timestamp"),
             "tmax": dbr.get_max("last_timestamp"),
-            "xmin": min(dbr.get_min("starting_x"), dbr.get_min("ending_x"),dbr.get_max("starting_x"), dbr.get_max("ending_x")),
-            # "xmin": -100,
+            # "xmin": min(dbr.get_min("starting_x"), dbr.get_min("ending_x"),dbr.get_max("starting_x"), dbr.get_max("ending_x")),
+            "xmin": -100,
             "xmax": max(dbr.get_max("starting_x"), dbr.get_max("ending_x"),dbr.get_min("starting_x"), dbr.get_min("ending_x")),
             "ymin": -5,
             "ymax": 200
@@ -131,8 +131,6 @@ class SpaceTimePlot():
             old_right = self.right
             self.right = self.left + self.window_size
             
-            
-            
             for i,row in enumerate(axs):
                 for j, ax in enumerate(row):
                     ax.set_aspect("auto")
@@ -197,7 +195,6 @@ class SpaceTimePlot():
                     # print("west lane idx, ", idx)
                     select = lane_idx == idx # select only lane i
                     time = np.array(traj["timestamp"])[select]
-                    
                     x = np.array(traj["x_position"])[select]
                     # dx = np.diff(np.array(traj["x_position"]))
                     # print(x)

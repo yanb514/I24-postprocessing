@@ -241,7 +241,7 @@ def rectify_1d(lam2, x):
     Q, p, H, N,M = _getQPMatrices(x, 0, lam2, None, reg="l2")
     
     sol=solvers.qp(P=Q, q=p)
-    print(sol["status"])
+    # print(sol["status"])
     
     # extract result
     xhat = sol["x"][:N]
