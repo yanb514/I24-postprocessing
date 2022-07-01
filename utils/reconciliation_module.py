@@ -230,14 +230,12 @@ def _getQPMatrices_nan(N, t, lam2, lam1, reg="l2"):
     
   
 @catch_critical(errors = (Exception))
-def rectify_1d(car, lam2, axis):
+def rectify_1d(lam2, x):
     '''                        
     solve solve for ||y-x||_2^2 + \lam ||Dx||_2^2
     args: lam2
     axis: "x" or "y"
     '''  
-    # get data and matrices
-    x = car[axis + "_position"].values
     
     # TODO: if x is all nans, skip this trajectory
     Q, p, H, N,M = _getQPMatrices(x, 0, lam2, None, reg="l2")
@@ -251,7 +249,7 @@ def rectify_1d(car, lam2, axis):
 
 
 
-def rectify_1d_l1(car, lam2, lam1, axis):
+def rectify_1d_l1(lam2, lam1, x):
     '''                        
     solve for ||y-Hx-e||_2^2 + \lam2 ||Dx||_2^2 + \lam1||e||_1
     convert to quadratic programming with linear inequality constraints
@@ -259,7 +257,6 @@ def rectify_1d_l1(car, lam2, lam1, axis):
     rewrite l1 penalty to linear constraints https://math.stackexchange.com/questions/391796/how-to-expand-equation-inside-the-l2-norm
     :param args: (lam2, lam1)
     '''  
-    x = car[axis + "_position"].values
     Q, p, H, G, h, N,M = _getQPMatrices(x, 0, lam2, lam1, reg="l1")
     sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
     
@@ -286,13 +283,13 @@ def rectify_2d(car, reg = "l2", **kwargs):
     lam2_x, lam2_y = kwargs["lam2_x"], kwargs["lam2_y"] # shared arguments
     
     if reg == "l2":
-        xhat = rectify_1d(car, lam2_x, "x")
-        yhat = rectify_1d(car, lam2_y, "y")
+        xhat = rectify_1d(lam2_x, car["x_position"])
+        yhat = rectify_1d(lam2_y, car["y_position"])
         
     elif reg == "l1": 
         lam1_x, lam1_y = kwargs["lam1_x"], kwargs["lam1_y"] # additional arguments for l1
-        xhat = rectify_1d_l1(car, (lam2_x, lam1_x), "x")
-        yhat = rectify_1d_l1(car, (lam2_y, lam1_y), "y")
+        xhat = rectify_1d_l1((lam2_x, lam1_x), car["x_position"])
+        yhat = rectify_1d_l1((lam2_y, lam1_y), car["y_position"])
         
     # write to document
     # car['x_position'] = xhat 
