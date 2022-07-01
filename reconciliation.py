@@ -58,11 +58,12 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
    
     try:
         idx = [i.item() for i in np.argwhere(~np.isnan(finished_trajectory["x_position"])).flatten()]
-        rec_worker_logger.debug(idx)
+        
         x = finished_trajectory["x_position"][idx]
         M = len(x)
         rec_worker_logger.debug("Finished traj: {} / {}".format(M, len(finished_trajectory["x_position"])), extra = None)
     except Exception as e:
+        rec_worker_logger.debug(idx)
         rec_worker_logger.debug(e)
         pass
     
