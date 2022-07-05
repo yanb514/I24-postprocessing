@@ -260,8 +260,8 @@ def rectify_2d(car, reg = "l2", **kwargs):
         
     elif reg == "l1": 
         lam1_x, lam1_y = kwargs["lam1_x"], kwargs["lam1_y"] # additional arguments for l1
-        xhat = rectify_1d_l1((lam2_x, lam1_x), car["x_position"])
-        yhat = rectify_1d_l1((lam2_y, lam1_y), car["y_position"])
+        xhat = rectify_1d_l1(lam2_x, lam1_x, car["x_position"])
+        yhat = rectify_1d_l1(lam2_y, lam1_y, car["y_position"])
         
     # write to document
     car["timestamp"] = list(car["timestamp"])
