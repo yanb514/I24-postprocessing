@@ -27,17 +27,7 @@ def combine_fragments(raw_collection, stitched_doc):
     '''
     
     stacked = defaultdict(list)
-    # stacked["timestamp"] = []
-    # stacked["x_position"] = []
-    # stacked["y_position"] = []
-    # stacked["road_segment_ids"] = []
-    # stacked["flags"] = []
-    # stacked["length"] = []
-    # stacked["width"] = []
-    # stacked["height"] = []
-    
-    # print("here")
-    # print(stitched_doc["fragment_ids"])    # t0 = time.time()
+
     if isinstance(stitched_doc, list):
         fragment_ids = stitched_doc
     else:
@@ -145,7 +135,7 @@ def _blocdiag(X, n):
 
 
 # @catch_critical(errors = (Exception))
-def _getQPMatrices(x, t, lam2, lam1, reg="l2"):
+def _getQPMatrices(x, lam2, lam1, reg="l2"):
     '''
     turn ridge regression (reg=l2) 
     1/M||y-Hx||_2^2 + \lam2/N ||Dx||_2^2
@@ -208,7 +198,7 @@ def _getQPMatrices(x, t, lam2, lam1, reg="l2"):
         h = spmatrix([], [], [], (2*M,1))
         return Q, p, H, G, h, N,M
 
-def _getQPMatrices_nan(N, t, lam2, lam1, reg="l2"):
+def _getQPMatrices_nan(N, lam2, lam1, reg="l2"):
     '''
     same with _getQPMatrices, but dealt with x vector is all nans
     Q = 2(lam2 D^T D)
@@ -229,6 +219,7 @@ def _getQPMatrices_nan(N, t, lam2, lam1, reg="l2"):
     return Q, p
     
   
+
 @catch_critical(errors = (Exception))
 def rectify_1d(lam2, x):
     '''                        
@@ -238,7 +229,7 @@ def rectify_1d(lam2, x):
     '''  
     
     # TODO: if x is all nans, skip this trajectory
-    Q, p, H, N,M = _getQPMatrices(x, 0, lam2, None, reg="l2")
+    Q, p, H, N,M = _getQPMatrices(x, lam2, None, reg="l2")
     
     sol=solvers.qp(P=Q, q=p)
     # print(sol["status"])
@@ -248,25 +239,6 @@ def rectify_1d(lam2, x):
     return xhat
 
 
-
-def rectify_1d_l1(lam2, lam1, x):
-    '''                        
-    solve for ||y-Hx-e||_2^2 + \lam2 ||Dx||_2^2 + \lam1||e||_1
-    convert to quadratic programming with linear inequality constraints
-    handle sparse outliers in data
-    rewrite l1 penalty to linear constraints https://math.stackexchange.com/questions/391796/how-to-expand-equation-inside-the-l2-norm
-    :param args: (lam2, lam1)
-    '''  
-    Q, p, H, G, h, N,M = _getQPMatrices(x, 0, lam2, lam1, reg="l1")
-    sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
-    
-    # extract result
-    xhat = sol["x"][:N]
-    # u = sol["x"][N:N+M]
-    # v = sol["x"][N+M:]
-    print(sol["status"])
-    
-    return xhat
 
 
 @catch_critical(errors = (Exception))
@@ -292,13 +264,33 @@ def rectify_2d(car, reg = "l2", **kwargs):
         yhat = rectify_1d_l1((lam2_y, lam1_y), car["y_position"])
         
     # write to document
-    # car['x_position'] = xhat 
-    # car['y_position'] = yhat  
     car["timestamp"] = list(car["timestamp"])
     car["x_position"] = list(xhat)
     car["y_position"] = list(yhat)
     
     return car           
+
+
+
+
+def rectify_1d_l1(lam2, lam1, x):
+    '''                        
+    solve for ||y-Hx-e||_2^2 + \lam2 ||Dx||_2^2 + \lam1||e||_1
+    convert to quadratic programming with linear inequality constraints
+    handle sparse outliers in data
+    rewrite l1 penalty to linear constraints https://math.stackexchange.com/questions/391796/how-to-expand-equation-inside-the-l2-norm
+    :param args: (lam2, lam1)
+    '''  
+    Q, p, H, G, h, N,M = _getQPMatrices(x, lam2, lam1, reg="l1")
+    sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
+    
+    # extract result
+    xhat = sol["x"][:N]
+    # u = sol["x"][N:N+M]
+    # v = sol["x"][N+M:]
+    print(sol["status"])
+    
+    return xhat
 
 
 
@@ -323,7 +315,7 @@ def receding_horizon_1d(x, lam2, PH, IH):
     # matrices that are not the first or last window -> compute once
     A = sparse([[spmatrix(1.0, range(3), range(3))], [spmatrix([], [], [], (3,PH-3))]])
     A = matrix(A, tc="d")
-    # Q0, p0 = _getQPMatrices_nan(PH, 0, lam2, None, reg="l2")
+    # Q0, p0 = _getQPMatrices_nan(PH, lam2, None, reg="l2")
     
     # save final answers
     xfinal = matrix([])
@@ -344,11 +336,11 @@ def receding_horizon_1d(x, lam2, PH, IH):
         xx = x[l: r]
         nn = len(xx)
         try:
-            Q, p, H, N,M = _getQPMatrices(xx, 0, lam2, None, reg="l2")
+            Q, p, H, N,M = _getQPMatrices(xx, lam2, None, reg="l2")
         except ZeroDivisionError: 
             # M=0, all missing entries in this rolling window
             # ... simply ignore the data fitting term, assume 0 jerk motion (constant accel)
-            Q, p = _getQPMatrices_nan(nn, 0, lam2, None, reg="l2")
+            Q, p = _getQPMatrices_nan(nn, lam2, None, reg="l2")
         
         if not x_prev: # first window, no fixed initial conditions
             sol=solvers.qp(P=Q, q=p)  
@@ -442,7 +434,7 @@ def receding_horizon_1d_l1(car, lam2, lam1, PH, IH, axis):
         else:
             xx = x[i*IH: i*IH+PH]
         # nn = len(xx)
-        Q, p, H, G, h, N,M = _getQPMatrices(xx, 0, lam2, lam1, reg="l1")
+        Q, p, H, G, h, N,M = _getQPMatrices(xx, lam2, lam1, reg="l1")
         
         
         try: # if x_prev exists - not first window

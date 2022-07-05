@@ -22,6 +22,7 @@ import matplotlib.animation as animation
 import matplotlib.ticker as mticker
 from datetime import datetime
 from i24_logger.log_writer import logger, catch_critical
+import warnings
 
 
 class SpaceTimePlot():
@@ -58,6 +59,7 @@ class SpaceTimePlot():
             "count": dbr.count(),
             "tmin": dbr.get_min("first_timestamp"),
             "tmax": dbr.get_max("last_timestamp"),
+            # "tmax": dbr.get_min("first_timestamp") + 5,
             # "xmin": min(dbr.get_min("starting_x"), dbr.get_min("ending_x"),dbr.get_max("starting_x"), dbr.get_max("ending_x")),
             "xmin": -100,
             "xmax": max(dbr.get_max("starting_x"), dbr.get_max("ending_x"),dbr.get_min("starting_x"), dbr.get_min("ending_x")),
@@ -73,7 +75,7 @@ class SpaceTimePlot():
         
         
     @catch_critical(errors = (Exception))
-    def animate(self, tmin=None, tmax=None, increment=0.3):
+    def animate(self, tmin=None, tmax=None, increment=0.3, save = False):
         """
         Advance time window by delta second, update left and right pointer, and cache
         """     
@@ -107,11 +109,11 @@ class SpaceTimePlot():
         # frame_text = ax1.text(max(ax1.get_xlim()), max(ax1.get_ylim()), "range {:.2f}-{:.2f}".format(steps[0], steps[1]), fontsize=12)
         
         # initialize qeury
-
         traj_data_e = self.dbr.read_query(query_filter= { "first_timestamp" : {"$gte" : self.left, "$lt" : self.right}, "direction": {"$eq": 1}},
                                         query_sort = [("last_timestamp", "ASC")])
         traj_data_w = self.dbr.read_query(query_filter= { "first_timestamp" : {"$gte" : self.left, "$lt" : self.right}, "direction": {"$eq": -1}},
                                         query_sort = [("last_timestamp", "ASC")])
+        
         
         @catch_critical(errors = (Exception))
         def init():
@@ -131,17 +133,19 @@ class SpaceTimePlot():
             old_right = self.right
             self.right = self.left + self.window_size
             
-            for i,row in enumerate(axs):
-                for j, ax in enumerate(row):
-                    ax.set_aspect("auto")
-                    # ax.set(ylim=[self.collection_info["xmin"], self.collection_info["xmax"]])
-                    ax.set(xlim=[self.left, self.right])
-                    axs[i,j].set_title(self.lane_name[i*6+j])
-                    ticks_loc = ax.get_xticks().tolist()
-                    labels = ax.get_xticks()
-                    labels = [datetime.utcfromtimestamp(int(t)).strftime('%H:%M:%S') for t in labels]
-                    ax.xaxis.set_major_locator(mticker.FixedLocator(ticks_loc))                 
-                    ax.set_xticklabels(labels)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                for i,row in enumerate(axs):
+                    for j, ax in enumerate(row):
+                        ax.set_aspect("auto")
+                        # ax.set(ylim=[self.collection_info["xmin"], self.collection_info["xmax"]])
+                        ax.set(xlim=[self.left, self.right])
+                        axs[i,j].set_title(self.lane_name[i*6+j])
+                        # ticks_loc = ax.get_xticks().tolist()
+                        labels = ax.get_xticks()
+                        labels = [datetime.utcfromtimestamp(int(t)).strftime('%H:%M:%S') for t in labels]
+                        # ax.xaxis.set_major_locator(mticker.FixedLocator(ticks_loc))                 
+                        ax.set_xticklabels(labels)
                     
             i += 1
             
@@ -184,8 +188,11 @@ class SpaceTimePlot():
             for traj in traj_data_w:
                 dx = np.diff(np.array(traj["x_position"]))
                 if len(np.unique(np.sign(dx))) > 1:
-                    print(traj["_id"], len(traj["x_position"]), traj["fragment_ids"])
-
+                    try:
+                        print(traj["_id"], len(traj["x_position"]), traj["fragment_ids"])
+                        
+                    except:
+                        print(traj["_id"])
                 # print(traj["direction"])
                 # select sub-document for each lane
                 lane_idx = np.digitize(traj["y_position"], self.lanes)-1 # should be between 1-6
@@ -213,6 +220,9 @@ class SpaceTimePlot():
                                             interval=increment * 1000, # in ms
                                             fargs=(traj_data_e, traj_data_w, frame_text), # specify time increment in sec to update query
                                             blit=False)
+        if save:
+            self.anim.save('{}.mp4'.format(self.collection_name), writer='ffmpeg', fps=int(1/increment))
+            
         plt.show()
         print("complete")
         
@@ -228,6 +238,6 @@ if True and __name__=="__main__":
     parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
     stp = SpaceTimePlot(parameters, "tracking_v1_reconciled", window_size = 5)
-    stp.animate(increment=0.1)
+    stp.animate(increment=0.1, save=True)
     
     

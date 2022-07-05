@@ -39,12 +39,8 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     resampled_trajectory = resample(combined_trajectory)
     rec_worker_logger.debug("*** 2. Resampled.", extra = None)
     
-    # resampled_trajectory["timestamp"] = list(resampled_trajectory["timestamp"])
-    # resampled_trajectory["x_position"] = list(resampled_trajectory["x_position"])
-    # resampled_trajectory["y_position"] = list(resampled_trajectory["y_position"])
-    
     # finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
-    finished_trajectory = rectify_2d(resampled_trajectory, **reconciliation_args)   
+    finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)   
     rec_worker_logger.debug("*** 3. Reconciled a trajectory. Trajectory duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
     
     reconciled_queue.put(finished_trajectory)
@@ -62,8 +58,8 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     # parameters
     reconciliation_args = {"lam2_x": parameters.lam2_x,
                            "lam2_y": parameters.lam2_y,
-                           # "lam1_x": parameters.lam1_x, 
-                           # "lam1_y": parameters.lam1_y,
+                            "lam1_x": parameters.lam1_x, 
+                            "lam1_y": parameters.lam1_y,
                            "PH": parameters.ph,
                            "IH": parameters.ih}
     
