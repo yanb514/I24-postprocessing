@@ -106,9 +106,11 @@ def resample(car):
         df = df.resample('0.033333333S').mean() # close to 30Hz
         df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
     
+        # df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq() # resample to 25Hz snaps to the closest integer
         car['x_position'] = df['x_position'].values
         car['y_position'] = df['y_position'].values
         car['timestamp'] = df.index.values
+        
     except Exception as e:
         logger.error(e)
     return car

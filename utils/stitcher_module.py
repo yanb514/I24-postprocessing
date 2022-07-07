@@ -7,16 +7,9 @@ data_association module connected with database
 import numpy as np
 import torch
 
-import heapq
-# from utils.data_structures import Fragment
-from time import sleep
-
 
 loss = torch.nn.GaussianNLLLoss() 
-# TODO: confirm these, put them in parameters
-x_bound_max = 31680
-x_bound_min = 0
-   
+
 def _compute_stats(track):
     t,x,y = track['timestamp'],track['x_position'],track['y_position']
     ct = np.nanmean(t)

@@ -45,6 +45,7 @@ class SpaceTimePlot():
         self.collection_name = collection_name
         self.window_size = window_size
         
+        
     @catch_critical(errors = (Exception))
     def get_collection_info(self):
         """
@@ -237,7 +238,7 @@ if True and __name__=="__main__":
     os.environ["my_config_section"] = "TEST"
     parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
-    stp = SpaceTimePlot(parameters, "tracking_v1_reconciled", window_size = 5)
-    stp.animate(increment=0.1, save=True)
+    stp = SpaceTimePlot(parameters, "tracking_v1_reconciled_l1", window_size = 5)
+    stp.animate(increment=0.1, save=False)
     
     
