@@ -67,6 +67,8 @@ def min_nll_cost(track1, track2, TIME_WIN, VARX, VARY):
     # cost = (nll1 + nll2)/2
     return nll1
 
+
+
 def nll(track1, track2, TIME_WIN, VARX, VARY):
     '''
     negative log likelihood of track2 being a successor of track1
@@ -89,5 +91,84 @@ def nll(track1, track2, TIME_WIN, VARX, VARY):
     nllx =  n/2*np.log(VARX) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track2.x[:n]-targetx)**2)
     nlly =  n/2*np.log(VARY) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track2.y[:n]-targety)**2)
     
-    return (nllx + nlly)/n
+    cost = (nllx + nlly)/n
+    return cost
 
+
+def nll_modified(track1, track2, TIME_WIN, VARX, VARY):
+    '''
+    negative log likelihood of track2 being a successor of track1
+    except that the cost is moved backward, starting at the beginning of track1 to allow overlaps
+    '''
+    INF = 10e6
+    # if track2.first_timestamp < track1.last_timestamp: # if track2 starts before track1 ends
+    #     return INF
+    if track2.first_timestamp - track1.last_timestamp > TIME_WIN: # if track2 starts TIME_WIN after track1 ends
+        return INF
+    
+    if len(track1.t) >= len(track2.t):
+        # cone from beginning of track1
+        n = min(len(track2.t), 2)
+        pt1 = track2.t[-1]-1 # cone stems from the first_timestamp of track1
+        tdiff = abs(track2.t[:n] - pt1) # has to be positive otherwise log(tdiff) will be undefined
+    
+        xx = np.vstack([track2.t[:n],np.ones(n)]).T # N x 2
+        targetx = np.matmul(xx, track1.fitx)
+        targety = np.matmul(xx, track1.fity)
+        
+        # const = n/2*np.log(2*np.pi)
+        nllx =  n/2*np.log(VARX) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track2.x[:n]-targetx)**2)
+        nlly =  n/2*np.log(VARY) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track2.y[:n]-targety)**2)
+        
+        return (nllx + nlly)/n - 10
+    
+    else:
+        # cone from end of track2
+        n = min(len(track1.t), 2)
+        pt1 = track1.t[-1]+1 # cone stems from the last_timestamp of track2
+        tdiff = abs(track1.t[-n:] - pt1) # has to be positive otherwise log(tdiff) will be undefined
+    
+        xx = np.vstack([track1.t[-n:],np.ones(n)]).T # N x 2
+        targetx = np.matmul(xx, track2.fitx)
+        targety = np.matmul(xx, track2.fity)
+        
+        # const = n/2*np.log(2*np.pi)
+        nllx =  n/2*np.log(VARX) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track1.x[-n:]-targetx)**2)
+        nlly =  n/2*np.log(VARY) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track1.y[-n:]-targety)**2)
+        
+        return (nllx + nlly)/n - 10
+
+
+
+
+def nll_headway(track1, track2, TIME_WIN, VARX, VARY):
+    '''
+    the headway distance of the first point on the shorter track to the fitted line of the longer track
+    very bad
+    '''
+    INF = 10e6
+    if track2.first_timestamp - track1.last_timestamp > TIME_WIN: # if track2 starts TIME_WIN after track1 ends
+        return INF
+    
+    if len(track1.t) >= len(track2.t):
+        long = track1
+        short = track2
+    else:
+        long = track2
+        short = track1
+    
+    # first point on the shorter track
+    pt = [short.t[0], short.x[0], short.y[0]]
+    
+    # distance to the fitted line of the longer track
+    dx = abs(pt[1] - (pt[0] * long.fitx[0] + long.fitx[1]))
+    dy = abs(pt[2] - (pt[0] * long.fity[0] + long.fity[1]))
+    
+    # some scaled distance
+    d = 0.1*dx**2 + 0.9*dy**2
+    
+    # cost = nll(track1, track2, TIME_WIN, VARX, VARY)
+    # if cost < 3: 
+    #     print(cost)
+    # print("*", track1.id, track2.id, d, 0.1*d-3)  
+    return 0.8*d-3

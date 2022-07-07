@@ -33,7 +33,7 @@ from i24_configparse import parse_cfg
 import matplotlib.pyplot as plt
 import os
 import warnings
-# from bson.objectid import ObjectId
+from bson.objectid import ObjectId
 import pprint
 
 class UnsupervisedEvaluator():
@@ -101,7 +101,7 @@ class UnsupervisedEvaluator():
                 # dbw.reset_collection() # This line throws OperationFailure, not sure how to fix it
                 dbw.collection.drop()
                 if col not in dbw.db.list_collection_names():
-                    print("Collection {} is successfully deleted")
+                    print("Collection {} is successfully deleted".format(col))
                     
         
     def get_random(self, collection_name):
@@ -228,19 +228,19 @@ class UnsupervisedEvaluator():
                           } 
                      }]
             
-        pipeline1_e = [{
-                    '$match': { 'direction': { '$eq : 18 } }
-                    '$group': 
-                         {'_id':'null', # no grouping 
-                          'avg_starting_x': {'$avg':"$starting_x"},
-                          'avg_ending_x': {'$avg':"$ending_x"},
-                          'avg_veh_length': {'$avg':"$length"},
-                          'avg_veh_width': {'$avg':"$width"},
-                          'avg_veh_height': {'$avg':"$height"},
-                          'stdDev_starting_x': {'$stdDevPop':"$starting_x"},
-                          'stdDev_ending_x': {'$stdDevPop':"$ending_x"},
-                          } 
-                     }]
+        # pipeline1_e = [{
+        #             '$match': { 'direction': { '$eq : 18 } }
+        #             '$group': 
+        #                  {'_id':'null', # no grouping 
+        #                   'avg_starting_x': {'$avg':"$starting_x"},
+        #                   'avg_ending_x': {'$avg':"$ending_x"},
+        #                   'avg_veh_length': {'$avg':"$length"},
+        #                   'avg_veh_width': {'$avg':"$width"},
+        #                   'avg_veh_height': {'$avg':"$height"},
+        #                   'stdDev_starting_x': {'$stdDevPop':"$starting_x"},
+        #                   'stdDev_ending_x': {'$stdDevPop':"$ending_x"},
+        #                   } 
+        #              }]
 
         # direction-specific filters
         
@@ -265,8 +265,16 @@ if __name__ == '__main__':
     os.environ["my_config_section"] = "TEST"
     db_param = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
-    ue = UnsupervisedEvaluator(db_param, "tracking_v1", "tracking_v1_reconciled")
+    ue = UnsupervisedEvaluator(db_param, "batch_5_07072022", "batch_nll_modified")
+    fragment_list = [ObjectId('62c7141bc77930b8d9533473')]
+    rec_id = ObjectId("62c730078b650aa00a3b925f")
+    ue.plot_fragments(fragment_list=fragment_list,rec_id=rec_id)
+    
+    
+    
     # ue.get_collection_info()
     # ue.fragment_length_dist()
     # ue.evaluate()
-    ue.get_stats()
+    # ue.get_stats()
+    
+    # ue.delete_collection(["batch_stitched", "batch_nll_modified"])

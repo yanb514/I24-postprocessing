@@ -290,7 +290,7 @@ def rectify_1d_l1(lam2, lam1, x):
     xhat = sol["x"][:N]
     # u = sol["x"][N:N+M]
     # v = sol["x"][N+M:]
-    print(sol["status"])
+    # print(sol["status"])
     
     return xhat
 

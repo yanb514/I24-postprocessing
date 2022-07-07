@@ -99,7 +99,7 @@ def live_data_reader(default_param, collection_name, range_increment,
     
     # for debug only
     # if running_mode == "TEST":
-    # rri._reader.range_iter_stop = rri._reader.range_iter_start + 1
+    rri._reader.range_iter_stop = rri._reader.range_iter_start + 60
     
     
     pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
@@ -108,7 +108,7 @@ def live_data_reader(default_param, collection_name, range_increment,
 
     sig_handler = SignalHandler()
 
-    
+    discard = 0
     while sig_handler.run:
         try:
             # logger.info("current queue size: {}, first_change_time: {:.2f}, query range: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, rri._current_lower_value, rri._current_upper_value))
@@ -144,8 +144,9 @@ def live_data_reader(default_param, collection_name, range_increment,
                                     east_queue.put(doc)
                                 else:
                                     west_queue.put(doc)
-                            # else:
-                            #     logger.info("Discard a fragment with length less than 3")
+                            else:
+                                discard += 1
+                                # logger.info("Discard a fragment with length less than 3")
                        
                     except BrokenPipeError: # SIGINT detected
                     #     # if SIGINT is detected, finish writing the last batch and stop the process
@@ -164,7 +165,7 @@ def live_data_reader(default_param, collection_name, range_increment,
             logger.warning("live_data_reader reaches the end of query range iteration. Exit")
             break
         
-
+    logger.info("Discarded {} short tracks".format(discard))
     logger.warning("Exiting live_data_reader while loop")
     sys.exit(2)
 

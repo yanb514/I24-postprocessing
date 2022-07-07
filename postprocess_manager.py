@@ -17,7 +17,7 @@ from i24_configparse import parse_cfg
 from i24_logger.log_writer import logger
 
 config_path = os.path.join(os.getcwd(),"config")
-# os.environ["USER_CONFIG_DIRECTORY"] = config_path 
+os.environ["USER_CONFIG_DIRECTORY"] = config_path 
 os.environ["user_config_directory"] = config_path
 os.environ["my_config_section"] = "TEST"
 parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
@@ -133,7 +133,7 @@ if __name__ == '__main__':
 
     #%% CASE 1: [Graceful shutdown] Hands-off manager. Manager ignores all signals, and does not restart processes. All signals are handled in each process
     if parameters.mode == "finish_processing": 
-        signal.signal(signal.SIGINT, signal.SIG_IGN)  
+        # signal.signal(signal.SIGINT, signal.SIG_IGN)  
     
         while True:
             # for each process that is being managed at this level, check if it's still running

@@ -61,8 +61,8 @@ class SpaceTimePlot():
             "tmin": dbr.get_min("first_timestamp"),
             "tmax": dbr.get_max("last_timestamp"),
             # "tmax": dbr.get_min("first_timestamp") + 5,
-            # "xmin": min(dbr.get_min("starting_x"), dbr.get_min("ending_x"),dbr.get_max("starting_x"), dbr.get_max("ending_x")),
-            "xmin": -100,
+            "xmin": min(dbr.get_min("starting_x"), dbr.get_min("ending_x"),dbr.get_max("starting_x"), dbr.get_max("ending_x")),
+            # "xmin": -100,
             "xmax": max(dbr.get_max("starting_x"), dbr.get_max("ending_x"),dbr.get_min("starting_x"), dbr.get_min("ending_x")),
             "ymin": -5,
             "ymax": 200
@@ -233,12 +233,12 @@ class SpaceTimePlot():
 if True and __name__=="__main__":
     
     
-    config_path = os.path.join(os.getcwd(),"config")
+    config_path = os.path.join(os.getcwd(),"../config")
     os.environ["user_config_directory"] = config_path
     os.environ["my_config_section"] = "TEST"
     parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
-    stp = SpaceTimePlot(parameters, "tracking_v1_reconciled_l1", window_size = 5)
+    stp = SpaceTimePlot(parameters, "batch_nll_modified", window_size = 5)
     stp.animate(increment=0.1, save=False)
     
     

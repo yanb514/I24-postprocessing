@@ -19,7 +19,7 @@ from i24_database_api.db_reader import DBReader
 from i24_database_api.db_writer import DBWriter
 import i24_logger.log_writer as log_writer
 from i24_configparse import parse_cfg
-from utils.data_structures import Fragment, PathCache, MOT_Graph, MOTGraphSingle, SortedDLL
+from utils.utils_mcf import Fragment, PathCache, MOT_Graph, MOTGraphSingle, SortedDLL
 
 
 
@@ -404,6 +404,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             
             for path in all_paths:
                 # stitcher_logger.info("Flushing out final trajectories in graph")
+                stitcher_logger.info("** Flushing out {} fragments into one trajectory".format(len(path)),extra = None)
                 stitched_trajectory_queue.put(path[::-1])
                 dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
             
@@ -424,10 +425,11 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             stitched_trajectory_queue.put(path[::-1])
             dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
             m.clean_graph(path)
-            stitcher_logger.debug("** stitched {} fragments into one trajectory".format(len(path)),extra = None)
+            if len(path)>1:
+                stitcher_logger.info("** stitched {} fragments into one trajectory".format(len(path)),extra = None)
          
         if counter % 100 == 0:
-            stitcher_logger.info("Graph nodes : {}, Graph edges: {}".format(m.G.number_of_nodes(), m.G.number_of_edges()),extra = None)
+            stitcher_logger.debug("Graph nodes : {}, Graph edges: {}".format(m.G.number_of_nodes(), m.G.number_of_edges()),extra = None)
             counter = 0
         counter += 1
         
@@ -500,6 +502,8 @@ if __name__ == '__main__':
         f = raw.find_one("_id", f_id)
         fragment_queue.put(f)
     s1 = fragment_queue.qsize()
+    
+    
     # --------- start batch stitching --------- 
     # print("MCF Batch...")
     # t1 = time.time()
