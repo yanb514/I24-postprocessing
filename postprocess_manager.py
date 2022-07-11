@@ -182,7 +182,10 @@ if __name__ == '__main__':
             break
         
         for pid_name, pid_val in pid_tracker.items():
-            child_process = live_process_objects[pid_name]
+            try:
+                child_process = live_process_objects[pid_name]
+            except:
+                pass
             # print(child_process.name, child_process.is_alive())
             
             if not child_process.is_alive():
