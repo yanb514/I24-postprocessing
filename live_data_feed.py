@@ -79,7 +79,8 @@ def live_data_reader(default_param,
     
     while sig_hdlr.run:
         
-        
+        logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+    
         try:
             # logger.info("current queue size: {}, first_change_time: {:.2f}, query range: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, rri._current_lower_value, rri._current_upper_value))
             if east_queue.qsize() <= min_queue_size or west_queue.qsize() <= min_queue_size: # only move to the next query range if queue is low in stock
