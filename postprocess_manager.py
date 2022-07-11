@@ -79,8 +79,7 @@ if __name__ == '__main__':
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {
                             "live_data_reader": (live_data_reader,
-                                            (parameters, parameters.raw_collection, 
-                                            parameters.range_increment,
+                                            (parameters, 
                                             raw_fragment_queue_e, raw_fragment_queue_w,
                                             parameters.buffer_time, parameters.min_queue_size,)),
                             # "live_data_reader_w": (live_data_reader,
@@ -90,16 +89,16 @@ if __name__ == '__main__':
                             #                 parameters.buffer_time, parameters.min_queue_size,)),
                             # "dummy_stitcher": (mcf.dummy_stitcher,
                             #                    (raw_fragment_queue_w, stitched_trajectory_queue,)),
-                            "stitcher_e": (mcf.min_cost_flow_online_alt_path,
-                                            ("east", raw_fragment_queue_e, stitched_trajectory_queue,
-                                            parameters, )),
-                            "stitcher_w": (mcf.min_cost_flow_online_alt_path,
-                                            ("west", raw_fragment_queue_w, stitched_trajectory_queue,
-                                            parameters, )),
-                            "reconciliation": (rec.reconciliation_pool,
-                                        (parameters, stitched_trajectory_queue, reconciled_queue,)),
-                            "reconciliation_writer": (rec.write_reconciled_to_db,
-                                        (parameters, reconciled_queue,)),
+                            # "stitcher_e": (mcf.min_cost_flow_online_alt_path,
+                            #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
+                            #                 parameters, )),
+                            # "stitcher_w": (mcf.min_cost_flow_online_alt_path,
+                            #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
+                            #                 parameters, )),
+                            # "reconciliation": (rec.reconciliation_pool,
+                            #             (parameters, stitched_trajectory_queue, reconciled_queue,)),
+                            # "reconciliation_writer": (rec.write_reconciled_to_db,
+                            #             (parameters, reconciled_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.
@@ -130,75 +129,82 @@ if __name__ == '__main__':
 
 
 
+#%% SIGNAL HANDLING
 
-    #%% CASE 1: [Graceful shutdown] Hands-off manager. Manager ignores all signals, and does not restart processes. All signals are handled in each process
-    if parameters.mode == "finish_processing": 
-        # signal.signal(signal.SIGINT, signal.SIG_IGN)  
-    
-        while True:
-            # for each process that is being managed at this level, check if it's still running
-            time.sleep(2)
-            if not live_processes:
-                manager_logger.info("None of the processes is alive")
-                break
+    # Simulate server control
+    def hard_stop_hdlr(sig, action):
+        manager_logger.info("Manager received hard stop signal")
+        for pid_name, pid_val in pid_tracker.items():
+            os.kill(pid_val, signal.SIGKILL)
+            subsystem_process_objects.pop(pid_name)
+            manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
+       
+    def soft_stop_hdlr(sig, action):
+        manager_logger.info("Manager received soft stop signal")
+        for pid_name, pid_val in pid_tracker.items():
+            os.kill(pid_val, signal.SIGINT)
+            subsystem_process_objects.pop(pid_name)
+            manager_logger.info("Sent SIGINT to PID={} ({})".format(pid_val, pid_name))
             
-            for child_key in subsystem_process_objects.keys():
-                child_process = subsystem_process_objects[child_key]
-                if not child_process.is_alive():
+    def finish_hdlr(sig, action):
+        manager_logger.info("Manager received finish-processing signal")
+        for pid_name, pid_val in pid_tracker.items():
+            os.kill(pid_val, signal.SIGUSR1)
+            subsystem_process_objects.pop(pid_name)
+            manager_logger.info("Sent SIGUSR1 to PID={} ({})".format(pid_val, pid_name))
+            
+    
+    # register signals depending on the mode     
+    if parameters.mode == "hard_stop":
+        signal.signal(signal.SIGINT, hard_stop_hdlr)
+        
+    elif parameters.mode == "soft_stop":
+        signal.signal(signal.SIGINT, soft_stop_hdlr)
+        
+    elif parameters.mode == "finish":
+        signal.signal(signal.SIGINT, finish_hdlr)
+        
+    else:
+        manager_logger.error("Unrecongnized signal")
+
+
+
+#%% Run indefinitely until SIGINT received
+    while True:
+        
+        # for each process that is being managed at this level, check if it's still running
+        time.sleep(2)
+        if len(subsystem_process_objects) == 0:
+            manager_logger.info("None of the processes is alive")
+            break
+        
+        for child_key in subsystem_process_objects.keys():
+            child_process = subsystem_process_objects[child_key]
+            if child_process.is_alive():
+                # Process is running; do nothing.
+                print("Long live {}! {}".format(child_key, child_process))
+                pass
+            else:
+                # Process has died. Let's restart it.
+                # Copy its name out of the existing process object for lookup and restart.
+                if parameters.mode not in ["hard_stop", "soft_stop", "finish"]:
                     process_name = child_process.name
                     
-                    try:
-                        live_processes.remove(process_name)
-                        manager_logger.warning("RIP process {}".format(process_name))
-                    except:
-                        pass
+                    manager_logger.warning("Restarting process: {}".format(process_name))
+                    # print("RIP {} {}".format(process_name, child_process))
     
+                    
+                    # Get the function handle and function arguments to spawn this process again.
+                    process_function, process_args = processes_to_spawn[process_name]
+                    # Restart the process the same way we did originally.
+                    subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
+                    subsys_process.start()
+                    # Re-write the process object in the dictionary and update its PID.
+                    subsystem_process_objects[child_key] = subsys_process
+                    pid_tracker[process_name] = subsys_process.pid
+          
+
         
-        manager_logger.info("Exit manager while loop, raw size: {}, stitched size: {}".format(raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize()))
-
-
-
-    #%% CASE 2:
-    # elif parameters.mode == "kill":
-    #     try:
-    #         while True:
-    #             # for each process that is being managed at this level, check if it's still running
-    #             time.sleep(2)
-    #             if not live_processes:
-    #                 manager_logger.info("None of the processes is alive")
-    #                 break
-                
-    #             for child_key in subsystem_process_objects.keys():
-    #                 child_process = subsystem_process_objects[child_key]
-    #                 if child_process.is_alive():
-    #                     # Process is running; do nothing.
-    #                     # print("Long live {}! {}".format(child_key, child_process))
-    #                     pass
-    #                 else:
-    #                     # Process has died. Let's restart it.
-    #                     # Copy its name out of the existing process object for lookup and restart.
-                        
-    #                     process_name = child_process.name
-    #                     try:
-    #                         live_processes.remove(process_name)
-    #                     except:
-    #                         pass
-    #                     # manager_logger.warning("Restarting process: {}".format(process_name))
-    #                     # print("RIP {} {}".format(process_name, child_process))
         
-                        
-    #                     # # Get the function handle and function arguments to spawn this process again.
-    #                     # process_function, process_args = processes_to_spawn[process_name]
-    #                     # # Restart the process the same way we did originally.
-    #                     # subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
-    #                     # subsys_process.start()
-    #                     # # Re-write the process object in the dictionary and update its PID.
-    #                     # subsystem_process_objects[child_key] = subsys_process
-    #                     # pid_tracker[process_name] = subsys_process.pid
-              
-                
-    #     except KeyboardInterrupt: # Allows early termination
-    #         for pid_name, pid_val in pid_tracker.items():
-    #             os.kill(pid_val, signal.SIGKILL)
-    #             manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
-    #         pass
+    manager_logger.info("Exit manager")
+    manager_logger.info("Final queue sizes, raw east: {}, raw west: {}, stitched: {}, reconciled: {}".format(raw_fragment_queue_e.qsize(), raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize(), reconciled_queue.qsize()))

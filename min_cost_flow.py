@@ -364,77 +364,96 @@ def dummy_stitcher(old_q, new_q):
     sys.exit(2)
         
         
-        
-        
+
+    
 def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory_queue, parameters):
     '''
     incrementally fixing the matching
     '''
-    
+ 
     # Initiate a logger
     stitcher_logger = log_writer.logger
     stitcher_logger.set_name("stitcher_"+direction)
     stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
 
-    # Signal handling - ignore SIGINT if in the finish_processing mode  
-    if parameters.mode == "finish_processing":
-        stitcher_logger.debug("ignore SIGINT in finish_processing mode")
-        signal.signal(signal.SIGINT, signal.SIG_IGN)    
+    # Signal handling: 
+    # SIGINT (sent from parent process) raises KeyboardInterrupt,  close dbw and soft exit
+    # SIGUSR1 is ignored. The process terminates when queue is empty
+    def sigusr_handler(sigusr, frame):
+        stitcher_logger.warning("SIGUSR1 detected in stitcher. Finish processing current queues.")
+        signal.signal(sigusr, signal.SIG_IGN)    
         signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
-    
+        
+    # signal.signal(signal.SIGUSR1, handler)
+    signal.signal(signal.SIGINT, signal.SIG_IGN) #ignore signal sent from keyboard.
+    signal.signal(signal.SIGUSR1, sigusr_handler)
     
     # Make a database connection for writing
     schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
     dbw = DBWriter(parameters, collection_name = parameters.stitched_collection, schema_file=schema_path)
-    # dbw.reset_collection() # this line causes some problems
-    # dbw.collection.drop()
-    
+
+    # Get parameters
     ATTR_NAME = parameters.fragment_attr_name
     TIME_WIN = parameters.time_win
+    
+    # Initialize tracking graph
     m = MOTGraphSingle(ATTR_NAME, parameters)
-    counter = 0 # for log
+    counter = 0 # iterations for log
     
     while True:
         try:
-            raw_fgmt = fragment_queue.get(timeout = parameters.raw_trajectory_queue_get_timeout)
-            # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
-            fgmt = Fragment(raw_fgmt)
-        except: # queue is empty
-            all_paths = m.get_all_traj()
+            try:
+                raw_fgmt = fragment_queue.get(timeout = parameters.raw_trajectory_queue_get_timeout)
+                # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
+                fgmt = Fragment(raw_fgmt)
+                
+            except queue.Empty: # queue is empty
+                all_paths = m.get_all_traj()
+                
+                for path in all_paths:
+                    # stitcher_logger.info("Flushing out final trajectories in graph")
+                    stitcher_logger.info("** Flushing out {} fragments into one trajectory".format(len(path)),extra = None)
+                    stitched_trajectory_queue.put(path[::-1])
+                    dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
+                
+                stitcher_logger.info("fragment_queue is empty, exit.")
+                break
+            
+            fgmt.compute_stats()
+            m.add_node(fgmt)
+            # print(m.G.edges(data=True))
+            
+            # run MCF
+            fgmt_id = getattr(fgmt, ATTR_NAME)
+            m.augment_path(fgmt_id)
+    
+            # pop path if a path is ready
+            all_paths = m.pop_path(time_thresh = fgmt.first_timestamp - TIME_WIN)
             
             for path in all_paths:
-                # stitcher_logger.info("Flushing out final trajectories in graph")
-                stitcher_logger.info("** Flushing out {} fragments into one trajectory".format(len(path)),extra = None)
+                # stitcher_logger.debug("path: {}".format(path))
                 stitched_trajectory_queue.put(path[::-1])
                 dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
-            
-            stitcher_logger.info("fragment_queue is empty, exit.")
+                m.clean_graph(path)
+                if len(path)>1:
+                    stitcher_logger.info("** stitched {} fragments into one trajectory".format(len(path)),extra = None)
+             
+            if counter % 100 == 0:
+                stitcher_logger.debug("Graph nodes : {}, Graph edges: {}".format(m.G.number_of_nodes(), m.G.number_of_edges()),extra = None)
+                counter = 0
+            counter += 1
+        
+        except (KeyboardInterrupt, BrokenPipeError, EOFError, AttributeError):
+            # handle SIGINT here
+            del dbw
+            stitcher_logger.info("DBWriter closed. {}")
+            stitcher_logger.warning("SIGINT detected. Exiting stitcher")
             break
-        
-        fgmt.compute_stats()
-        m.add_node(fgmt)
-        # print(m.G.edges(data=True))
-        # run MCF
-        fgmt_id = getattr(fgmt, ATTR_NAME)
-        m.augment_path(fgmt_id)
-
-        # pop path if a path is ready
-        all_paths = m.pop_path(time_thresh = fgmt.first_timestamp - TIME_WIN)
-        for path in all_paths:
-            # stitcher_logger.debug("path: {}".format(path))
-            stitched_trajectory_queue.put(path[::-1])
-            dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
-            m.clean_graph(path)
-            if len(path)>1:
-                stitcher_logger.info("** stitched {} fragments into one trajectory".format(len(path)),extra = None)
-         
-        if counter % 100 == 0:
-            stitcher_logger.debug("Graph nodes : {}, Graph edges: {}".format(m.G.number_of_nodes(), m.G.number_of_edges()),extra = None)
-            counter = 0
-        counter += 1
-        
-    stitcher_logger.info("Exiting stitcher")
-    # sys.exit(2)
+            
+    stitcher_logger.info("Exiting stitcher while loop")
+    # del stitcher_logger
+    # os.kill(os.getppid(), signal.SIGTERM) # for mac, really kill this process so that p.is_alive = False -> permissionError
+    sys.exit()
         
     return   
 
@@ -496,8 +515,8 @@ if __name__ == '__main__':
 
     from bson.objectid import ObjectId
     fragment_queue = queue.Queue()
-    f_ids = [ObjectId('62a37be318c10e37c2103ff8'), ObjectId('62a37c8018c10e37c21041f7'), ObjectId('62a37dd418c10e37c2104687'), ObjectId('62a37f2218c10e37c2104b1d'), ObjectId('62a3805318c10e37c2104e94'), ObjectId('62a3816718c10e37c2105213'), ObjectId('62a3824218c10e37c21054f7')]
-    raw = DBReader(parameters, collection_name="tracking_v1")
+    f_ids = [ObjectId('62c713dfc77930b8d9533454'), ObjectId('62c713fbc77930b8d9533462')]
+    raw = DBReader(parameters, collection_name="batch_5_07072022")
     for f_id in f_ids:
         f = raw.find_one("_id", f_id)
         fragment_queue.put(f)

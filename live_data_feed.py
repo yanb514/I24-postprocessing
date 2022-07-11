@@ -15,42 +15,9 @@ import signal
 import sys
 import os
 
-def format_flat(columns, document, impute_none_for_missing=False):
-    """
-    Takes a `document` returned from MongoDB and organizes it into an ordered list of values specified by `columns`.
-    :param columns: List of column names corresponding to document fields.
-    :param document: Dictionary-like document from MongoDB with fields corresponding to column names.
-    :param impute_none_for_missing: If True, sets value to None for any missing columns in `document`.
-    :return: List of values corresponding to columns.
-    """
-    # TODO: fill this in
-    # TODO: type hints correct to the data type the document will come through as
-    return []
 
 
-def read_query_once(host, port, username, password, database_name, collection_name,
-                    query_filter, query_sort = None, limit = 0):
-    """
-    Executes a single database read query using the DBReader object, which is destroyed immediately upon completion.
-    :param host: Database connection host name.
-    :param port: Database connection port number.
-    :param username: Database authentication username.
-    :param password: Database authentication password.
-    :param database_name: Name of database to connect (do not confuse with collection name).
-    :param collection_name: Name of database collection from which to query.
-    :param query_filter: Currently a dict following pymongo convention (need to abstract this).
-    :param query_sort: List of tuples: (field_to_sort, sort_direction); direction is ASC/ASCENDING or DSC/DESCENDING.
-    :param limit: Numerical limit for number of documents returned by query.
-    :return:
-    """
-    dbr = DBReader(host=host, port=port, username=username, password=password,
-                   database_name=database_name, collection_name=collection_name)
-    result = dbr.read_query(query_filter=query_filter, query_sort=query_sort, limit=limit)
-    return result
-
-
-
-def live_data_reader(default_param, collection_name, range_increment,
+def live_data_reader(default_param,
                      east_queue, west_queue, t_buffer = 100, min_queue_size = 1000):
     """
     Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
@@ -73,43 +40,46 @@ def live_data_reader(default_param, collection_name, range_increment,
     logger.set_name("live_data_reader")
     setattr(logger, "_default_logger_extra",  {})
     
-    
-    # Signal handling
-    class SignalHandler:
-        '''
-        if SIGINT or SIGTERM is received, shut down
-        '''
+    # Connect to a database reader
+    dbr = DBReader(default_param, collection_name=default_param.raw_collection)
+    # temporary: start from min and end at max
+    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param.range_increment)
+
+    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
+    class SignalHandler():
+
         run = True
+        count = 0 # count the number of times a signal is received
         def __init__(self):
-            
             signal.signal(signal.SIGINT, self.shut_down)
-            # signal.signal(signal.SIGTERM, self.shut_down)
+            signal.signal(signal.SIGUSR1, self.shut_down)
+            signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
         
         def shut_down(self, *args):
             self.run = False
-            logger.info("SIGINT / SIGTERM detected")
-
+            self.count += 1
+            logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
+            
+            
+            
+    sig_hdlr = SignalHandler()  
     
-    # Connect to a database reader
-    dbr = DBReader(default_param, collection_name=collection_name)
-    # temporary: start from min and end at max
-    # dir = 1 if direction == "east" else -1
-    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=range_increment)
-                               # static_parameters = ["direction"], static_parameters_query = [("$eq", dir)]) 
     
     # for debug only
     # if running_mode == "TEST":
-    rri._reader.range_iter_stop = rri._reader.range_iter_start + 60
+    # rri._reader.range_iter_stop = rri._reader.range_iter_start + 60
     
     
     pipeline = [{'$match': {'operationType': 'insert'}}] # watch for insertion only
     first_change_time = dbr.get_max("last_timestamp") # to keep track of the first change during each change stream event
     safe_query_time = first_change_time - t_buffer # guarantee time-order up until safe_query_time
 
-    sig_handler = SignalHandler()
 
     discard = 0
-    while sig_handler.run:
+    
+    while sig_hdlr.run:
+        
+        
         try:
             # logger.info("current queue size: {}, first_change_time: {:.2f}, query range: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, rri._current_lower_value, rri._current_upper_value))
             if east_queue.qsize() <= min_queue_size or west_queue.qsize() <= min_queue_size: # only move to the next query range if queue is low in stock
@@ -136,38 +106,40 @@ def live_data_reader(default_param, collection_name, range_increment,
                     lower, upper = rri._current_lower_value, rri._current_upper_value
                     next_batch = next(rri)
                     
-                    try:
-                        for doc in next_batch:
-                            if len(doc["timestamp"]) > 3: 
-                                if doc["direction"] == 1:
-                                    # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
-                                    east_queue.put(doc)
-                                else:
-                                    west_queue.put(doc)
+
+                    for doc in next_batch:
+                        if len(doc["timestamp"]) > 3: 
+                            if doc["direction"] == 1:
+                                # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
+                                east_queue.put(doc)
                             else:
-                                discard += 1
-                                # logger.info("Discard a fragment with length less than 3")
-                       
-                    except BrokenPipeError: # SIGINT detected
-                    #     # if SIGINT is detected, finish writing the last batch and stop the process
-                    #     # save current change stream and current query upper range for the next restart (#TODO: HOW?)  
-                        logger.warning("BrokenPipeError detected, sig_handler.run = {}, try to restart with lower:{} upper:{}. Exit system.".format(sig_handler.run, lower, upper))
-                        sys.exit(2)
-                        
+                                west_queue.put(doc)
+                        else:
+                            discard += 1
+                            # logger.info("Discard a fragment with length less than 3")
+
                     logger.info("qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
                         
                         
             else: # if queue has sufficient number of items, then wait before the next iteration (throttle)
                 logger.info("queue size is sufficient")     
                 time.sleep(2)
-                        
-        except StopIteration: # rri reaches the end
-            logger.warning("live_data_reader reaches the end of query range iteration. Exit")
+          
+        except Exception as e: # rri reaches the end
+            if sig_hdlr.run:
+                logger.warning("live_data_reader reaches the end of query range iteration. Exit. Exception:{}".format(e))
+            else:
+                logger.warning("SIGINT/SIGUSR1 detected. Checkpoint not implemented. Exception:{}".format(e))
             break
+
         
+     
+    
+    # logger.info("outside of while loop:qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
     logger.info("Discarded {} short tracks".format(discard))
-    logger.warning("Exiting live_data_reader while loop")
-    sys.exit(2)
+    del dbr 
+    logger.info("DBReader closed. Exiting live_data_reader while loop.")
+    sys.exit() # for linux
 
     
     

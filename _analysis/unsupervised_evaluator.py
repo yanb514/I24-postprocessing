@@ -126,10 +126,9 @@ class UnsupervisedEvaluator():
         '''
         
         plt.figure()
-        if self.col2:
+        if self.col2 and rec_id:
             d = self.col2.find_one("_id", rec_id)
-        
-        plt.scatter(d["timestamp"], d["x_position"], c="r", s=0.2, label="reconciled")
+            plt.scatter(d["timestamp"], d["x_position"], c="r", s=0.2, label="reconciled")
         for f_id in fragment_list:
             f = self.col1.find_one("_id", f_id)
             plt.scatter(f["timestamp"], f["x_position"], c="b", s=0.5, label="raw")
@@ -266,9 +265,9 @@ if __name__ == '__main__':
     db_param = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
     ue = UnsupervisedEvaluator(db_param, "batch_5_07072022", "batch_nll_modified")
-    fragment_list = [ObjectId('62c7141bc77930b8d9533473')]
-    rec_id = ObjectId("62c730078b650aa00a3b925f")
-    ue.plot_fragments(fragment_list=fragment_list,rec_id=rec_id)
+    # fragment_list = [ObjectId('62c713dfc77930b8d9533454'), ObjectId('62c713fbc77930b8d9533462')]
+    # rec_id = ObjectId("62c730078b650aa00a3b925f")
+    # ue.plot_fragments(fragment_list=fragment_list,rec_id=None)
     
     
     
@@ -277,4 +276,4 @@ if __name__ == '__main__':
     # ue.evaluate()
     # ue.get_stats()
     
-    # ue.delete_collection(["batch_stitched", "batch_nll_modified"])
+    ue.delete_collection(["batch_stitched", "batch_nll_modified"])
