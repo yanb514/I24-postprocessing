@@ -184,6 +184,7 @@ if __name__ == '__main__':
         
         for pid_name, pid_val in pid_tracker.items():
             child_process = subsystem_process_objects[pid_name]
+            print(child_process.name, child_process.is_alive())
             
             if not child_process.is_alive():
                 # do not restart if in one of the stopping modes
