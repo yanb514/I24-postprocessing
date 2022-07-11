@@ -79,7 +79,7 @@ def live_data_reader(default_param,
     
     while sig_hdlr.run:
         
-        logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+        logger.info("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
     
         try:
             # logger.info("current queue size: {}, first_change_time: {:.2f}, query range: {:.2f}-{:.2f}".format(ready_queue.qsize(),first_change_time, rri._current_lower_value, rri._current_upper_value))
@@ -94,6 +94,7 @@ def live_data_reader(default_param,
                     dbr.range_iter_stop = safe_query_time
                 
                 if rri._current_upper_value > safe_query_time and rri._current_upper_value < rri._reader.range_iter_stop: # if not safe to query and current range is not the end, then wait 
+                    logger.debug("** not safe to query. Wait.")
                     time.sleep(2)
                     
                 else: # if safe to query
@@ -103,7 +104,7 @@ def live_data_reader(default_param,
                     # logger.info("read next query range: {:.2f}-{:.2f}".format(rri._current_lower_value, rri._current_upper_value))
                     
                     lower, upper = rri._current_lower_value, rri._current_upper_value
-                    logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(lower, upper, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+                    logger.info("** current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(lower, upper, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
                     next_batch = next(rri)
                     
 
@@ -118,15 +119,11 @@ def live_data_reader(default_param,
                             discard += 1
                             # logger.info("Discard a fragment with length less than 3")
 
-                    logger.info("qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
-                    try:
-                        logger.info("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
-                    except Exception as e:
-                        print(e)
-                        pass
+                    logger.info("** qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
+                    
                         
             else: # if queue has sufficient number of items, then wait before the next iteration (throttle)
-                logger.info("queue size is sufficient")     
+                logger.info("** queue size is sufficient")     
                 time.sleep(2)
           
          
@@ -134,6 +131,7 @@ def live_data_reader(default_param,
         except StopIteration:  # rri reaches the end
             logger.warning("live_data_reader reaches the end of query range iteration. Exit")
             break
+        
         
         except Exception as e:
             if sig_hdlr.run:
