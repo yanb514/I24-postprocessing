@@ -114,7 +114,7 @@ if __name__ == '__main__':
         # Start up each process.
         # Can't make these subsystems daemon processes because they will have their own children; we'll use a
         # different method of cleaning up child processes on exit.
-        subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
+        subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=True)
         subsys_process.start()
         # Put the process object in the dictionary, keyed by the process name.
         subsystem_process_objects[process_name] = subsys_process
