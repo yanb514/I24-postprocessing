@@ -103,7 +103,7 @@ def live_data_reader(default_param,
                         break
                     # logger.info("read next query range: {:.2f}-{:.2f}".format(rri._current_lower_value, rri._current_upper_value))
                     
-                    lower, upper = rri._current_lower_value, rri._current_upper_value
+                    # lower, upper = rri._current_lower_value, rri._current_upper_value
                     next_batch = next(rri)
                     
 
@@ -125,7 +125,12 @@ def live_data_reader(default_param,
                 logger.info("queue size is sufficient")     
                 time.sleep(2)
           
-        except Exception as e: # rri reaches the end
+            
+        except StopIteration:  # rri reaches the end
+            logger.warning("live_data_reader reaches the end of query range iteration. Exit")
+            break
+        
+        except Exception as e:
             if sig_hdlr.run:
                 logger.warning("live_data_reader reaches the end of query range iteration. Exit. Exception:{}".format(e))
             else:
