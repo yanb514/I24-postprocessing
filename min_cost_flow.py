@@ -396,6 +396,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
         run = True
         count_sigint = 0 # count the number of times a SIGINT is received
         count_sigusr = 0
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         
         def __init__(self):
             signal.signal(signal.SIGINT, self.soft_stop)

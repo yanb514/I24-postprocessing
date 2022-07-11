@@ -50,6 +50,8 @@ def live_data_reader(default_param,
 
         run = True
         count = 0 # count the number of times a signal is received
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        
         def __init__(self):
             signal.signal(signal.SIGINT, self.shut_down)
             signal.signal(signal.SIGUSR1, self.shut_down)
