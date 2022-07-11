@@ -136,6 +136,7 @@ if __name__ == '__main__':
         manager_logger.info("Manager received hard stop signal")
         for pid_name, pid_val in pid_tracker.items():
             os.kill(pid_val, signal.SIGKILL)
+            time.sleep(2)
             subsystem_process_objects.pop(pid_name)
             manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
        
@@ -143,6 +144,7 @@ if __name__ == '__main__':
         manager_logger.info("Manager received soft stop signal")
         for pid_name, pid_val in pid_tracker.items():
             os.kill(pid_val, signal.SIGINT)
+            time.sleep(2)
             subsystem_process_objects.pop(pid_name)
             manager_logger.info("Sent SIGINT to PID={} ({})".format(pid_val, pid_name))
             
@@ -150,6 +152,7 @@ if __name__ == '__main__':
         manager_logger.info("Manager received finish-processing signal")
         for pid_name, pid_val in pid_tracker.items():
             os.kill(pid_val, signal.SIGUSR1)
+            time.sleep(2)
             subsystem_process_objects.pop(pid_name)
             manager_logger.info("Sent SIGUSR1 to PID={} ({})".format(pid_val, pid_name))
             
