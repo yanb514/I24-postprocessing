@@ -191,8 +191,12 @@ if __name__ == '__main__':
             if not child_process.is_alive():
                 # do not restart if in one of the stopping modes
                 if parameters.mode in ["hard_stop", "soft_stop", "finish"]:
-                    live_process_objects.pop(pid_name)
-                    print("RIP {} {}".format(pid_name, child_process))
+                    try:
+                        live_process_objects.pop(pid_name)
+                        print("RIP {} {}".format(pid_name, child_process))
+                    except:
+                        pass
+                    
                     
                 else:
                     # Process has died. Let's restart it.
