@@ -413,6 +413,11 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             self.count_sigusr += 1
             stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigusr))
             
+            siginfo = signal.sigwaitinfo({signal.SIGUSR1})
+            print("py: got %d from %d by user %d\n" % (siginfo.si_signo,
+                                                     siginfo.si_pid,
+                                                     siginfo.si_uid))
+            
     sig_hdlr = SignalHandler()
     
     
