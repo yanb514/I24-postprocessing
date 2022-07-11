@@ -91,8 +91,6 @@ def live_data_reader(default_param,
                     first_change_time = max(first_insert_change["fullDocument"]["last_timestamp"], first_change_time)
                     safe_query_time = first_change_time - t_buffer
                     dbr.range_iter_stop = safe_query_time
-    
-                # logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
                 
                 if rri._current_upper_value > safe_query_time and rri._current_upper_value < rri._reader.range_iter_stop: # if not safe to query and current range is not the end, then wait 
                     time.sleep(2)
@@ -125,7 +123,9 @@ def live_data_reader(default_param,
                 logger.info("queue size is sufficient")     
                 time.sleep(2)
           
-            
+         
+            logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+        
         except StopIteration:  # rri reaches the end
             logger.warning("live_data_reader reaches the end of query range iteration. Exit")
             break
