@@ -216,7 +216,8 @@ if __name__ == '__main__':
                     
             else:
                 # Process is running; do nothing.
-                print("Long live {}! {}".format(pid_name, child_process))
+                if pid_name in live_process_objects:
+                    print("Long live {}! {}".format(pid_name, child_process))
                 pass
         
         
