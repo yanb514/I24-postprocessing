@@ -103,11 +103,11 @@ if __name__ == '__main__':
 
     # Stores the actual mp.Process objects so they can be controlled directly.
     # PIDs are also tracked for now, but not used for management.
-    subsystem_process_objects = {}
+    live_process_objects = {}
 
-    # Start all processes for the first time and put references to those processes in `subsystem_process_objects`
+    # Start all processes for the first time and put references to those processes in `live_process_objects`
     # manager_logger.info("Post-process manager beginning to spawn processes")
-    live_processes = set()
+
     for process_name, (process_function, process_args) in processes_to_spawn.items():
         manager_logger.info("Post-process manager spawning {}".format(process_name))
         # print("Post-process manager spawning {}".format(process_name))
@@ -117,11 +117,10 @@ if __name__ == '__main__':
         subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
         subsys_process.start()
         # Put the process object in the dictionary, keyed by the process name.
-        subsystem_process_objects[process_name] = subsys_process
+        live_process_objects[process_name] = subsys_process
         # Each process is responsible for putting its own children's PIDs in the tracker upon creation (if it spawns).
         pid_tracker[process_name] = subsys_process.pid
         
-        live_processes.add(process_name)
 
     # manager_logger.info("Started all processes.")
     print("Started all processes.")
@@ -137,7 +136,7 @@ if __name__ == '__main__':
         for pid_name, pid_val in pid_tracker.items():
             os.kill(pid_val, signal.SIGKILL)
             time.sleep(2)
-            subsystem_process_objects.pop(pid_name)
+            live_process_objects.pop(pid_name)
             manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
        
     def soft_stop_hdlr(sig, action):
@@ -145,7 +144,7 @@ if __name__ == '__main__':
         for pid_name, pid_val in pid_tracker.items():
             os.kill(pid_val, signal.SIGINT)
             time.sleep(2)
-            subsystem_process_objects.pop(pid_name)
+            live_process_objects.pop(pid_name)
             manager_logger.info("Sent SIGINT to PID={} ({})".format(pid_val, pid_name))
             
     def finish_hdlr(sig, action):
@@ -153,7 +152,7 @@ if __name__ == '__main__':
         for pid_name, pid_val in pid_tracker.items():
             os.kill(pid_val, signal.SIGUSR1)
             time.sleep(2)
-            subsystem_process_objects.pop(pid_name)
+            live_process_objects.pop(pid_name)
             manager_logger.info("Sent SIGUSR1 to PID={} ({})".format(pid_val, pid_name))
             
     
@@ -178,34 +177,35 @@ if __name__ == '__main__':
         
         # for each process that is being managed at this level, check if it's still running
         time.sleep(2)
-        if len(subsystem_process_objects) == 0:
+        if len(live_process_objects) == 0:
             manager_logger.info("None of the processes is alive")
             break
         
         for pid_name, pid_val in pid_tracker.items():
-            child_process = subsystem_process_objects[pid_name]
-            print(child_process.name, child_process.is_alive())
+            child_process = live_process_objects[pid_name]
+            # print(child_process.name, child_process.is_alive())
             
             if not child_process.is_alive():
                 # do not restart if in one of the stopping modes
                 if parameters.mode not in ["hard_stop", "soft_stop", "finish"]:
-                    subsystem_process_objects.pop(pid_name)
+                    live_process_objects.pop(pid_name)
                     print("RIP {} {}".format(pid_name, child_process))
                     
                 else:
                     # Process has died. Let's restart it.
                     # Copy its name out of the existing process object for lookup and restart.
-                    process_name = child_process.name     
-                    manager_logger.warning("Restarting process: {}".format(process_name))
-                    
-                    # Get the function handle and function arguments to spawn this process again.
-                    process_function, process_args = processes_to_spawn[process_name]
-                    # Restart the process the same way we did originally.
-                    subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
-                    subsys_process.start()
-                    # Re-write the process object in the dictionary and update its PID.
-                    subsystem_process_objects[pid_name] = subsys_process
-                    pid_tracker[process_name] = subsys_process.pid
+                    process_name = child_process.name  
+                    if process_name in live_process_objects.keys():
+                        manager_logger.warning("Restarting process: {}".format(process_name))
+                        
+                        # Get the function handle and function arguments to spawn this process again.
+                        process_function, process_args = processes_to_spawn[process_name]
+                        # Restart the process the same way we did originally.
+                        subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
+                        subsys_process.start()
+                        # Re-write the process object in the dictionary and update its PID.
+                        live_process_objects[pid_name] = subsys_process
+                        pid_tracker[process_name] = subsys_process.pid
                     
             else:
                 # Process is running; do nothing.
