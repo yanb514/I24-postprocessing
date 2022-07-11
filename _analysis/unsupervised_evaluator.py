@@ -276,4 +276,4 @@ if __name__ == '__main__':
     # ue.evaluate()
     # ue.get_stats()
     
-    ue.delete_collection(["batch_stitched", "batch_nll_modified"])
+    ue.delete_collection(["tracking_v1_stitched", "tracking_v1_nll_modified"])
