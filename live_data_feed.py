@@ -76,6 +76,8 @@ def live_data_reader(default_param,
 
 
     discard = 0
+    no_change_time = 0
+    start_timeout = time.time()
     
     while sig_hdlr.run:
         
@@ -92,6 +94,16 @@ def live_data_reader(default_param,
                     first_change_time = max(first_insert_change["fullDocument"]["last_timestamp"], first_change_time)
                     safe_query_time = first_change_time - t_buffer
                     dbr.range_iter_stop = safe_query_time
+                    no_change_time = 0
+                    start_timeout = time.time()
+                    
+                else: # if no change event in this iteration
+                    no_change_time += time.time() - start_timeout
+                    start_timeout = time.time()
+                    if no_change_time > 8: # this time out should be slightly less than stitcher get timeout
+                        logger.debug("** Have no updates for 8 seconds. Increment safe_query_time.")
+                        safe_query_time += default_param.range_increment
+                    
                 
                 if rri._current_upper_value > safe_query_time and rri._current_upper_value < rri._reader.range_iter_stop: # if not safe to query and current range is not the end, then wait 
                     logger.debug("** not safe to query. Wait.")
