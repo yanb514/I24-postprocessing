@@ -182,21 +182,20 @@ if __name__ == '__main__':
             manager_logger.info("None of the processes is alive")
             break
         
-        for child_key in subsystem_process_objects.keys():
-            child_process = subsystem_process_objects[child_key]
-            if child_process.is_alive():
-                # Process is running; do nothing.
-                print("Long live {}! {}".format(child_key, child_process))
-                pass
-            else:
-                # Process has died. Let's restart it.
-                # Copy its name out of the existing process object for lookup and restart.
+        for pid_name, pid_val in pid_tracker.items():
+            child_process = subsystem_process_objects[pid_name]
+            
+            if not child_process.is_alive():
+                # do not restart if in one of the stopping modes
                 if parameters.mode not in ["hard_stop", "soft_stop", "finish"]:
-                    process_name = child_process.name
+                    subsystem_process_objects.pop(pid_name)
+                    print("RIP {} {}".format(pid_name, child_process))
                     
+                else:
+                    # Process has died. Let's restart it.
+                    # Copy its name out of the existing process object for lookup and restart.
+                    process_name = child_process.name     
                     manager_logger.warning("Restarting process: {}".format(process_name))
-                    # print("RIP {} {}".format(process_name, child_process))
-    
                     
                     # Get the function handle and function arguments to spawn this process again.
                     process_function, process_args = processes_to_spawn[process_name]
@@ -204,10 +203,13 @@ if __name__ == '__main__':
                     subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
                     subsys_process.start()
                     # Re-write the process object in the dictionary and update its PID.
-                    subsystem_process_objects[child_key] = subsys_process
+                    subsystem_process_objects[pid_name] = subsys_process
                     pid_tracker[process_name] = subsys_process.pid
-          
-
+                    
+            else:
+                # Process is running; do nothing.
+                print("Long live {}! {}".format(pid_name, child_process))
+                pass
         
         
     manager_logger.info("Exit manager")
