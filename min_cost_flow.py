@@ -471,12 +471,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 counter = 0
             counter += 1
         
-        # except (KeyboardInterrupt, BrokenPipeError, EOFError, AttributeError):
-        #     # handle SIGINT here
-        #     del dbw
-        #     
-        #     stitcher_logger.warning("SIGINT detected. Exiting stitcher")
-        #     break
+        
         except Exception as e: 
             if sig_hdlr.run:
                 stitcher_logger.warning("No signals received. Exception: {}".format(e))
@@ -485,7 +480,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             break
             
         
-    stitcher_logger.info("Exiting stitcher while loop")
+    stitcher_logger.info("Exit stitcher while loop")
     del dbw
     stitcher_logger.info("DBWriter closed. Exit.")
     sys.exit()
