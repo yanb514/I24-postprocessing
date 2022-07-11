@@ -60,8 +60,6 @@ def live_data_reader(default_param,
             self.count += 1
             logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
             
-            
-            
     sig_hdlr = SignalHandler()  
     
     

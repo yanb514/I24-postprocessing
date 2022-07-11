@@ -379,14 +379,42 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     # Signal handling: 
     # SIGINT (sent from parent process) raises KeyboardInterrupt,  close dbw and soft exit
     # SIGUSR1 is ignored. The process terminates when queue is empty
-    def sigusr_handler(sigusr, frame):
-        stitcher_logger.warning("SIGUSR1 detected in stitcher. Finish processing current queues.")
-        signal.signal(sigusr, signal.SIG_IGN)    
-        signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+    # def sigusr_handler(sigusr, frame):
+    #     stitcher_logger.warning("SIGUSR1 detected in stitcher. Finish processing current queues.")
+    #     signal.signal(sigusr, signal.SIG_IGN)    
+    #     signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
         
-    # signal.signal(signal.SIGUSR1, handler)
-    signal.signal(signal.SIGINT, signal.SIG_IGN) #ignore signal sent from keyboard.
-    signal.signal(signal.SIGUSR1, sigusr_handler)
+    # # signal.signal(signal.SIGUSR1, handler)
+    # signal.signal(signal.SIGINT, signal.SIG_IGN) #ignore signal sent from keyboard.
+    # signal.signal(signal.SIGUSR1, sigusr_handler)
+    
+    
+    
+    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
+    class SignalHandler():
+
+        run = True
+        count_sigint = 0 # count the number of times a SIGINT is received
+        count_sigusr = 0
+        
+        def __init__(self):
+            signal.signal(signal.SIGINT, self.soft_stop)
+            signal.signal(signal.SIGUSR1, self.finish_processing)
+        
+        def soft_stop(self, *args):
+            signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+            self.run = False
+            self.count_sigint += 1
+            stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigint))
+            
+        def finish_processing(self, *args):
+            # do nothing
+            self.count_sigusr += 1
+            stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigusr))
+            
+    sig_hdlr = SignalHandler()
+    
+    
     
     # Make a database connection for writing
     schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
@@ -400,7 +428,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     m = MOTGraphSingle(ATTR_NAME, parameters)
     counter = 0 # iterations for log
     
-    while True:
+    while sig_hdlr.run:
         try:
             try:
                 raw_fgmt = fragment_queue.get(timeout = parameters.raw_trajectory_queue_get_timeout)
@@ -443,11 +471,17 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 counter = 0
             counter += 1
         
-        except (KeyboardInterrupt, BrokenPipeError, EOFError, AttributeError):
-            # handle SIGINT here
-            del dbw
-            stitcher_logger.info("DBWriter closed. {}")
-            stitcher_logger.warning("SIGINT detected. Exiting stitcher")
+        # except (KeyboardInterrupt, BrokenPipeError, EOFError, AttributeError):
+        #     # handle SIGINT here
+        #     del dbw
+        #     stitcher_logger.info("DBWriter closed. {}")
+        #     stitcher_logger.warning("SIGINT detected. Exiting stitcher")
+        #     break
+        except Exception as e: 
+            if sig_hdlr.run:
+                stitcher_logger.warning("No signals received. Exception: {}".format(e))
+            else:
+                stitcher_logger.warning("SIGINT detected. Exception:{}".format(e))
             break
             
     stitcher_logger.info("Exiting stitcher while loop")
