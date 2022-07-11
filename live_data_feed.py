@@ -101,7 +101,8 @@ def live_data_reader(default_param,
                         break
                     # logger.info("read next query range: {:.2f}-{:.2f}".format(rri._current_lower_value, rri._current_upper_value))
                     
-                    # lower, upper = rri._current_lower_value, rri._current_upper_value
+                    lower, upper = rri._current_lower_value, rri._current_upper_value
+                    logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(lower, upper, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
                     next_batch = next(rri)
                     
 
