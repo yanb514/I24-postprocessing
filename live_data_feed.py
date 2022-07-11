@@ -119,15 +119,18 @@ def live_data_reader(default_param,
                             # logger.info("Discard a fragment with length less than 3")
 
                     logger.info("qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
-                        
+                    try:
+                        logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+                    except Exception as e:
+                        print(e)
+                        pass
                         
             else: # if queue has sufficient number of items, then wait before the next iteration (throttle)
                 logger.info("queue size is sufficient")     
                 time.sleep(2)
           
          
-            logger.debug("* current lower: {}, upper: {}, safe_query_time: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, safe_query_time, rri._reader.range_iter_start, rri._reader.range_iter_stop))
-        
+            
         except StopIteration:  # rri reaches the end
             logger.warning("live_data_reader reaches the end of query range iteration. Exit")
             break
