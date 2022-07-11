@@ -474,7 +474,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
         # except (KeyboardInterrupt, BrokenPipeError, EOFError, AttributeError):
         #     # handle SIGINT here
         #     del dbw
-        #     stitcher_logger.info("DBWriter closed. {}")
+        #     
         #     stitcher_logger.warning("SIGINT detected. Exiting stitcher")
         #     break
         except Exception as e: 
@@ -484,9 +484,10 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 stitcher_logger.warning("SIGINT detected. Exception:{}".format(e))
             break
             
+        
     stitcher_logger.info("Exiting stitcher while loop")
-    # del stitcher_logger
-    # os.kill(os.getppid(), signal.SIGTERM) # for mac, really kill this process so that p.is_alive = False -> permissionError
+    del dbw
+    stitcher_logger.info("DBWriter closed. Exit.")
     sys.exit()
         
     return   
