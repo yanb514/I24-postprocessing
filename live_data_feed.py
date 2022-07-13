@@ -118,13 +118,13 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
     pipeline = [{'$match': {'operationType': 'insert'}}]
     
     # Initialize rri to raise StopIteration exception
-    rri = dbr.read_query_range(range_parameter='last_timestamp', range_greater_than =-1-default_param.range_increment , range_less_than=-1, range_increment=default_param.range_increment)
+    rri = dbr.read_query_range(range_parameter='last_timestamp', 
+                               range_greater_than =-1-default_param.range_increment , range_less_than=-1, 
+                               range_increment=default_param.range_increment,
+                               query_sort = ("last_timestamp", "ASC"))
     safe_query_time = -1
     dbr.range_iter_stop = safe_query_time
     
-    
-    # print("change stream being listened")
-    # resume_after = None
 
     # have an internal time out for changes
     with dbr.collection.watch(pipeline) as stream:
@@ -143,6 +143,10 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
             # the server with getMore requests when no changes are
             # available.
             # time.sleep(10)
+        # end up here where the stream is no longer alive
+        print("stream is no longer alive")
+        stream.close()
+    print("stream closed")
     
     
     
