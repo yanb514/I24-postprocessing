@@ -141,7 +141,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
             # print("Current resume token: %r" % (stream.resume_token,))
             if change is not None:
                 resume_token = stream.resume_token
-                print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
+                # print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
                 # push to heap
                 safe_query_time = change["fullDocument"]['first_timestamp']-t_buffer
                 heapq.heappush(heap,(change["fullDocument"]['last_timestamp'],change["fullDocument"]['_id'],change['fullDocument']))
@@ -149,7 +149,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
 
                 while heap and heap[0][0] < safe_query_time:
                     _, _,doc = heapq.heappop(heap)
-                    print("pop: {},".format(doc["last_timestamp"]))
+                    # print("pop: {},".format(doc["last_timestamp"]))
                     if len(doc["timestamp"]) > 3: 
                         if doc["direction"] == 1:
                             # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
@@ -163,19 +163,20 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
             # Sleep for a while before trying again to avoid flooding
             # the server with getMore requests when no changes are
             # available.
-            print("no change. sleep")
+            # print("no change. sleep")
             time.sleep(2)
             
         # end up here where the stream is no longer alive
-        print("stream is no longer alive or SIGINT/SIGINT received")
+        logger.info("stream is no longer alive or SIGINT/SIGINT received")
         stream.close()
-        print("stream closed")
+        del dbr 
+        logger.info("stream closed. Pop the rest of heap")
         
 
     # pop all the rest of heap
     while heap:
         _, _, doc = heapq.heappop(heap)
-        print("pop: {}".format(doc["last_timestamp"]))
+        # print("pop: {}".format(doc["last_timestamp"]))
         if len(doc["timestamp"]) > 3: 
             if doc["direction"] == 1:
                 # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
@@ -185,7 +186,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
         else:
             discard += 1
             
-    del dbr 
+    
     logger.info("Discarded {} short tracks".format(discard))
     logger.info("DBReader closed. Exiting live_data_reader while loop.")
     sys.exit() # for linux
