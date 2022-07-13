@@ -88,7 +88,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
     
     # Connect to a database reader
     if read_from_simulation:
-        time.sleep(4) # wait for change_stream_simulator to start
+        # time.sleep(4) # wait for change_stream_simulator to start
         raw_collection = default_param.raw_collection + "_simulated"
     else:
         raw_collection = default_param.raw_collection
@@ -117,6 +117,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
     # print("change stream being listened")
     # resume_after = None
 
+    # have an internal time out for changes
     # with dbr.collection.watch(pipeline) as stream:
     #     # close the stream if SIGINT received
     #     while stream.alive:
@@ -133,6 +134,8 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
     #         # the server with getMore requests when no changes are
     #         # available.
     #         time.sleep(10)
+    
+    # wait indefinitely for changes
     try:
         resume_token = None
         # pipeline = [{'$match': {'operationType': operation_type}}]
