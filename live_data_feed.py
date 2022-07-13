@@ -139,7 +139,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 2, min_qu
                 print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
                 # push to heap
                 safe_query_time = change["fullDocument"]['first_timestamp']-t_buffer
-                print(type(change["fullDocument"]['last_timestamp'], change["fullDocument"]))
+                print(type(change["fullDocument"]['last_timestamp']), type(change["fullDocument"]))
                 heapq.heappush(heap, (change["fullDocument"]['last_timestamp'], change['fullDocument']))
                 # check if heap[0] is ready, pop until it's not ready
                 while heap and heap[0][0] < safe_query_time:
