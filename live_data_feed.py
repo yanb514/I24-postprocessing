@@ -18,13 +18,31 @@ import os
 import heapq
 
 
-
+class SignalHandler():
+    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
+    run = True
+    # count = 0 # count the number of times a signal is received
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.shut_down)
+        signal.signal(signal.SIGUSR1, self.shut_down)
+        signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+    
+    def shut_down(self, *args):
+        self.run = False
+        # self.count += 1
+        # logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
+        
+        
 def change_stream_simulator(default_param, insert_rate):
     '''
     When no live-streaming data, simulate one by reading from a collection (default_param.raw_collection), and insert to a new collection (write_to_collection)
     insert_rate: insert no. of documents per second
     query in ascending first_timestamp, such that the write_to_collection is slightly out of order in terms of last_timestamp
     '''
+    sig_hdlr = SignalHandler()  
+    
     # initialize the logger
     logger = log_writer.logger
     logger.set_name("change_stream_simulator")
@@ -50,6 +68,9 @@ def change_stream_simulator(default_param, insert_rate):
     count = 0
     # time.sleep(3) # wait for change stream to get initialized
     for doc in cur:
+        if not sig_hdlr.run:
+            logger.info("SIGINT/SIGUSR1 received in change_stream_simulator.")
+            break
         time.sleep(1/insert_rate)
         print("insert: {}".format(doc["first_timestamp"]))
         doc.pop("_id")
@@ -58,7 +79,8 @@ def change_stream_simulator(default_param, insert_rate):
         if count % 100 == 0:
             logger.info("{} docs written to dbw".format(count))
             time.sleep(3) 
-    
+                
+        
     # exit
     logger.info(f"Finished writing {count} to simulated collection. Exit")
     
@@ -98,24 +120,6 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
     else:
         raw_collection = default_param.raw_collection
     dbr = DBReader(default_param, collection_name=raw_collection)
-
-
-    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
-    class SignalHandler():
-
-        run = True
-        count = 0 # count the number of times a signal is received
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-        
-        def __init__(self):
-            signal.signal(signal.SIGINT, self.shut_down)
-            signal.signal(signal.SIGUSR1, self.shut_down)
-            signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
-        
-        def shut_down(self, *args):
-            self.run = False
-            self.count += 1
-            logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
             
     sig_hdlr = SignalHandler()  
     pipeline = [{'$match': {'operationType': 'insert'}}]
@@ -163,7 +167,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
             time.sleep(2)
             
         # end up here where the stream is no longer alive
-        print("stream is no longer alive or SIGINT received")
+        print("stream is no longer alive or SIGINT/SIGINT received")
         stream.close()
         print("stream closed")
         
@@ -221,23 +225,7 @@ def static_data_reader(default_param, east_queue, west_queue, t_buffer = 100, mi
     # temporary: start from min and end at max
     rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param.range_increment)
 
-    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
-    class SignalHandler():
-
-        run = True
-        count = 0 # count the number of times a signal is received
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-        
-        def __init__(self):
-            signal.signal(signal.SIGINT, self.shut_down)
-            signal.signal(signal.SIGUSR1, self.shut_down)
-            signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
-        
-        def shut_down(self, *args):
-            self.run = False
-            self.count += 1
-            logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
-            
+    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way    
     sig_hdlr = SignalHandler()  
     
     
