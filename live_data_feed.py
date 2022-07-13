@@ -138,7 +138,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 2, min_qu
                 resume_token = stream.resume_token
                 print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
                 # push to heap
-                safe_query_time = change["fullDocument"]['first_timestamp']-t_buffer
+                safe_query_time = change["fullDocument"]['last_timestamp']-t_buffer
                 
                 heapq.heappush(heap,(change["fullDocument"]['last_timestamp'],change["fullDocument"]['_id'],change['fullDocument']))
                 # check if heap[0] is ready, pop until it's not ready
@@ -160,7 +160,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 2, min_qu
             # Sleep for a while before trying again to avoid flooding
             # the server with getMore requests when no changes are
             # available.
-            time.sleep(5) # this wait time should be longer than insert pause time, otherwise the stream will die
+            
         # end up here where the stream is no longer alive
         print("stream is no longer alive")
         # stream.close()
@@ -174,11 +174,29 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 2, min_qu
     # try:
     #     with dbr.collection.watch(pipeline=pipeline,resume_after=resume_token) as stream:
     #         for insert_change in stream:
-    #             print("Change document: %r" % (insert_change['fullDocument']['first_timestamp'],))
-    #             # block until this document is ready to put to queue
-    #             if insert_change['fullDocument']['last_timestamp'] < safe_query_time
-    #             east_queue.put(insert_change['fullDocument']) 
+    #             if change is not None:
+    #                 print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
+    #                 # push to heap
+    #                 safe_query_time = change["fullDocument"]['last_timestamp']-t_buffer
+                    
+    #                 heapq.heappush(heap,(change["fullDocument"]['last_timestamp'],change["fullDocument"]['_id'],change['fullDocument']))
+    #                 # check if heap[0] is ready, pop until it's not ready
+                    
+    #                 print(heap[0][0], safe_query_time)
+    #                 while heap and heap[0][0] < safe_query_time:
+    #                     _, _,doc = heapq.heappop(heap)
+    #                     print("pop: {}, {}".format(doc["first_timestamp"],doc["last_timestamp"]))
+    #                     if len(doc["timestamp"]) > 3: 
+    #                         if doc["direction"] == 1:
+    #                             # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
+    #                             east_queue.put(doc)
+    #                         else:
+    #                             west_queue.put(doc)
+    #                     else:
+    #                         discard += 1
+    #                 continue
     #             resume_token = stream.resume_token
+                
     
     # except Exception as e:
     #     print(e)
@@ -187,7 +205,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 2, min_qu
     # logger.info("outside of while loop:qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
     # pop all the rest of heap
     while heap:
-        _, doc = heapq.heappop(heap)
+        _, _, doc = heapq.heappop(heap)
         print("pop: {}, {}".format(doc["first_timestamp"],doc["last_timestamp"]))
         if len(doc["timestamp"]) > 3: 
             if doc["direction"] == 1:
