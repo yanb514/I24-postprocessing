@@ -139,11 +139,9 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 2, min_qu
                 print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
                 # push to heap
                 safe_query_time = change["fullDocument"]['last_timestamp']-t_buffer
-                
                 heapq.heappush(heap,(change["fullDocument"]['last_timestamp'],change["fullDocument"]['_id'],change['fullDocument']))
                 # check if heap[0] is ready, pop until it's not ready
-                
-                print(heap[0][0], safe_query_time)
+
                 while heap and heap[0][0] < safe_query_time:
                     _, _,doc = heapq.heappop(heap)
                     print("pop: {}, {}".format(doc["first_timestamp"],doc["last_timestamp"]))
@@ -160,6 +158,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 2, min_qu
             # Sleep for a while before trying again to avoid flooding
             # the server with getMore requests when no changes are
             # available.
+            print("no change. sleep")
             time.sleep(3)
             
         # end up here where the stream is no longer alive
