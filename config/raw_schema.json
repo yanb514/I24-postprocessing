@@ -75,7 +75,7 @@
                 "description": "The last x_position in the fragment."
                 },
             "camera_snapshots": {
-                "bsonType": "double",
+                "bsonType": ["double", "string"],
                 "description": ""
                 },
             "flags": {
@@ -86,8 +86,11 @@
                 "description": "Array of any string flags describing the data."
                 },
             "length": {
-                "bsonType": "double",
-                "description": "vehicle length in feet."
+                "bsonType": "array",
+                "items": {
+                    "bsonType": "double"
+                    },
+                "description": "vehicle length in feet"
                 },
             "width": {
                 "bsonType": "array",

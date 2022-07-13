@@ -35,9 +35,12 @@ def change_stream_simulator(default_param, insert_rate):
     dbw = DBWriter(default_param, collection_name = write_to_collection, schema_file = raw_schema_path)
     dbw.collection.drop()
     dbw = DBWriter(default_param, collection_name = write_to_collection, schema_file = raw_schema_path)
+    logger.info("DBWriter initiated")
     
     # initiate data reader
     dbr = DBReader(default_param, collection_name=default_param.raw_collection)
+    logger.info("DBReader initiated")
+    
     start = dbr.get_min("first_timestamp") - 1e-6
     end = dbr.get_max("first_timestamp") + 1e-6
     cur = dbr.get_range("first_timestamp", start, end)
@@ -45,6 +48,7 @@ def change_stream_simulator(default_param, insert_rate):
     # write to simulated collection
     for doc in cur:
         time.sleep(1/insert_rate)
+        doc.pop("_id")
         dbw.write_one_trajectory(thread = False, **doc)
     
     # exit
