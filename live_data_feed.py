@@ -144,7 +144,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
             # Sleep for a while before trying again to avoid flooding
             # the server with getMore requests when no changes are
             # available.
-            time.sleep(1)
+            time.sleep(5)
         # end up here where the stream is no longer alive
         print("stream is no longer alive")
         stream.close()
