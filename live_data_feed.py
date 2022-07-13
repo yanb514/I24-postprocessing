@@ -42,7 +42,7 @@ def change_stream_simulator(default_param, insert_rate):
     logger.info("DBReader initiated")
     
     start = dbr.get_min("first_timestamp") - 1e-6
-    end = dbr.get_max("first_timestamp") + 1e-6
+    end = start + 20
     cur = dbr.get_range("first_timestamp", start, end)
     
     # write to simulated collection
@@ -54,7 +54,7 @@ def change_stream_simulator(default_param, insert_rate):
         doc.pop("_id")
         dbw.write_one_trajectory(thread = False, **doc)
         count += 1
-        if count % 20 == 0:
+        if count % 100 == 0:
             logger.info("{} docs written to dbw".format(count))
     
     # exit
