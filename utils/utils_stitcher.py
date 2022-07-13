@@ -27,6 +27,7 @@ def _compute_stats(track):
     track['fitx'] = fitx
     track['fity'] = fity
     return track
+
    
 # define cost
 def min_nll_cost(track1, track2, TIME_WIN, VARX, VARY):
@@ -138,34 +139,38 @@ def line_regress(track, with_filter = True):
 
 
 @catch_critical(errors = (Exception))
-def cost_1(track1, track2, TIME_WIN, VARX, VARY):
+def cost_1(track1, track2, TIME_WIN, VARX, VARY, with_filter = True):
     '''
-    adjustable cone
+    1. add filters before linear regression fit
+    2. cone offset to consider time-overlapped fragments and allow initial uncertainties
     '''
 
     cone_offset = 5
     n = 30 # consider n measurements
     
-    if len(track1.t) >= len(track2.t):
-        anchor = 1
-        fitx, fity = line_regress(track1, with_filter = True)
+    # add filters to track
+    if with_filter:
+        if not hasattr(track1, "filter"):
+            track1 = add_filter(track1)
         if not hasattr(track2, "filter"):
             track2 = add_filter(track2)
-        meast = [track2.t[i] for i in track2.filter]
-        measx = [track2.x[i] for i in track2.filter]
-        measy = [track2.y[i] for i in track2.filter]
+            
+    if len(track1.t) >= len(track2.t):
+        anchor = 1
+        fitx, fity = line_regress(track1, with_filter = with_filter)
+        meast = track2.t[track2.filter] if with_filter else track2.t
+        measx = track2.x[track2.filter] if with_filter else track2.x
+        measy = track2.y[track2.filter] if with_filter else track2.y
         meast = meast[:n]
         measx = measx[:n]
         measy = measy[:n]
         
     else:
         anchor = 2
-        fitx, fity = line_regress(track2, with_filter = True)
-        if not hasattr(track1, "filter"):
-            track1 = add_filter(track1)
-        meast = [track1.t[i] for i in track1.filter]
-        measx = [track1.x[i] for i in track1.filter]
-        measy = [track1.y[i] for i in track1.filter]
+        fitx, fity = line_regress(track2, with_filter = with_filter)
+        meast = track1.t[track1.filter] if with_filter else track1.t
+        measx = track1.x[track1.filter] if with_filter else track1.x
+        measy = track1.y[track1.filter] if with_filter else track1.y
         meast = meast[-n:]
         measx = measx[-n:]
         measy = measy[-n:]
@@ -182,9 +187,9 @@ def cost_1(track1, track2, TIME_WIN, VARX, VARY):
     tdiff = tdiff[:n] if anchor == 1 else tdiff[-n:] # cap length at ~1sec
     
     slope, intercept, r, p, std_err = fitx
-    targetx = slope * np.array(meast) + intercept
+    targetx = slope * meast + intercept
     slope, intercept, r, p, std_err = fity
-    targety = slope * np.array(meast) + intercept
+    targety = slope * meast + intercept
     
     const = -n/2*np.log(2*np.pi)
     var_term_x = 1/2*np.sum(np.log(VARX*tdiff))
@@ -192,13 +197,17 @@ def cost_1(track1, track2, TIME_WIN, VARX, VARY):
     var_term_y = 1/2*np.sum(np.log(VARY*tdiff))
     dev_term_y = 1/2*np.sum((measy-targety)**2/(VARY * tdiff))
     
-    print(f"VARX: {VARX}, VARY: {VARY}, [x_speed, x_intercept, x_rvalue, x_pvalue, x_std_err]:{fitx}, [y...]:{fity}, anchor={anchor}, n={n}")
     nllx = var_term_x + dev_term_x + const
     nlly = var_term_y + dev_term_y + const
     
     # nllx =  n/2*np.log(VARX) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(measx-targetx)**2)
     # nlly =  n/2*np.log(VARY) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(measy-targety)**2)
     cost = (nllx + nlly)/n
+    
+    print(f"id1: {track1.id}, id2: {track2.id}, cost:{cost}")
+    print(f"VARX: {VARX}, VARY: {VARY}, nllx:{nllx}, nlly:{nlly}")
+    print(f"[x_speed, x_intercept, x_rvalue, x_pvalue, x_std_err]:{fitx}, [y...]:{fity}, anchor={anchor}, n={n}")
+    
     # cost = nllx + nlly
     return cost
 
@@ -255,37 +264,3 @@ def nll_modified(track1, track2, TIME_WIN, VARX, VARY):
         
         return (nllx + nlly)/n 
 
-
-
-
-def nll_headway(track1, track2, TIME_WIN, VARX, VARY):
-    '''
-    the headway distance of the first point on the shorter track to the fitted line of the longer track
-    very bad
-    '''
-    INF = 10e6
-    if track2.first_timestamp - track1.last_timestamp > TIME_WIN: # if track2 starts TIME_WIN after track1 ends
-        return INF
-    
-    if len(track1.t) >= len(track2.t):
-        long = track1
-        short = track2
-    else:
-        long = track2
-        short = track1
-    
-    # first point on the shorter track
-    pt = [short.t[0], short.x[0], short.y[0]]
-    
-    # distance to the fitted line of the longer track
-    dx = abs(pt[1] - (pt[0] * long.fitx[0] + long.fitx[1]))
-    dy = abs(pt[2] - (pt[0] * long.fity[0] + long.fity[1]))
-    
-    # some scaled distance
-    d = 0.1*dx**2 + 0.9*dy**2
-    
-    # cost = nll(track1, track2, TIME_WIN, VARX, VARY)
-    # if cost < 3: 
-    #     print(cost)
-    # print("*", track1.id, track2.id, d, 0.1*d-3)  
-    return 0.8*d-3

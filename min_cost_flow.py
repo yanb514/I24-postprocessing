@@ -553,7 +553,7 @@ if __name__ == '__main__':
 
     from bson.objectid import ObjectId
     fragment_queue = queue.Queue()
-    f_ids = [ObjectId('62c713dfc77930b8d9533454'), ObjectId('62c713fbc77930b8d9533462')]
+    f_ids = [ObjectId('62c71485c77930b8d95334af'), ObjectId('62c71499c77930b8d95334ba')]
     raw = DBReader(parameters, username = "i24-data", collection_name="batch_5_07072022")
     for f_id in f_ids:
         f = raw.find_one("_id", f_id)
@@ -611,7 +611,6 @@ if __name__ == '__main__':
         ax2.set_title("time vs. y")
         ax3.scatter(f["x_position"], f["y_position"], s=0.5, label=f_id)
         ax3.set_title("x vs. y")
-        print(f_id)
     plt.legend()
     
     # plot runtime

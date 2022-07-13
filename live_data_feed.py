@@ -9,6 +9,7 @@ Live data read should be only one process, and distribute to 2 queues (east/west
 two seperate live_data_feed processes will mess up the change stream
 """
 from i24_database_api.db_reader import DBReader
+from i24_database_api.db_writer import DBWriter
 import i24_logger.log_writer as log_writer
 import time
 import signal
@@ -17,8 +18,42 @@ import os
 
 
 
-def live_data_reader(default_param,
-                     east_queue, west_queue, t_buffer = 100, min_queue_size = 1000):
+def change_stream_simulator(default_param, insert_rate):
+    '''
+    When no live-streaming data, simulate one by reading from a collection (default_param.raw_collection), and insert to a new collection (write_to_collection)
+    insert_rate: insert no. of documents per second
+    query in ascending first_timestamp, such that the write_to_collection is slightly out of order in terms of last_timestamp
+    '''
+    # initialize the logger
+    logger = log_writer.logger
+    logger.set_name("change_stream_simulator")
+    setattr(logger, "_default_logger_extra",  {})
+    
+    # reset the new collection
+    write_to_collection = default_param.raw_collection + "_simulated"
+    raw_schema_path = os.path.join(os.environ["user_config_directory"],default_param.raw_schema_path)
+    dbw = DBWriter(default_param, collection_name = write_to_collection, schema_file = raw_schema_path)
+    dbw.collection.drop()
+    dbw = DBWriter(default_param, collection_name = write_to_collection, schema_file = raw_schema_path)
+    
+    # initiate data reader
+    dbr = DBReader(default_param, collection_name=default_param.raw_collection)
+    start = dbr.get_min("first_timestamp") - 1e-6
+    end = dbr.get_max("first_timestamp") + 1e-6
+    cur = dbr.get_range("first_timestamp", start, end)
+    
+    # write to simulated collection
+    for doc in cur:
+        time.sleep(1/insert_rate)
+        dbw.write_one_trajectory(thread = False, **doc)
+    
+    # exit
+    logger.info("Finished writing to simulated collection. Exit")
+    del dbr, dbw
+    sys.exit(0)
+    
+    
+def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_queue_size = 1000, read_from_simulation = True):
     """
     Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
         that it can be assured to be time-ordered. Refill data queue if the queue size is below a threshold AND the next query range is before change_stream t_max - t_buffer
@@ -41,7 +76,11 @@ def live_data_reader(default_param,
     setattr(logger, "_default_logger_extra",  {})
     
     # Connect to a database reader
-    dbr = DBReader(default_param, collection_name=default_param.raw_collection)
+    if read_from_simulation:
+        raw_collection = default_param.raw_collection + "_simulated"
+    else:
+        raw_collection = default_param.raw_collection
+    dbr = DBReader(default_param, collection_name=raw_collection)
     # temporary: start from min and end at max
     rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param.range_increment)
 

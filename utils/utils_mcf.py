@@ -3,7 +3,7 @@ import numpy as np
 import networkx as nx
 import queue
 from collections import deque
-from utils.utils_stitcher import min_nll_cost, nll, nll_headway, nll_modified, cost_1
+from utils.utils_stitcher import min_nll_cost, nll, nll_modified, cost_1
 
 class Node:
     '''
@@ -962,7 +962,7 @@ class MOTGraphSingle:
             # cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
             # cost = nll(fgmt, fragment, TIME_WIN, VARX, VARY)
             cost = cost_1(fgmt, fragment, TIME_WIN, VARX, VARY)
-            print(getattr(fgmt, self.attr), getattr(fragment, self.attr), cost)
+            # print(getattr(fgmt, self.attr), getattr(fragment, self.attr), cost)
             
             if cost <= 0:  # new edge points from new_id to existing nodes, with postive cost
                 fgmt_id = getattr(fgmt, self.attr)
