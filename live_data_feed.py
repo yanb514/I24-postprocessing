@@ -15,6 +15,7 @@ import time
 import signal
 import sys
 import os
+import heapq
 
 
 
@@ -56,7 +57,7 @@ def change_stream_simulator(default_param, insert_rate):
         count += 1
         if count % 100 == 0:
             logger.info("{} docs written to dbw".format(count))
-            time.sleep(3)
+            time.sleep(3) 
     
     # exit
     logger.info(f"Finished writing {count} to simulated collection. Exit")
@@ -118,18 +119,15 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
             
     sig_hdlr = SignalHandler()  
     pipeline = [{'$match': {'operationType': 'insert'}}]
+            
+        
+    heap = [] # keep a heap sorted by last_timestamp
+    discard = 0
+    resume_token = None
     
-    # Initialize rri to raise StopIteration exception
-    rri = dbr.read_query_range(range_parameter='last_timestamp', 
-                               range_greater_than =-1-default_param.range_increment , range_less_than=-1, 
-                               range_increment=default_param.range_increment,
-                               query_sort = ("last_timestamp", "ASC"))
-    safe_query_time = -1
-    dbr.range_iter_stop = safe_query_time
-    
-
     # have an internal time out for changes
-    with dbr.collection.watch(pipeline) as stream:
+
+    with dbr.collection.watch(pipeline, resume_after = None) as stream:
         # close the stream if SIGINT received
         while stream.alive:
             change = stream.try_next() # first change 
@@ -137,18 +135,33 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
             # even when no changes are returned.
             # print("Current resume token: %r" % (stream.resume_token,))
             if change is not None:
+                resume_token = stream.resume_token
                 print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
-                east_queue.put(change['fullDocument'])
+                # push to heap
+                safe_query_time = change["fullDocument"]['first_timestamp']-t_buffer
+                heapq.heappush(heap, (change["fullDocument"]['last_timestamp'], change['fullDocument']))
+                # check if heap[0] is ready, pop until it's not ready
+                while heap and heap[0][0] < safe_query_time:
+                    _, doc = heapq.heappop(heap)
+                    if len(doc["timestamp"]) > 3: 
+                        if doc["direction"] == 1:
+                            # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
+                            east_queue.put(doc)
+                        else:
+                            west_queue.put(doc)
+                    else:
+                        discard += 1
                 continue
             # We end up here when there are no recent changes.
             # Sleep for a while before trying again to avoid flooding
             # the server with getMore requests when no changes are
             # available.
-            time.sleep(5)
+            time.sleep(5) # this wait time should be longer than insert pause time, otherwise the stream will die
         # end up here where the stream is no longer alive
         print("stream is no longer alive")
-        stream.close()
-    print("stream closed")
+        # stream.close()
+        print("stream closed")
+        
     
     
     
