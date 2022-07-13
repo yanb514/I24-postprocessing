@@ -129,7 +129,8 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 2, min_qu
 
     with dbr.collection.watch(pipeline, resume_after = None) as stream:
         # close the stream if SIGINT received
-        while stream.alive:
+        
+        while stream.alive and sig_hdlr.run:
             change = stream.try_next() # first change 
             # Note that the ChangeStream's resume token may be updated
             # even when no changes are returned.
