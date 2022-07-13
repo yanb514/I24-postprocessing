@@ -49,7 +49,7 @@ def change_stream_simulator(default_param, insert_rate):
     count = 0
     for doc in cur:
         time.sleep(1/insert_rate)
-        print("insert: {}".format(doc["_id"]))
+        print("insert: {}".format(doc["first_timestamp"]))
         doc.pop("_id")
         dbw.write_one_trajectory(thread = False, **doc)
         count += 1
@@ -124,7 +124,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
             # even when no changes are returned.
             print("Current resume token: %r" % (stream.resume_token,))
             if change is not None:
-                print("Change document: %r" % (change['fullDocument']['_id'],))
+                print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
                 continue
             # We end up here when there are no recent changes.
             # Sleep for a while before trying again to avoid flooding
