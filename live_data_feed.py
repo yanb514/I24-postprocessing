@@ -58,7 +58,8 @@ def change_stream_simulator(default_param, insert_rate):
             logger.info("{} docs written to dbw".format(count))
     
     # exit
-    logger.info("Finished writing to simulated collection. Exit")
+    logger.info(f"Finished writing {count} to simulated collection. Exit")
+    
     del dbr, dbw
     sys.exit(0)
     
