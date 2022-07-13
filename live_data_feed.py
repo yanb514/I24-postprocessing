@@ -114,40 +114,50 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
             
     sig_hdlr = SignalHandler()  
     pipeline = [{'$match': {'operationType': 'insert'}}]
+    
+    # Initialize rri to raise StopIteration exception
+    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param.range_increment)
+    safe_query_time = -1
+    dbr.range_iter_stop = safe_query_time
+    
+    
+    
     # print("change stream being listened")
     # resume_after = None
 
     # have an internal time out for changes
-    # with dbr.collection.watch(pipeline) as stream:
-    #     # close the stream if SIGINT received
-    #     while stream.alive:
-    #         change = stream.try_next()
-    #         # Note that the ChangeStream's resume token may be updated
-    #         # even when no changes are returned.
-    #         # print("Current resume token: %r" % (stream.resume_token,))
-    #         if change is not None:
-    #             print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
-    #             east_queue.put(change['fullDocument'])
-    #             continue
-    #         # We end up here when there are no recent changes.
-    #         # Sleep for a while before trying again to avoid flooding
-    #         # the server with getMore requests when no changes are
-    #         # available.
-    #         time.sleep(10)
+    with dbr.collection.watch(pipeline) as stream:
+        # close the stream if SIGINT received
+        while stream.alive:
+            change = stream.try_next() # first change 
+            # Note that the ChangeStream's resume token may be updated
+            # even when no changes are returned.
+            # print("Current resume token: %r" % (stream.resume_token,))
+            if change is not None:
+                print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
+                east_queue.put(change['fullDocument'])
+                continue
+            # We end up here when there are no recent changes.
+            # Sleep for a while before trying again to avoid flooding
+            # the server with getMore requests when no changes are
+            # available.
+            # time.sleep(10)
+    
+    
     
     # wait indefinitely for changes
-    try:
-        resume_token = None
-        # pipeline = [{'$match': {'operationType': operation_type}}]
-        # with self._collection.watch(resume_after=resume_after) as stream:
-        with dbr.collection.watch(pipeline=pipeline,resume_after=resume_token) as stream:
-            for insert_change in stream:
-                print("Change document: %r" % (insert_change['fullDocument']['first_timestamp'],))
-                east_queue.put(insert_change['fullDocument']) 
-                resume_token = stream.resume_token
+    # resume_token = None
+    # try:
+    #     with dbr.collection.watch(pipeline=pipeline,resume_after=resume_token) as stream:
+    #         for insert_change in stream:
+    #             print("Change document: %r" % (insert_change['fullDocument']['first_timestamp'],))
+    #             # block until this document is ready to put to queue
+    #             if insert_change['fullDocument']['last_timestamp'] < safe_query_time
+    #             east_queue.put(insert_change['fullDocument']) 
+    #             resume_token = stream.resume_token
     
-    except Exception as e:
-        print(e)
+    # except Exception as e:
+    #     print(e)
         
     
     # logger.info("outside of while loop:qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
