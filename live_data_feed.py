@@ -86,7 +86,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
     logger.set_name("live_data_reader")
     setattr(logger, "_default_logger_extra",  {})
     
-    time.sleep(3) # wait for cs simulator to get started
+    # time.sleep(3) # wait for cs simulator to get started
     
     # Connect to a database reader
     if read_from_simulation:
@@ -118,10 +118,9 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
     pipeline = [{'$match': {'operationType': 'insert'}}]
     
     # Initialize rri to raise StopIteration exception
-    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param.range_increment)
+    rri = dbr.read_query_range(range_parameter='last_timestamp', range_greater_than =-1-default_param.range_increment , range_less_than=-1, range_increment=default_param.range_increment)
     safe_query_time = -1
     dbr.range_iter_stop = safe_query_time
-    
     
     
     # print("change stream being listened")
