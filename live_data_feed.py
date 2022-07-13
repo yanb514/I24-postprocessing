@@ -122,9 +122,10 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
             change = stream.try_next()
             # Note that the ChangeStream's resume token may be updated
             # even when no changes are returned.
-            print("Current resume token: %r" % (stream.resume_token,))
+            # print("Current resume token: %r" % (stream.resume_token,))
             if change is not None:
                 print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
+                east_queue.put(change['fullDocument'])
                 continue
             # We end up here when there are no recent changes.
             # Sleep for a while before trying again to avoid flooding
