@@ -67,7 +67,7 @@ def change_stream_simulator(default_param, insert_rate):
     
    
     
-def live_data_reader(default_param, east_queue, west_queue, t_buffer = 2, min_queue_size = 1000, read_from_simulation = True):
+def live_data_reader(default_param, east_queue, west_queue, t_buffer = 10, min_queue_size = 1000, read_from_simulation = True):
     """
     Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
         that it can be assured to be time-ordered. Refill data queue if the queue size is below a threshold AND the next query range is before change_stream t_max - t_buffer
