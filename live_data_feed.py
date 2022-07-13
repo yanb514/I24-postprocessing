@@ -67,7 +67,7 @@ def change_stream_simulator(default_param, insert_rate):
     
    
     
-def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_queue_size = 1000, read_from_simulation = True):
+def live_data_reader(default_param, east_queue, west_queue, t_buffer = 2, min_queue_size = 1000, read_from_simulation = True):
     """
     Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
         that it can be assured to be time-ordered. Refill data queue if the queue size is below a threshold AND the next query range is before change_stream t_max - t_buffer
@@ -182,6 +182,19 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
         
     
     # logger.info("outside of while loop:qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
+    # pop all the rest of heap
+    while heap:
+        _, doc = heapq.heappop(heap)
+        print("pop: {}, {}".format(doc["first_timestamp"],doc["last_timestamp"]))
+        if len(doc["timestamp"]) > 3: 
+            if doc["direction"] == 1:
+                # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
+                east_queue.put(doc)
+            else:
+                west_queue.put(doc)
+        else:
+            discard += 1
+            
     del dbr 
     logger.info("Discarded {} short tracks".format(discard))
     logger.info("DBReader closed. Exiting live_data_reader while loop.")
