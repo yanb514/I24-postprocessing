@@ -6,6 +6,8 @@ data_association module connected with database
 '''
 import numpy as np
 import torch
+from scipy import stats
+from i24_logger.log_writer import catch_critical
 
 
 loss = torch.nn.GaussianNLLLoss() 
@@ -95,11 +97,122 @@ def nll(track1, track2, TIME_WIN, VARX, VARY):
     return cost
 
 
+
+def add_filter(track, thresh = 0.3):
+    '''
+    remove bad detection from track before linear regression fit
+    outlier based on shapes - remove those that are thresh away from the median of length and width
+    track: a document
+    '''
+    l,w = track.length, track.width
+    ml, mw = np.median(l), np.median(w)
+    filter = [i for i in range(len(l)) if (1-thresh)*ml<l[i]<(1+thresh)*ml and (1-thresh)*mw<w[i]<(1+thresh)*mw] # keep index
+    track.filter = filter
+    return track
+    
+    
+    
+def line_regress(track, with_filter = True):
+    '''
+    compute statistics for matching cost
+    based on linear vehicle motion (least squares fit constant velocity)
+    '''
+    if with_filter:
+        if not hasattr(track, "filter"):
+            track = add_filter(track, thresh = 0.3)    
+        filter = track.filter   
+        t = [track.t[i] for i in filter]
+        x = [track.x[i] for i in filter]
+        y = [track.y[i] for i in filter]
+    else:
+        t,x,y = track.t, track.x, track.y
+    
+    slope, intercept, r, p, std_err = stats.linregress(t,x)
+    fitx = [slope, intercept, r, p, std_err]
+    slope, intercept, r, p, std_err = stats.linregress(t,y)
+    fity = [slope, intercept, r, p, std_err]
+    # track.fitx = fitx
+    # track.fity = fity
+    return fitx, fity
+
+
+
+@catch_critical(errors = (Exception))
+def cost_1(track1, track2, TIME_WIN, VARX, VARY):
+    '''
+    adjustable cone
+    '''
+
+    cone_offset = 5
+    n = 30 # consider n measurements
+    
+    if len(track1.t) >= len(track2.t):
+        anchor = 1
+        fitx, fity = line_regress(track1, with_filter = True)
+        if not hasattr(track2, "filter"):
+            track2 = add_filter(track2)
+        meast = [track2.t[i] for i in track2.filter]
+        measx = [track2.x[i] for i in track2.filter]
+        measy = [track2.y[i] for i in track2.filter]
+        meast = meast[:n]
+        measx = measx[:n]
+        measy = measy[:n]
+        
+    else:
+        anchor = 2
+        fitx, fity = line_regress(track2, with_filter = True)
+        if not hasattr(track1, "filter"):
+            track1 = add_filter(track1)
+        meast = [track1.t[i] for i in track1.filter]
+        measx = [track1.x[i] for i in track1.filter]
+        measy = [track1.y[i] for i in track1.filter]
+        meast = meast[-n:]
+        measx = measx[-n:]
+        measy = measy[-n:]
+        
+        
+    # find where to start the cone
+    gap = track2.t[0] - track1.t[-1]
+    if gap > cone_offset: # large gap between tracks
+        pt = track1.t[-1] if anchor == 1 else track2.t[0]
+    else: # tracks are close, but not overlap, or tracks are partially overlap in time
+        pt = track1.t[-1]+cone_offset if anchor == 2 else track2.t[0]-cone_offset
+
+    tdiff = abs(meast - pt)
+    tdiff = tdiff[:n] if anchor == 1 else tdiff[-n:] # cap length at ~1sec
+    
+    slope, intercept, r, p, std_err = fitx
+    targetx = slope * np.array(meast) + intercept
+    slope, intercept, r, p, std_err = fity
+    targety = slope * np.array(meast) + intercept
+    
+    const = -n/2*np.log(2*np.pi)
+    var_term_x = 1/2*np.sum(np.log(VARX*tdiff))
+    dev_term_x = 1/2*np.sum((measx-targetx)**2/(VARX * tdiff))
+    var_term_y = 1/2*np.sum(np.log(VARY*tdiff))
+    dev_term_y = 1/2*np.sum((measy-targety)**2/(VARY * tdiff))
+    
+    print(f"VARX: {VARX}, VARY: {VARY}, [x_speed, x_intercept, x_rvalue, x_pvalue, x_std_err]:{fitx}, [y...]:{fity}, anchor={anchor}, n={n}")
+    nllx = var_term_x + dev_term_x + const
+    nlly = var_term_y + dev_term_y + const
+    
+    # nllx =  n/2*np.log(VARX) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(measx-targetx)**2)
+    # nlly =  n/2*np.log(VARY) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(measy-targety)**2)
+    cost = (nllx + nlly)/n
+    # cost = nllx + nlly
+    return cost
+
+        
+        
+        
 def nll_modified(track1, track2, TIME_WIN, VARX, VARY):
     '''
     negative log likelihood of track2 being a successor of track1
     except that the cost is moved backward, starting at the beginning of track1 to allow overlaps
     '''
+    track1 = line_regress(track1)
+    track2 = line_regress(track2)
+    
     INF = 10e6
     # if track2.first_timestamp < track1.last_timestamp: # if track2 starts before track1 ends
     #     return INF
@@ -112,15 +225,19 @@ def nll_modified(track1, track2, TIME_WIN, VARX, VARY):
         pt1 = track2.t[-1]-1 # cone stems from the first_timestamp of track1
         tdiff = abs(track2.t[:n] - pt1) # has to be positive otherwise log(tdiff) will be undefined
     
-        xx = np.vstack([track2.t[:n],np.ones(n)]).T # N x 2
-        targetx = np.matmul(xx, track1.fitx)
-        targety = np.matmul(xx, track1.fity)
+        # xx = np.vstack([track2.t[:n],np.ones(n)]).T # N x 2
+        # targetx = np.matmul(xx, track1.fitx)
+        # targety = np.matmul(xx, track1.fity)
+        slope, intercept, r, p, std_err = track1.fitx
+        targetx = slope * track2.t[:n] + intercept
+        slope, intercept, r, p, std_err = track1.fity
+        targety = slope * track2.t[:n] + intercept
         
         # const = n/2*np.log(2*np.pi)
         nllx =  n/2*np.log(VARX) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track2.x[:n]-targetx)**2)
         nlly =  n/2*np.log(VARY) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track2.y[:n]-targety)**2)
         
-        return (nllx + nlly)/n - 10
+        return (nllx + nlly)/n 
     
     else:
         # cone from end of track2
@@ -136,7 +253,7 @@ def nll_modified(track1, track2, TIME_WIN, VARX, VARY):
         nllx =  n/2*np.log(VARX) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track1.x[-n:]-targetx)**2)
         nlly =  n/2*np.log(VARY) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(track1.y[-n:]-targety)**2)
         
-        return (nllx + nlly)/n - 10
+        return (nllx + nlly)/n 
 
 
 

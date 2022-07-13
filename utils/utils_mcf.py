@@ -3,7 +3,7 @@ import numpy as np
 import networkx as nx
 import queue
 from collections import deque
-from utils.utils_stitcher import min_nll_cost, nll, nll_headway, nll_modified
+from utils.utils_stitcher import min_nll_cost, nll, nll_headway, nll_modified, cost_1
 
 class Node:
     '''
@@ -207,7 +207,7 @@ class SortedDLL:
     
     
     
-class Fragment(Node):
+class FragmentOld(Node):
     # Constructor to create a new fragment
     def __init__(self, traj_doc):
         '''
@@ -255,8 +255,8 @@ class Fragment(Node):
             
 
             try:
-                setattr(self, "x", np.array(self.x)*0.3048)
-                setattr(self, "y", np.array(self.y)*0.3048)
+                setattr(self, "x", np.array(self.x))#*0.3048)
+                setattr(self, "y", np.array(self.y))#*0.3048)
                 setattr(self, "t", np.array(self.t))
             except:
                 pass
@@ -279,6 +279,7 @@ class Fragment(Node):
         '''
         compute statistics for matching cost
         based on linear vehicle motion (least squares fit constant velocity)
+        WARNING: may not be precise with floating timestamps. use scipy.stats.linregress() instead
         '''
         t,x,y = self.t, self.x, self.y
         ct = np.nanmean(t)
@@ -294,6 +295,7 @@ class Fragment(Node):
         self.fitx = fitx
         self.fity = fity
         return
+    
 
     # add successor to fragment with matching cost
     def add_suc(self, cost, fragment):
@@ -530,7 +532,45 @@ class PathCache(SortedDLL):
     
 
     
+class Fragment():
+    # Constructor to create a new fragment
+    def __init__(self, traj_doc):
+        '''
+        just a simple object that keeps all the important information from a trajectory document for tracking
+        - id, timestamp, x_position, y_position, length, width, last_timsetamp, first_timestamp, direction
+        '''
 
+        # delete the unnucessary fields in traj_doc
+        field_names = ["_id", "ID","timestamp","x_position","y_position","direction","last_timestamp", "first_timestamp", "length","width","height"]
+        attr_names = ["id","ID","t","x","y","dir","last_timestamp","first_timestamp","length","width","height"]
+        
+        for i in range(len(field_names)): # set as many attributes as possible
+            try: 
+                if field_names[i] in {"_id", "ID"}: # cast bson ObjectId type to str
+                    setattr(self, attr_names[i], str(traj_doc[field_names[i]]))
+                else:
+                    setattr(self, attr_names[i], traj_doc[field_names[i]])
+            except: pass
+        
+
+        try: # cast to np array
+            setattr(self, "x", np.array(self.x))#*0.3048)
+            setattr(self, "y", np.array(self.y))#*0.3048)
+            setattr(self, "t", np.array(self.t))
+
+        except:
+            pass
+            
+        
+        
+        
+    def __repr__(self):
+        try:
+            return 'Fragment({!r})'.format(self.ID)
+        except:
+            return 'Fragment({!r})'.format(self.id)
+
+        
 
 class MOT_Graph:
     
@@ -921,8 +961,8 @@ class MOTGraphSingle:
         for fgmt in reversed(self.in_graph_deque):
             # cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
             # cost = nll(fgmt, fragment, TIME_WIN, VARX, VARY)
-            cost = nll_modified(fgmt, fragment, TIME_WIN, VARX, VARY)
-            # print(getattr(fgmt, self.attr), getattr(fragment, self.attr), cost)
+            cost = cost_1(fgmt, fragment, TIME_WIN, VARX, VARY)
+            print(getattr(fgmt, self.attr), getattr(fragment, self.attr), cost)
             
             if cost <= 0:  # new edge points from new_id to existing nodes, with postive cost
                 fgmt_id = getattr(fgmt, self.attr)

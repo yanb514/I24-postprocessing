@@ -16,6 +16,7 @@ Compare raw and reconciled (unsupervised)
 - collision
 - length, width, height distribution
 - density? flow?
+- lane distribution
 
 Examine problematic stitching
 - plot a list of fragments
@@ -271,9 +272,9 @@ if __name__ == '__main__':
     
     
     
-    # ue.get_collection_info()
-    # ue.fragment_length_dist()
-    # ue.evaluate()
-    # ue.get_stats()
+    ue.get_collection_info()
+    ue.fragment_length_dist()
+    ue.evaluate()
+    ue.get_stats()
     
-    ue.delete_collection(["tracking_v1_stitched", "tracking_v1_nll_modified"])
+    # ue.delete_collection(["tracking_v1_stitched", "tracking_v1_nll_modified","tracking_v1_reconciled_nll_modified","tracking_v1_stitched","batch_stitched"])

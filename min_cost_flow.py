@@ -179,7 +179,7 @@ def min_cost_flow_online_neg_cycle(direction, fragment_queue, stitched_trajector
         
         try:
             fgmt = Fragment(fragment_queue.get(timeout = 2))
-            fgmt.compute_stats()
+            # fgmt.compute_stats()
             m.add_node(fgmt, cache)
             fgmt_id = getattr(fgmt, ATTR_NAME)
             cache[fgmt_id] = fgmt
@@ -311,7 +311,7 @@ def min_cost_flow_online_slow(direction, fragment_queue, stitched_trajectory_que
                 path = m.pretty_path(path)
                 stitched_trajectory_queue.put(path)
             break
-        fgmt.compute_stats()
+        # fgmt.compute_stats()
         m.add_node(fgmt, cache)
         fgmt_id = getattr(fgmt, ATTR_NAME)
         cache[fgmt_id] = fgmt
@@ -453,7 +453,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 stitcher_logger.info("fragment_queue is empty, exit.")
                 break
             
-            fgmt.compute_stats()
+            # fgmt.compute_stats()
             m.add_node(fgmt)
             # print(m.G.edges(data=True))
             
@@ -489,7 +489,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     stitcher_logger.info("Exit stitcher while loop")
     del dbw
     stitcher_logger.info("DBWriter closed. Exit.")
-    sys.exit()
+    # sys.exit()
         
     return   
 
@@ -536,6 +536,8 @@ if __name__ == '__main__':
     os.environ["user_config_directory"] = config_path
     os.environ["my_config_section"] = "TEST"
     parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
+    parameters.raw_trajectory_queue_get_timeout = 1
+
     
     # read to queue
     # gt_ids = [i for i in range(150, 180)]
@@ -552,7 +554,7 @@ if __name__ == '__main__':
     from bson.objectid import ObjectId
     fragment_queue = queue.Queue()
     f_ids = [ObjectId('62c713dfc77930b8d9533454'), ObjectId('62c713fbc77930b8d9533462')]
-    raw = DBReader(parameters, collection_name="batch_5_07072022")
+    raw = DBReader(parameters, username = "i24-data", collection_name="batch_5_07072022")
     for f_id in f_ids:
         f = raw.find_one("_id", f_id)
         fragment_queue.put(f)
@@ -595,13 +597,21 @@ if __name__ == '__main__':
     #         print("difference: ", path_o)
     #%%
     import matplotlib.pyplot as plt
-    plt.figure()
+    ax1 = plt.subplot(131)
+    ax2 = plt.subplot(132)
+    ax3 = plt.subplot(133)
 
     # d = stitched_trajectory_queue.get(block=False)
     # plt.scatter(d["timestamp"], d["x_position"], c="r", s=0.2, label="reconciled")
     for f_id in f_ids:
         f = raw.find_one("_id", f_id)
-        plt.scatter(f["timestamp"], f["x_position"], c="b", s=0.5, label="raw")
+        ax1.scatter(f["timestamp"], f["x_position"], s=0.5, label=f_id)
+        ax1.set_title("time vs. x")
+        ax2.scatter(f["timestamp"], f["y_position"], s=0.5, label=f_id)
+        ax2.set_title("time vs. y")
+        ax3.scatter(f["x_position"], f["y_position"], s=0.5, label=f_id)
+        ax3.set_title("x vs. y")
+        print(f_id)
     plt.legend()
     
     # plot runtime
