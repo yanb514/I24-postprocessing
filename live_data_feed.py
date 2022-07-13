@@ -143,6 +143,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
                 # check if heap[0] is ready, pop until it's not ready
                 while heap and heap[0][0] < safe_query_time:
                     _, doc = heapq.heappop(heap)
+                    print("pop: {}, {}".format(doc["first_timestamp"],doc["last_timestamp"]))
                     if len(doc["timestamp"]) > 3: 
                         if doc["direction"] == 1:
                             # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
@@ -182,6 +183,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
     
     # logger.info("outside of while loop:qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
     del dbr 
+    logger.info("Discarded {} short tracks".format(discard))
     logger.info("DBReader closed. Exiting live_data_reader while loop.")
     sys.exit() # for linux
     
