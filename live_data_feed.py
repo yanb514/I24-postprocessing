@@ -47,7 +47,7 @@ def change_stream_simulator(default_param, insert_rate):
     
     # write to simulated collection
     count = 0
-    time.sleep(3) # wait for change stream to get initialized
+    # time.sleep(3) # wait for change stream to get initialized
     for doc in cur:
         time.sleep(1/insert_rate)
         print("insert: {}".format(doc["first_timestamp"]))
