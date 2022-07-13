@@ -141,7 +141,10 @@ if __name__ == '__main__':
             except:
                 pass
             time.sleep(2)
-            live_process_objects.pop(pid_name)
+            try:
+                live_process_objects.pop(pid_name)
+            except:
+                pass
             manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
        
     def soft_stop_hdlr(sig, action):
@@ -152,7 +155,10 @@ if __name__ == '__main__':
             except:
                 pass
             time.sleep(2)
-            live_process_objects.pop(pid_name)
+            try:
+                live_process_objects.pop(pid_name)
+            except:
+                pass
             manager_logger.info("Sent SIGINT to PID={} ({})".format(pid_val, pid_name))
             
     def finish_hdlr(sig, action):
@@ -163,7 +169,10 @@ if __name__ == '__main__':
             except:
                 pass
             time.sleep(2)
-            live_process_objects.pop(pid_name)
+            try:
+                live_process_objects.pop(pid_name)
+            except:
+                pass
             manager_logger.info("Sent SIGUSR1 to PID={} ({})".format(pid_val, pid_name))
             
     
