@@ -60,8 +60,87 @@ def change_stream_simulator(default_param, insert_rate):
     del dbr, dbw
     sys.exit(0)
     
+   
     
 def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_queue_size = 1000, read_from_simulation = True):
+    """
+    Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
+        that it can be assured to be time-ordered. Refill data queue if the queue size is below a threshold AND the next query range is before change_stream t_max - t_buffer
+    ** THIS PROCEDURE AND FUNCTION IS STILL UNDER DEVELOPMENT **
+    ** NEEDS TO DETERMINE **
+    t_buffer: buffer time (in sec) such that no new fragment will be inserted before t_max - t_buffer   
+    
+    :param host: Database connection host name.
+    :param port: Database connection port number.
+    :param username: Database authentication username.
+    :param password: Database authentication password.
+    :param database_name: Name of database to connect to (do not confuse with collection name).
+    :param collection_name: Name of database collection from which to query.
+    :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
+    :return:
+    """
+    # running_mode = os.environ["my_config_section"]
+    logger = log_writer.logger
+    logger.set_name("live_data_reader")
+    setattr(logger, "_default_logger_extra",  {})
+    
+    # Connect to a database reader
+    if read_from_simulation:
+        time.sleep(4) # wait for change_stream_simulator to start
+        raw_collection = default_param.raw_collection + "_simulated"
+    else:
+        raw_collection = default_param.raw_collection
+    dbr = DBReader(default_param, collection_name=raw_collection)
+
+
+    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
+    class SignalHandler():
+
+        run = True
+        count = 0 # count the number of times a signal is received
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        
+        def __init__(self):
+            signal.signal(signal.SIGINT, self.shut_down)
+            signal.signal(signal.SIGUSR1, self.shut_down)
+            signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+        
+        def shut_down(self, *args):
+            self.run = False
+            self.count += 1
+            logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
+            
+    sig_hdlr = SignalHandler()  
+    pipeline = [{'$match': {'operationType': 'insert'}}]
+    # print("change stream being listened")
+    # resume_after = None
+
+    with dbr.collection.watch(pipeline) as stream:
+        # close the stream if SIGINT received
+        while stream.alive:
+            change = stream.try_next()
+            # Note that the ChangeStream's resume token may be updated
+            # even when no changes are returned.
+            print("Current resume token: %r" % (stream.resume_token,))
+            if change is not None:
+                print("Change document: %r" % (change['fullDocument']['_id'],))
+                continue
+            # We end up here when there are no recent changes.
+            # Sleep for a while before trying again to avoid flooding
+            # the server with getMore requests when no changes are
+            # available.
+            time.sleep(10)
+        
+    
+    # logger.info("outside of while loop:qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
+    del dbr 
+    logger.info("DBReader closed. Exiting live_data_reader while loop.")
+    sys.exit() # for linux
+    
+    
+    
+    
+def static_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_queue_size = 1000, read_from_simulation = True):
     """
     Runs a database stream update listener on top of a managed cache that buffers data for a safe amount of time so
         that it can be assured to be time-ordered. Refill data queue if the queue size is below a threshold AND the next query range is before change_stream t_max - t_buffer
