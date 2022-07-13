@@ -86,6 +86,8 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 100, min_
     logger.set_name("live_data_reader")
     setattr(logger, "_default_logger_extra",  {})
     
+    time.sleep(3) # wait for cs simulator to get started
+    
     # Connect to a database reader
     if read_from_simulation:
         # time.sleep(4) # wait for change_stream_simulator to start
