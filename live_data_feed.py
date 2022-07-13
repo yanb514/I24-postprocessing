@@ -47,6 +47,7 @@ def change_stream_simulator(default_param, insert_rate):
     
     # write to simulated collection
     count = 0
+    time.sleep(3) # wait for change stream to get initialized
     for doc in cur:
         time.sleep(1/insert_rate)
         print("insert: {}".format(doc["first_timestamp"]))
@@ -178,7 +179,7 @@ def static_data_reader(default_param, east_queue, west_queue, t_buffer = 100, mi
     
     # Connect to a database reader
     if read_from_simulation:
-        time.sleep(4) # wait for change_stream_simulator to start
+        # time.sleep(4) # wait for change_stream_simulator to start
         raw_collection = default_param.raw_collection + "_simulated"
     else:
         raw_collection = default_param.raw_collection
