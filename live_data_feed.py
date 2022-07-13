@@ -46,10 +46,14 @@ def change_stream_simulator(default_param, insert_rate):
     cur = dbr.get_range("first_timestamp", start, end)
     
     # write to simulated collection
+    count = 0
     for doc in cur:
         time.sleep(1/insert_rate)
         doc.pop("_id")
         dbw.write_one_trajectory(thread = False, **doc)
+        count += 1
+        if count % 20 == 0:
+            logger.info("{} docs written to dbw".format(count))
     
     # exit
     logger.info("Finished writing to simulated collection. Exit")
