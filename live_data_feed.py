@@ -49,6 +49,7 @@ def change_stream_simulator(default_param, insert_rate):
     count = 0
     for doc in cur:
         time.sleep(1/insert_rate)
+        print("insert: {}".format(doc["_id"]))
         doc.pop("_id")
         dbw.write_one_trajectory(thread = False, **doc)
         count += 1
