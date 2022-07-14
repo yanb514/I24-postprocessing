@@ -227,7 +227,7 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
     dbr = DBReader(default_param, collection_name=raw_collection)
     
     # start from min and end at max if collection is static
-    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param.range_increment, query_sort= ("last_timestamp", "ASC"))
+    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param.range_increment, query_sort= [("last_timestamp", "ASC")])
 
     # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way    
     sig_hdlr = SignalHandler()  
