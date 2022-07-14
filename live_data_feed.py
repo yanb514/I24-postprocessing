@@ -197,7 +197,10 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, read_f
             
         # out of while loop
         logger.info("stream is no longer alive or SIGINT/SIGINT received")
-        del dbr 
+        try:
+            del dbr 
+        except:
+            pass
         logger.info("Process the rest of heap")
 
 
