@@ -130,7 +130,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
     discard = 0
     resume_token = None
     change_stream_timeout = 10 # close the stream if timeout is reached
-    
+    idle_time = 0
     
     # have an internal time out for changes
 
@@ -168,8 +168,10 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
             # the server with getMore requests when no changes are
             # available.
             else:
-                print("no change. sleep")
                 time.sleep(2)
+                idle_time += time.time() - last_change_time
+                print("idle time: ", idle_time)
+                
             
         # end up here where the stream is no longer alive
         logger.info("stream is no longer alive or SIGINT/SIGINT received")
