@@ -23,7 +23,7 @@ os.environ["my_config_section"] = "TEST"
 parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
 
 # Customized modules
-from live_data_feed import live_data_reader, static_data_reader, change_stream_simulator # change to live_data_read later
+import data_feed as df
 import min_cost_flow as mcf
 import reconciliation as rec
 
@@ -78,26 +78,24 @@ if __name__ == '__main__':
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {
-                            "change_stream_simulator": (change_stream_simulator,
-                                                        (parameters, 100,)), # insert_rate
-                            "live_data_reader": (live_data_reader,
-                                            (parameters, 
-                                            raw_fragment_queue_e, raw_fragment_queue_w,
-                                            parameters.buffer_time, True, )), # True if read from a simulated collection
-                            # "static_data_reader": (static_data_reader,
-                            #                 (parameters, raw_fragment_queue_e, raw_fragment_queue_w, 1000,)),
-                            # "dummy_stitcher": (mcf.dummy_stitcher,
-                            #                    (raw_fragment_queue_w, stitched_trajectory_queue,)),
-                            # "stitcher_e": (mcf.min_cost_flow_online_alt_path,
-                            #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
-                            #                 parameters, )),
-                            # "stitcher_w": (mcf.min_cost_flow_online_alt_path,
-                            #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
-                            #                 parameters, )),
-                            # "reconciliation": (rec.reconciliation_pool,
-                            #             (parameters, stitched_trajectory_queue, reconciled_queue,)),
-                            # "reconciliation_writer": (rec.write_reconciled_to_db,
-                            #             (parameters, reconciled_queue,)),
+                            # "change_stream_simulator": (df.change_stream_simulator,
+                            #                             (parameters, 100,)), # insert_rate
+                            # "live_data_reader": (df.live_data_reader,
+                            #                 (parameters, 
+                            #                 raw_fragment_queue_e, raw_fragment_queue_w,
+                            #                 parameters.buffer_time, True, )), # True if read from a simulated collection
+                            "static_data_reader": (df.static_data_reader,
+                                            (parameters, raw_fragment_queue_e, raw_fragment_queue_w, 1000,)),
+                            "stitcher_e": (mcf.min_cost_flow_online_alt_path,
+                                            ("east", raw_fragment_queue_e, stitched_trajectory_queue,
+                                            parameters, )),
+                            "stitcher_w": (mcf.min_cost_flow_online_alt_path,
+                                            ("west", raw_fragment_queue_w, stitched_trajectory_queue,
+                                            parameters, )),
+                            "reconciliation": (rec.reconciliation_pool,
+                                        (parameters, stitched_trajectory_queue, reconciled_queue,)),
+                            "reconciliation_writer": (rec.write_reconciled_to_db,
+                                        (parameters, reconciled_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.

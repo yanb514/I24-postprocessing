@@ -77,7 +77,7 @@ def change_stream_simulator(default_param, insert_rate):
     try:
         for doc in cur:
             time.sleep(1/insert_rate)
-            print("insert: {}".format(doc["first_timestamp"]))
+            # print("insert: {}".format(doc["first_timestamp"]))
             doc.pop("_id")
             dbw.write_one_trajectory(thread = False, **doc)
             count += 1
@@ -152,7 +152,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, read_f
                     idle_time = 0 # reset idle_time
                     # resume_token = stream.resume_token
                     
-                    print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
+                    # print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
                     # push to heap
                     safe_query_time = change["fullDocument"]['first_timestamp']-t_buffer
                     heapq.heappush(heap,(change["fullDocument"]['last_timestamp'],change["fullDocument"]['_id'],change['fullDocument']))
@@ -177,9 +177,9 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, read_f
                 else:
                     time.sleep(2)
                     idle_time += time.time() - last_change_time
-                    print("idle time: ", idle_time)
+                    # print("idle time: ", idle_time)
                     if idle_time > change_stream_timeout:
-                        print("change stream timeout reached. Close the stream")
+                        # print("change stream timeout reached. Close the stream")
                         stream.close()
                         break
         
@@ -207,7 +207,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, read_f
     #pop all the rest of heap
     while heap:
         _, _, doc = heapq.heappop(heap)
-        print("pop: {}".format(doc["last_timestamp"]))
+        # print("pop: {}".format(doc["last_timestamp"]))
         if len(doc["timestamp"]) > 3: 
             if doc["direction"] == 1:
                 # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))

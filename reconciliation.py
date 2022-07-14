@@ -23,7 +23,7 @@ from i24_database_api.db_writer import DBWriter
 from i24_database_api.db_reader import DBReader
 from i24_configparse import parse_cfg
 
-from utils.reconciliation_module import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments, rectify_2d
+from utils.utils_reconciliation import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments, rectify_2d
 
 
 
@@ -206,12 +206,12 @@ if __name__ == '__main__':
     print("current q size: ", stitched_q.qsize())
     
     # pool
-    reconciliation_pool(parameters, stitched_q)
+    # reconciliation_pool(parameters, stitched_q)
     
-    # while not stitched_q.empty():
-    #     fragment_list = stitched_q.get(block=False)
-    #     combined_trajectory = combine_fragments(test_dbr.collection, fragment_list)
-    #     reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue)
+    while not stitched_q.empty():
+        fragment_list = stitched_q.get(block=False)
+        combined_trajectory = combine_fragments(test_dbr.collection, fragment_list)
+        reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue)
         
     # print("final queue size: ",reconciled_queue.qsize())
         
