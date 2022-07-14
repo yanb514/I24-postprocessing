@@ -128,7 +128,11 @@ def line_regress(track, with_filter = True):
     else:
         t,x,y = track.t, track.x, track.y
     
-    slope, intercept, r, p, std_err = stats.linregress(t,x)
+    try:
+        slope, intercept, r, p, std_err = stats.linregress(t,x)
+    except:
+        print(t)
+        print(x)
     fitx = [slope, intercept, r, p, std_err]
     slope, intercept, r, p, std_err = stats.linregress(t,y)
     fity = [slope, intercept, r, p, std_err]
