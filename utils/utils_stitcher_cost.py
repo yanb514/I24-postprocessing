@@ -110,6 +110,10 @@ def add_filter(track, thresh = 0.3):
     w_low, w_high = np.quantile(w, thresh, method='median_unbiased'), np.quantile(w, 1-thresh, method='median_unbiased')
 
     filter = [i for i in range(len(l)) if l_low<l[i]<l_high and w_low<w[i]<w_high] # keep index
+    
+    if len(filter) < 3:
+        filter = np.arange(len(track.t))
+        
     track.filter = filter
     return track
     
@@ -122,7 +126,7 @@ def line_regress(track, with_filter = True):
     '''
     if with_filter:
         if not hasattr(track, "filter"):
-            track = add_filter(track, thresh = 0.3)    
+            track = add_filter(track, thresh = 0.25)   
         filter = track.filter   
         t = [track.t[i] for i in filter]
         x = [track.x[i] for i in filter]
@@ -135,6 +139,7 @@ def line_regress(track, with_filter = True):
     except:
         print(track.id)
         print(len(t))
+        print(track.filter)
         print(track.t)
         print(track.x)
         print(track.length)

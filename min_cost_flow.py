@@ -552,8 +552,8 @@ if __name__ == '__main__':
 
     from bson.objectid import ObjectId
     fragment_queue = queue.Queue()
-    f_ids = [ObjectId('62c71485c77930b8d95334af'), ObjectId('62c71499c77930b8d95334ba')]
-    raw = DBReader(parameters, username = "i24-data", collection_name="batch_5_07072022")
+    f_ids = [ObjectId('62a37b5118c10e37c2103e45'), ObjectId('62a37bba18c10e37c2103f9b')]
+    raw = DBReader(parameters, username = "i24-data", collection_name="tracking_v1")
     for f_id in f_ids:
         f = raw.find_one("_id", f_id)
         fragment_queue.put(f)
