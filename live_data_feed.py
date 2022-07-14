@@ -79,7 +79,7 @@ def change_stream_simulator(default_param, insert_rate):
         count += 1
         if count % 100 == 0:
             logger.info("{} docs written to dbw".format(count))
-            time.sleep(3) 
+            time.sleep(10) 
                 
         
     # exit
