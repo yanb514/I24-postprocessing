@@ -74,20 +74,21 @@ def change_stream_simulator(default_param, insert_rate):
     # write to simulated collection
     count = 0
     # time.sleep(3) # wait for change stream to get initialized
-    for doc in cur:
-        if not sig_hdlr.run:
-            logger.info("SIGINT/SIGUSR1 received in change_stream_simulator.")
-            break
-        time.sleep(1/insert_rate)
-        print("insert: {}".format(doc["first_timestamp"]))
-        doc.pop("_id")
-        dbw.write_one_trajectory(thread = False, **doc)
-        count += 1
-        if count % 100 == 0:
-            logger.info("{} docs written to dbw".format(count))
-            time.sleep(2) 
-                
+    try:
+        for doc in cur:
+            time.sleep(1/insert_rate)
+            print("insert: {}".format(doc["first_timestamp"]))
+            doc.pop("_id")
+            dbw.write_one_trajectory(thread = False, **doc)
+            count += 1
+            if count % 100 == 0:
+                logger.info("{} docs written to dbw".format(count))
+                time.sleep(2) 
+    except SIGINTException:
+        logger.info("SIGINT/SIGUSR1 received in change_stream_simulator.")
         
+    except Exception as e:
+        logger.warning("Other exceptions occured. Exit. Exception:{}".format(e))    
     # exit
     logger.info(f"Finished writing {count} to simulated collection. Exit")
     
@@ -184,6 +185,10 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, read_f
         
         except SIGINTException:
             logger.info("SIGINT/SIGINT received. Close stream")
+            stream.close()
+            
+        except Exception as e:
+            logger.warning("Other exceptions occured. Exit. Exception:{}".format(e))
             stream.close()
             
         # out of while loop
