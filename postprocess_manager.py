@@ -23,7 +23,7 @@ os.environ["my_config_section"] = "TEST"
 parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
 
 # Customized modules
-from live_data_feed import live_data_reader, change_stream_simulator # change to live_data_read later
+from live_data_feed import live_data_reader, static_data_reader, change_stream_simulator # change to live_data_read later
 import min_cost_flow as mcf
 import reconciliation as rec
 
@@ -84,7 +84,7 @@ if __name__ == '__main__':
                             #                 (parameters, 
                             #                 raw_fragment_queue_e, raw_fragment_queue_w,
                             #                 parameters.buffer_time, True, )), # True if read from a simulated collection
-                            "static_data_reader": (live_data_reader,
+                            "static_data_reader": (static_data_reader,
                                             (parameters, raw_fragment_queue_e, raw_fragment_queue_w, 1000,)),
                             # "dummy_stitcher": (mcf.dummy_stitcher,
                             #                    (raw_fragment_queue_w, stitched_trajectory_queue,)),
