@@ -133,6 +133,8 @@ def line_regress(track, with_filter = True):
     try:
         slope, intercept, r, p, std_err = stats.linregress(t,x)
     except:
+        print(track.id)
+        print(len(t))
         print(track.t)
         print(track.x)
         print(track.length)
