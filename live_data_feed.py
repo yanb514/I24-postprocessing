@@ -62,7 +62,7 @@ def change_stream_simulator(default_param, insert_rate):
     logger.info("DBReader initiated")
     
     start = dbr.get_min("first_timestamp") - 1e-6
-    end = start + 5
+    end = start + 3
     cur = dbr.get_range("first_timestamp", start, end)
     
     # write to simulated collection
@@ -181,12 +181,12 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
         resume_token = None
         pipeline = [{'$match': {'operationType': 'insert'}}]
         with dbr.collection.watch(pipeline, resume_after = None) as stream:
-            print(stream.alive)
             for change in stream:
                 print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
                 east_queue.put(change)
                 resume_token = stream.resume_token
             # print("out of for loop, no changes, {}".format(stream.alive))
+        print("out of with")
     except pymongo.errors.PyMongoError:
         if resume_token is None:
             logger.error('resume token is none')
