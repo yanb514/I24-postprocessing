@@ -496,7 +496,6 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
 
 
 
-
 def test_fragments(gt_ids, paths):
     '''
     Count the number of fragments (under-stitch) from the output of the stitcher

@@ -146,6 +146,7 @@ def cost_1(track1, track2, TIME_WIN, VARX, VARY, with_filter = True):
     '''
 
     cone_offset = 5
+    cost_offset = -6
     n = 30 # consider n measurements
     
     # add filters to track
@@ -204,12 +205,12 @@ def cost_1(track1, track2, TIME_WIN, VARX, VARY, with_filter = True):
     # nlly =  n/2*np.log(VARY) + 1/2*np.sum(np.log(tdiff)) + 1/2*np.sum(1/(tdiff)*(measy-targety)**2)
     cost = (nllx + nlly)/n
     
-    print(f"id1: {track1.id}, id2: {track2.id}, cost:{cost}")
-    print(f"VARX: {VARX}, VARY: {VARY}, nllx:{nllx}, nlly:{nlly}")
-    print(f"[x_speed, x_intercept, x_rvalue, x_pvalue, x_std_err]:{fitx}, [y...]:{fity}, anchor={anchor}, n={n}")
+    # print(f"id1: {track1.id}, id2: {track2.id}, cost:{cost}")
+    # print(f"VARX: {VARX}, VARY: {VARY}, nllx:{nllx}, nlly:{nlly}")
+    # print(f"[x_speed, x_intercept, x_rvalue, x_pvalue, x_std_err]:{fitx}, [y...]:{fity}, anchor={anchor}, n={n}")
     
     # cost = nllx + nlly
-    return cost
+    return cost + cost_offset
 
         
         
