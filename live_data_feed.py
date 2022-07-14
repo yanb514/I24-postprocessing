@@ -178,6 +178,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
 
     # This also works
     try:
+        print("in try")
         resume_token = None
         pipeline = [{'$match': {'operationType': 'insert'}}]
         with dbr.collection.watch(pipeline, resume_after = None) as stream:
@@ -188,13 +189,18 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
             # print("out of for loop, no changes, {}".format(stream.alive))
         print("out of with")
     except pymongo.errors.PyMongoError:
+        print("in except")
         if resume_token is None:
             logger.error('resume token is none')
         else:
             with dbr.collection.watch(pipeline, resume_after = resume_token) as stream:
+                print(f"else {stream.alive}")
                 for change in stream:
                     print(" resumed Change document: %r" % (change['fullDocument']['first_timestamp'],))
                     east_queue.put(change)
+                    print("still in stream")
+                print("out of stream")
+            print("out of with")
 
 
 
