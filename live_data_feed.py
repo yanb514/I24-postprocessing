@@ -18,6 +18,8 @@ import os
 import heapq
 import pymongo
 
+class SIGINTException(Exception):
+    pass
 
 class SignalHandler():
     '''
@@ -26,7 +28,7 @@ class SignalHandler():
     '''
     run = True
     # count = 0 # count the number of times a signal is received
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    # signal.signal(signal.SIGINT, signal.SIG_IGN)  
     
     def __init__(self):
         signal.signal(signal.SIGINT, self.shut_down)
@@ -35,6 +37,7 @@ class SignalHandler():
     
     def shut_down(self, *args):
         self.run = False
+        raise SIGINTException
         # self.count += 1
         # logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
         
@@ -138,45 +141,50 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, read_f
     with dbr.collection.watch(pipeline, resume_after = None) as stream:
         # close the stream if SIGINT received
         
-        while stream.alive and sig_hdlr.run: # change stream is still alive even when there's no changes
-            change = stream.try_next() # first change 
-            # Note that the ChangeStream's resume token may be updated
-            # even when no changes are returned.
-            if change is not None:
-                last_change_time = time.time()
-                idle_time = 0 # reset idle_time
-                # resume_token = stream.resume_token
-                
-                print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
-                # push to heap
-                safe_query_time = change["fullDocument"]['first_timestamp']-t_buffer
-                heapq.heappush(heap,(change["fullDocument"]['last_timestamp'],change["fullDocument"]['_id'],change['fullDocument']))
-                
-                # check if heap[0] is ready, pop until it's not ready
-                while heap and heap[0][0] < safe_query_time:
-                    _, _,doc = heapq.heappop(heap)
-                    # print("pop: {},".format(doc["last_timestamp"]))
-                    if len(doc["timestamp"]) > 3: 
-                        if doc["direction"] == 1:
-                            # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
-                            east_queue.put(doc)
+        try:
+            while stream.alive and sig_hdlr.run: # change stream is still alive even when there's no changes
+                change = stream.try_next() # first change 
+                # Note that the ChangeStream's resume token may be updated
+                # even when no changes are returned.
+                if change is not None:
+                    last_change_time = time.time()
+                    idle_time = 0 # reset idle_time
+                    # resume_token = stream.resume_token
+                    
+                    print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
+                    # push to heap
+                    safe_query_time = change["fullDocument"]['first_timestamp']-t_buffer
+                    heapq.heappush(heap,(change["fullDocument"]['last_timestamp'],change["fullDocument"]['_id'],change['fullDocument']))
+                    
+                    # check if heap[0] is ready, pop until it's not ready
+                    while heap and heap[0][0] < safe_query_time:
+                        _, _,doc = heapq.heappop(heap)
+                        # print("pop: {},".format(doc["last_timestamp"]))
+                        if len(doc["timestamp"]) > 3: 
+                            if doc["direction"] == 1:
+                                # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
+                                east_queue.put(doc)
+                            else:
+                                west_queue.put(doc)
                         else:
-                            west_queue.put(doc)
-                    else:
-                        discard += 1
-                continue
-            # We end up here when there are no recent changes.
-            # Sleep for a while before trying again to avoid flooding
-            # the server with getMore requests when no changes are
-            # available.
-            else:
-                time.sleep(2)
-                idle_time += time.time() - last_change_time
-                print("idle time: ", idle_time)
-                if idle_time > change_stream_timeout:
-                    print("change stream timeout reached. Close the stream")
-                    stream.close()
-                    break
+                            discard += 1
+                    continue
+                # We end up here when there are no recent changes.
+                # Sleep for a while before trying again to avoid flooding
+                # the server with getMore requests when no changes are
+                # available.
+                else:
+                    time.sleep(2)
+                    idle_time += time.time() - last_change_time
+                    print("idle time: ", idle_time)
+                    if idle_time > change_stream_timeout:
+                        print("change stream timeout reached. Close the stream")
+                        stream.close()
+                        break
+        
+        except SIGINTException:
+            logger.info("SIGINT/SIGINT received. Close stream")
+            stream.close()
             
         # out of while loop
         logger.info("stream is no longer alive or SIGINT/SIGINT received")
@@ -219,7 +227,7 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
     """
     # running_mode = os.environ["my_config_section"]
     logger = log_writer.logger
-    logger.set_name("live_data_reader")
+    logger.set_name("static_data_reader")
     setattr(logger, "_default_logger_extra",  {})
     
     # Connect to a database reader
@@ -238,8 +246,7 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
 
     discard = 0 # counter for short (<3) tracks
     
-    while sig_hdlr.run:
-        
+    while sig_hdlr.run: 
         logger.debug("* current lower: {}, upper: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, rri._reader.range_iter_start, rri._reader.range_iter_stop))
         
         try:
@@ -272,12 +279,12 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
             logger.warning("static_data_reader reaches the end of query range iteration. Exit")
             break
         
+        except SIGINTException:  # rri reaches the end
+            logger.warning("SIGINT/SIGUSR1 detected. Checkpoint not implemented.")
+            break
         
         except Exception as e:
-            if sig_hdlr.run:
-                logger.warning("static_data_reader reaches the end of query range iteration. Exit. Exception:{}".format(e))
-            else:
-                logger.warning("SIGINT/SIGUSR1 detected. Checkpoint not implemented. Exception:{}".format(e))
+            logger.warning("Other exceptions occured. Exit. Exception:{}".format(e))
             break
 
         
