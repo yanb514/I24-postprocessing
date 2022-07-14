@@ -78,17 +78,14 @@ if __name__ == '__main__':
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {
-                            "change_stream_simulator": (change_stream_simulator,
-                                                        (parameters, 1,)), # insert_rate
-                            "live_data_reader": (live_data_reader,
-                                            (parameters, 
-                                            raw_fragment_queue_e, raw_fragment_queue_w,
-                                            parameters.buffer_time, parameters.min_queue_size, True, )), # True if read from a simulated collection
-                            # "live_data_reader_w": (live_data_reader,
-                            #                 (parameters, parameters.raw_collection, 
-                            #                 parameters.range_increment, "west",
-                            #                 raw_fragment_queue_w, 
-                            #                 parameters.buffer_time, parameters.min_queue_size,)),
+                            # "change_stream_simulator": (change_stream_simulator,
+                            #                             (parameters, 1,)), # insert_rate
+                            # "live_data_reader": (live_data_reader,
+                            #                 (parameters, 
+                            #                 raw_fragment_queue_e, raw_fragment_queue_w,
+                            #                 parameters.buffer_time, True, )), # True if read from a simulated collection
+                            "static_data_reader": (live_data_reader,
+                                            (parameters, raw_fragment_queue_e, raw_fragment_queue_w, 1000,)),
                             # "dummy_stitcher": (mcf.dummy_stitcher,
                             #                    (raw_fragment_queue_w, stitched_trajectory_queue,)),
                             # "stitcher_e": (mcf.min_cost_flow_online_alt_path,
