@@ -79,7 +79,7 @@ if __name__ == '__main__':
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {
                             "change_stream_simulator": (change_stream_simulator,
-                                                        (parameters, 100,)), # insert_rate
+                                                        (parameters, 1,)), # insert_rate
                             "live_data_reader": (live_data_reader,
                                             (parameters, 
                                             raw_fragment_queue_e, raw_fragment_queue_w,

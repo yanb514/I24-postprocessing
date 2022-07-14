@@ -73,7 +73,7 @@ def change_stream_simulator(default_param, insert_rate):
             logger.info("SIGINT/SIGUSR1 received in change_stream_simulator.")
             break
         time.sleep(1/insert_rate)
-        # print("insert: {}".format(doc["first_timestamp"]))
+        print("insert: {}".format(doc["first_timestamp"]))
         doc.pop("_id")
         dbw.write_one_trajectory(thread = False, **doc)
         count += 1
@@ -146,7 +146,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
                 idle_time = 0 # reset idle_time
                 # resume_token = stream.resume_token
                 
-                # print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
+                print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
                 # push to heap
                 safe_query_time = change["fullDocument"]['first_timestamp']-t_buffer
                 heapq.heappush(heap,(change["fullDocument"]['last_timestamp'],change["fullDocument"]['_id'],change['fullDocument']))
@@ -177,11 +177,10 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
                     stream.close()
                     break
             
-        # end up here where the stream is no longer alive
+        # out of while loop
         logger.info("stream is no longer alive or SIGINT/SIGINT received")
-        # stream.close()
         del dbr 
-        logger.info("stream closed. Pop the rest of heap")
+        logger.info("Process the rest of heap")
 
 
     #pop all the rest of heap
