@@ -185,6 +185,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
                 print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
                 east_queue.put(change)
                 resume_token = stream.resume_token
+            print("out of for loop, no changes, {}".format(stream.alive))
     except pymongo.errors.PyMongoError:
         if resume_token is None:
             logger.error('resume token is none')
