@@ -185,11 +185,15 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, read_f
         
         except SIGINTException:
             logger.info("SIGINT/SIGINT received. Close stream")
-            stream.close()
+            try: 
+                stream.close() 
+            except: pass
             
         except Exception as e:
             logger.warning("Other exceptions occured. Exit. Exception:{}".format(e))
-            stream.close()
+            try: 
+                stream.close() 
+            except: pass
             
         # out of while loop
         logger.info("stream is no longer alive or SIGINT/SIGINT received")
