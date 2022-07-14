@@ -172,11 +172,14 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
                 time.sleep(2)
                 idle_time += time.time() - last_change_time
                 print("idle time: ", idle_time)
-                
+                if idle_time > change_stream_timeout:
+                    print("change stream timeout reached. Close the stream")
+                    stream.close()
+                    break
             
         # end up here where the stream is no longer alive
         logger.info("stream is no longer alive or SIGINT/SIGINT received")
-        stream.close()
+        # stream.close()
         del dbr 
         logger.info("stream closed. Pop the rest of heap")
        
