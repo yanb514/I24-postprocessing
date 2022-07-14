@@ -106,8 +106,10 @@ def add_filter(track, thresh = 0.3):
     track: a document
     '''
     l,w = track.length, track.width
-    ml, mw = np.median(l), np.median(w)
-    filter = [i for i in range(len(l)) if (1-thresh)*ml<l[i]<(1+thresh)*ml and (1-thresh)*mw<w[i]<(1+thresh)*mw] # keep index
+    l_low, l_high = np.quantile(l, thresh, method='median_unbiased'), np.quantile(l, 1-thresh, method='median_unbiased')
+    w_low, w_high = np.quantile(w, thresh, method='median_unbiased'), np.quantile(w, 1-thresh, method='median_unbiased')
+
+    filter = [i for i in range(len(l)) if l_low<l[i]<l_high and w_low<w[i]<w_high] # keep index
     track.filter = filter
     return track
     
