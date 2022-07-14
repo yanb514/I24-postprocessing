@@ -474,6 +474,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
              
             if counter % 100 == 0:
                 stitcher_logger.debug("Graph nodes : {}, Graph edges: {}".format(m.G.number_of_nodes(), m.G.number_of_edges()),extra = None)
+                stitcher_logger.debug(f"raw queue: {fragment_queue.qsize()}, stitched queue: {stitched_trajectory_queue.qsize()}")
                 counter = 0
             counter += 1
         

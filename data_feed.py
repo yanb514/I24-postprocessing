@@ -68,7 +68,8 @@ def change_stream_simulator(default_param, insert_rate):
     logger.info("DBReader initiated")
     
     start = dbr.get_min("first_timestamp") - 1e-6
-    end = start + 3
+    # end = start + 3
+    end = dbr.get_max("first_timestamp") + 1e-6
     cur = dbr.get_range("first_timestamp", start, end)
     
     # write to simulated collection

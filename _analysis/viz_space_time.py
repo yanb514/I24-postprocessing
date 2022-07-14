@@ -262,7 +262,7 @@ if True and __name__=="__main__":
     os.environ["my_config_section"] = "TEST"
     parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
-    stp = SpaceTimePlot(parameters, "batch_5_07072022", window_size = 5)
-    stp.animate(increment=0.1, save=True)
+    stp = SpaceTimePlot(parameters, "tracking_v1_reconciled", window_size = 5)
+    stp.animate(increment=0.1, save=False)
     
     
