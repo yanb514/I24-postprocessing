@@ -73,7 +73,7 @@ def change_stream_simulator(default_param, insert_rate):
             logger.info("SIGINT/SIGUSR1 received in change_stream_simulator.")
             break
         time.sleep(1/insert_rate)
-        print("insert: {}".format(doc["first_timestamp"]))
+        # print("insert: {}".format(doc["first_timestamp"]))
         doc.pop("_id")
         dbw.write_one_trajectory(thread = False, **doc)
         count += 1
@@ -144,6 +144,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
             # print("Current resume token: %r" % (stream.resume_token,))
             if change is not None:
                 last_change_time = time.time()
+                idle_time = 0
                 resume_token = stream.resume_token
                 # print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
                 # push to heap
@@ -153,7 +154,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
 
                 while heap and heap[0][0] < safe_query_time:
                     _, _,doc = heapq.heappop(heap)
-                    print("pop: {},".format(doc["last_timestamp"]))
+                    # print("pop: {},".format(doc["last_timestamp"]))
                     if len(doc["timestamp"]) > 3: 
                         if doc["direction"] == 1:
                             # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
