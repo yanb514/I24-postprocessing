@@ -129,95 +129,99 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
     heap = [] # keep a heap sorted by last_timestamp
     discard = 0
     resume_token = None
+    change_stream_timeout = 10 # close the stream if timeout is reached
+    
     
     # have an internal time out for changes
 
-    # with dbr.collection.watch(pipeline, resume_after = None) as stream:
-    #     # close the stream if SIGINT received
+    with dbr.collection.watch(pipeline, resume_after = None) as stream:
+        # close the stream if SIGINT received
         
-    #     while stream.alive and sig_hdlr.run: # change stream is still alive even when there's no changes
-    #         change = stream.try_next() # first change 
-    #         # Note that the ChangeStream's resume token may be updated
-    #         # even when no changes are returned.
-    #         # print("Current resume token: %r" % (stream.resume_token,))
-    #         if change is not None:
-    #             resume_token = stream.resume_token
-    #             # print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
-    #             # push to heap
-    #             safe_query_time = change["fullDocument"]['first_timestamp']-t_buffer
-    #             heapq.heappush(heap,(change["fullDocument"]['last_timestamp'],change["fullDocument"]['_id'],change['fullDocument']))
-    #             # check if heap[0] is ready, pop until it's not ready
-
-    #             while heap and heap[0][0] < safe_query_time:
-    #                 _, _,doc = heapq.heappop(heap)
-    #                 print("pop: {},".format(doc["last_timestamp"]))
-    #                 if len(doc["timestamp"]) > 3: 
-    #                     if doc["direction"] == 1:
-    #                         # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
-    #                         east_queue.put(doc)
-    #                     else:
-    #                         west_queue.put(doc)
-    #                 else:
-    #                     discard += 1
-    #             continue
-    #         # We end up here when there are no recent changes.
-    #         # Sleep for a while before trying again to avoid flooding
-    #         # the server with getMore requests when no changes are
-    #         # available.
-    #         # print("no change. sleep")
-    #         time.sleep(2)
-            
-    #     # end up here where the stream is no longer alive
-    #     logger.info("stream is no longer alive or SIGINT/SIGINT received")
-    #     stream.close()
-    #     del dbr 
-    #     logger.info("stream closed. Pop the rest of heap")
-       
-        
-       
-
-    # This also works
-    try:
-        print("in try")
-        resume_token = None
-        pipeline = [{'$match': {'operationType': 'insert'}}]
-        with dbr.collection.watch(pipeline, resume_after = None) as stream:
-            for change in stream:
-                print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
-                east_queue.put(change)
+        while stream.alive and sig_hdlr.run: # change stream is still alive even when there's no changes
+            change = stream.try_next() # first change 
+            # Note that the ChangeStream's resume token may be updated
+            # even when no changes are returned.
+            # print("Current resume token: %r" % (stream.resume_token,))
+            if change is not None:
+                last_change_time = time.time()
                 resume_token = stream.resume_token
-            # print("out of for loop, no changes, {}".format(stream.alive))
-        print("out of with")
-    except pymongo.errors.PyMongoError:
-        print("in except")
-        if resume_token is None:
-            logger.error('resume token is none')
-        else:
-            with dbr.collection.watch(pipeline, resume_after = resume_token) as stream:
-                print(f"else {stream.alive}")
-                for change in stream:
-                    print(" resumed Change document: %r" % (change['fullDocument']['first_timestamp'],))
-                    east_queue.put(change)
-                    print("still in stream")
-                print("out of stream")
-            print("out of with")
+                # print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
+                # push to heap
+                safe_query_time = change["fullDocument"]['first_timestamp']-t_buffer
+                heapq.heappush(heap,(change["fullDocument"]['last_timestamp'],change["fullDocument"]['_id'],change['fullDocument']))
+                # check if heap[0] is ready, pop until it's not ready
+
+                while heap and heap[0][0] < safe_query_time:
+                    _, _,doc = heapq.heappop(heap)
+                    print("pop: {},".format(doc["last_timestamp"]))
+                    if len(doc["timestamp"]) > 3: 
+                        if doc["direction"] == 1:
+                            # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
+                            east_queue.put(doc)
+                        else:
+                            west_queue.put(doc)
+                    else:
+                        discard += 1
+                continue
+            # We end up here when there are no recent changes.
+            # Sleep for a while before trying again to avoid flooding
+            # the server with getMore requests when no changes are
+            # available.
+            else:
+                # print("no change. sleep")
+                time.sleep(2)
+            
+        # end up here where the stream is no longer alive
+        logger.info("stream is no longer alive or SIGINT/SIGINT received")
+        stream.close()
+        del dbr 
+        logger.info("stream closed. Pop the rest of heap")
+       
+        
+       
+
+    # This also works - but it waits indefintely for changes. Does not exit
+    # try:
+    #     print("in try")
+    #     resume_token = None
+    #     pipeline = [{'$match': {'operationType': 'insert'}}]
+    #     with dbr.collection.watch(pipeline, resume_after = None) as stream:
+    #         for change in stream:
+    #             print("Change document: %r" % (change['fullDocument']['first_timestamp'],))
+    #             east_queue.put(change)
+    #             resume_token = stream.resume_token
+    #         # print("out of for loop, no changes, {}".format(stream.alive))
+    #     print("out of with")
+    # except pymongo.errors.PyMongoError:
+    #     print("in except")
+    #     if resume_token is None:
+    #         logger.error('resume token is none')
+    #     else:
+    #         with dbr.collection.watch(pipeline, resume_after = resume_token) as stream:
+    #             print(f"else {stream.alive}")
+    #             for change in stream:
+    #                 print(" resumed Change document: %r" % (change['fullDocument']['first_timestamp'],))
+    #                 east_queue.put(change)
+    #                 print("still in stream")
+    #             print("out of stream")
+    #         print("out of with")
 
 
 
 
 
     #pop all the rest of heap
-    # while heap:
-    #     _, _, doc = heapq.heappop(heap)
-    #     print("pop: {}".format(doc["last_timestamp"]))
-    #     if len(doc["timestamp"]) > 3: 
-    #         if doc["direction"] == 1:
-    #             # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
-    #             east_queue.put(doc)
-    #         else:
-    #             west_queue.put(doc)
-    #     else:
-    #         discard += 1
+    while heap:
+        _, _, doc = heapq.heappop(heap)
+        print("pop: {}".format(doc["last_timestamp"]))
+        if len(doc["timestamp"]) > 3: 
+            if doc["direction"] == 1:
+                # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
+                east_queue.put(doc)
+            else:
+                west_queue.put(doc)
+        else:
+            discard += 1
             
     
     # logger.info("Discarded {} short tracks".format(discard))
