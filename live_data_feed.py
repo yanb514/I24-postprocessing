@@ -250,7 +250,6 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
     
                 for doc in next_batch:
                     if len(doc["timestamp"]) > 3: 
-                        print(doc["last_timestamp"])
                         if doc["direction"] == 1:
                             # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
                             east_queue.put(doc)
@@ -270,13 +269,13 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
          
             
         except StopIteration:  # rri reaches the end
-            logger.warning("live_data_reader reaches the end of query range iteration. Exit")
+            logger.warning("static_data_reader reaches the end of query range iteration. Exit")
             break
         
         
         except Exception as e:
             if sig_hdlr.run:
-                logger.warning("live_data_reader reaches the end of query range iteration. Exit. Exception:{}".format(e))
+                logger.warning("static_data_reader reaches the end of query range iteration. Exit. Exception:{}".format(e))
             else:
                 logger.warning("SIGINT/SIGUSR1 detected. Checkpoint not implemented. Exception:{}".format(e))
             break
