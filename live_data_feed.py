@@ -131,6 +131,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, min_qu
     resume_token = None
     change_stream_timeout = 10 # close the stream if timeout is reached
     idle_time = 0
+    last_change_time = time.time() # initialize last checkpoint
     
     # have an internal time out for changes
 
