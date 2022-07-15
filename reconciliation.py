@@ -36,18 +36,19 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     
     rec_worker_logger = log_writer.logger
     rec_worker_logger.set_name("rec_worker")
+    setattr(rec_worker_logger, "_default_logger_extra",  {})
 
     resampled_trajectory = resample(combined_trajectory)
     rec_worker_logger.debug("*** 2. Resampled.", extra = None)
     
     # finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
-    # finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)   
-    # rec_worker_logger.debug("*** 3. Reconciled a trajectory. Trajectory duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
+    finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)   
+    rec_worker_logger.info("*** 3. Reconciled a trajectory. Trajectory duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
     
-    resampled_trajectory["timestamp"] = list(resampled_trajectory["timestamp"])
-    resampled_trajectory["x_position"] = list(resampled_trajectory["x_position"])
-    resampled_trajectory["y_position"] = list(resampled_trajectory["y_position"])
-    reconciled_queue.put(resampled_trajectory)
+    # resampled_trajectory["timestamp"] = list(resampled_trajectory["timestamp"])
+    # resampled_trajectory["x_position"] = list(resampled_trajectory["x_position"])
+    # resampled_trajectory["y_position"] = list(resampled_trajectory["y_position"])
+    reconciled_queue.put(finished_trajectory)
     rec_worker_logger.debug("reconciled queue size: {}".format(reconciled_queue.qsize()))
 
 

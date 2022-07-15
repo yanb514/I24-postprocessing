@@ -133,17 +133,8 @@ def line_regress(track, with_filter = True):
         y = [track.y[i] for i in filter]
     else:
         t,x,y = track.t, track.x, track.y
-    
-    try:
-        slope, intercept, r, p, std_err = stats.linregress(t,x)
-    except:
-        print(track.id)
-        print(len(t))
-        print(track.filter)
-        print(track.t)
-        print(track.x)
-        print(track.length)
-        print(track.width)
+
+    slope, intercept, r, p, std_err = stats.linregress(t,x)
     fitx = [slope, intercept, r, p, std_err]
     slope, intercept, r, p, std_err = stats.linregress(t,y)
     fity = [slope, intercept, r, p, std_err]
@@ -160,8 +151,8 @@ def cost_1(track1, track2, TIME_WIN, VARX, VARY, with_filter = True):
     2. cone offset to consider time-overlapped fragments and allow initial uncertainties
     '''
 
-    cone_offset = 5
-    cost_offset = -6
+    cone_offset = 1
+    cost_offset = -3
     n = 30 # consider n measurements
     
     # add filters to track
@@ -229,7 +220,7 @@ def cost_1(track1, track2, TIME_WIN, VARX, VARY, with_filter = True):
 
         
         
-        
+@catch_critical(errors = (Exception))
 def nll_modified(track1, track2, TIME_WIN, VARX, VARY):
     '''
     negative log likelihood of track2 being a successor of track1

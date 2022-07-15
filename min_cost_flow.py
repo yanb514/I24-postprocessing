@@ -375,6 +375,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     stitcher_logger = log_writer.logger
     stitcher_logger.set_name("stitcher_"+direction)
     stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
+    setattr(stitcher_logger, "_default_logger_extra",  {})
 
     # Signal handling: 
     # SIGINT (sent from parent process) raises KeyboardInterrupt,  close dbw and soft exit
