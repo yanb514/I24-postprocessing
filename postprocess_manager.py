@@ -238,3 +238,8 @@ if __name__ == '__main__':
         
     manager_logger.info("Exit manager")
     manager_logger.info("Final queue sizes, raw east: {}, raw west: {}, stitched: {}, reconciled: {}".format(raw_fragment_queue_e.qsize(), raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize(), reconciled_queue.qsize()))
+    
+    
+    
+    
+    

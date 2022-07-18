@@ -97,12 +97,17 @@ class UnsupervisedEvaluator():
         '''
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
+            dbw = DBWriter(self.config, collection_name = "none", schema_file=None)
+            all_collections = dbw.db.list_collection_names()
+            
             for col in collection_list:
-                dbw = DBWriter(self.config, collection_name = col, schema_file=None)
+                if col not in all_collections:
+                    print(f"{col} not in collection list")
                 # dbw.reset_collection() # This line throws OperationFailure, not sure how to fix it
-                dbw.collection.drop()
-                if col not in dbw.db.list_collection_names():
-                    print("Collection {} is successfully deleted".format(col))
+                else:
+                    dbw.db[col].drop()
+                    if col not in dbw.db.list_collection_names():
+                        print("Collection {} is successfully deleted".format(col))
                     
         
     def get_random(self, collection_name):
@@ -277,4 +282,4 @@ if __name__ == '__main__':
     # ue.evaluate()
     # ue.get_stats()
     
-    ue.delete_collection(["tracking_v1_stitched", "tracking_v1_reconciled","tracking_v1_reconciled_nll_modified","tracking_v1_stitched","batch_stitched"])
+    ue.delete_collection(["tracking_v1_stitched", "tracking_v1_reconciled","tracking_v1_reconciled_nll_modified","tracking_v1_stitched","batch_stitched","batch_reconciled"])

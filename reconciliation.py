@@ -63,8 +63,8 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     # parameters
     reconciliation_args = {"lam2_x": parameters.lam2_x,
                            "lam2_y": parameters.lam2_y,
-                            "lam1_x": parameters.lam1_x, 
-                            "lam1_y": parameters.lam1_y,
+                           "lam1_x": parameters.lam1_x, 
+                           "lam1_y": parameters.lam1_y,
                            "PH": parameters.ph,
                            "IH": parameters.ih}
     
@@ -91,8 +91,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
         signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
         
     signal.signal(signal.SIGUSR1, handler) # ignore SIGUSR1
-    # # Create a shared queue to store workers results # TODO: max queue size
-    # reconciled_queue = multiprocessing.Manager().Queue()
+
     
     while True:
         try:
