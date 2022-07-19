@@ -270,7 +270,9 @@ if __name__ == '__main__':
     os.environ["my_config_section"] = "TEST"
     db_param = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
+    # db_param.db_name = "transformed"
     ue = UnsupervisedEvaluator(db_param, "batch_5_07072022")
+    
     # fragment_list = [ObjectId('62c713dfc77930b8d9533454'), ObjectId('62c713fbc77930b8d9533462')]
     # rec_id = ObjectId("62c730078b650aa00a3b925f")
     # ue.plot_fragments(fragment_list=fragment_list,rec_id=None)
@@ -282,4 +284,5 @@ if __name__ == '__main__':
     # ue.evaluate()
     # ue.get_stats()
     
-    ue.delete_collection(["tracking_v1_stitched", "tracking_v1_reconciled","tracking_v1_reconciled_nll_modified","tracking_v1_stitched","batch_stitched","batch_reconciled"])
+    # ue.delete_collection(["batch_reconciled_transformed"])
+    # ue.delete_collection(["tracking_v1_stitched", "tracking_v1_reconciled","tracking_v1_reconciled_nll_modified","tracking_v1_stitched","batch_stitched","batch_reconciled"])

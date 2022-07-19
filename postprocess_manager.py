@@ -16,11 +16,20 @@ import time
 from i24_configparse import parse_cfg
 from i24_logger.log_writer import logger
 
-config_path = os.path.join(os.getcwd(),"config")
-os.environ["USER_CONFIG_DIRECTORY"] = config_path 
-os.environ["user_config_directory"] = config_path
-os.environ["my_config_section"] = "TEST"
-parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
+# config_path = os.path.join(os.getcwd(),"config")
+# os.environ["USER_CONFIG_DIRECTORY"] = config_path 
+# os.environ["user_config_directory"] = config_path
+# os.environ["my_config_section"] = "TEST"
+# parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
+
+# set os environment config path
+cwd = os.getcwd()
+cfg = "config"
+config_path = os.path.join(cwd,cfg)
+os.environ["USER_CONFIG_DIRECTORY"] = config_path # note that this may not affect processes globally
+os.environ["test_config_section"] = "TEST"
+parameters = parse_cfg(env_sec_name="test_config_section", cfg_name = "test_param.config")
+
 
 # Customized modules
 import data_feed as df

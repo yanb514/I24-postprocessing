@@ -86,7 +86,7 @@ class Plotter():
             raise NameError
             
         # add default collection_name for transformed
-        self.dbr_t = DBReader(config, username = "readonly",  collection_name=collection_name+"_transformed")
+        self.dbr_t = DBReader(config, username = "readonly",  database_name = parameters.transformed, collection_name=collection_name+"_transformed")
         if collection_name+"_transformed" not in self.dbr_t.db.list_collection_names():
             print(f"{collection_name}_transformed not in dbr_t")
             self.overhead = False # no overhead view
@@ -141,7 +141,7 @@ class Plotter():
         
         
     @catch_critical(errors = (Exception))
-    def animate(self, tmin=None, tmax=None, increment=0.3, save = False):
+    def animate(self, tmin=None, tmax=None, increment=0.3, frames=100, save = False):
         """
         Advance time window by delta second, update left and right pointer, and cache
         """     
@@ -356,7 +356,7 @@ class Plotter():
         frame_text = None
         self.anim = animation.FuncAnimation(fig, func=update_cache,
                                             init_func= init,
-                                            # frames=len(steps),
+                                            frames=frames,
                                             repeat=False,
                                             interval=increment * 1000, # in ms
                                             fargs=( frame_text), # specify time increment in sec to update query
@@ -368,7 +368,8 @@ class Plotter():
         if save:
             self.anim.save('{}.mp4'.format(self.collection_name), writer='ffmpeg', fps=int(1/increment))
           
-        fig.tight_layout()
+        if self.overhead:
+            fig.tight_layout()
         plt.show()
         print("complete")
         
@@ -407,12 +408,14 @@ class Plotter():
 if True and __name__=="__main__":
     
     
-    config_path = os.path.join(os.getcwd(),"../config")
-    os.environ["user_config_directory"] = config_path
-    os.environ["my_config_section"] = "TEST"
-    parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
+    # config_path = os.path.join(os.getcwd(),"../config")
+    # os.environ["user_config_directory"] = config_path
+    # os.environ["my_config_section"] = "TEST"
+    parameters = parse_cfg("test_config_section", cfg_name = "test_param.config")
+    parameters.transformed = "transformed"
     
+    # batch_5_07072022, batch_reconciled, 
     p = Plotter(parameters, "batch_reconciled", window_size = 5)
-    p.animate(increment=0.05, save=False)
+    p.animate(increment=0.05,  frames = 2000, save=False)
     
     

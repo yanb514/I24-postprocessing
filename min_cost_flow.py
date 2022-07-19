@@ -150,7 +150,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     
     
     # Make a database connection for writing
-    schema_path = os.path.join(os.environ["user_config_directory"],parameters.stitched_schema_path)
+    schema_path = os.path.join(os.environ["USER_CONFIG_DIRECTORY"],parameters.stitched_schema_path)
     dbw = DBWriter(parameters, collection_name = parameters.stitched_collection, schema_file=schema_path)
 
     # Get parameters
@@ -257,11 +257,11 @@ def test_fragments(gt_ids, paths):
 if __name__ == '__main__':
     
     # get parameters
-    cwd = os.getcwd()
-    cfg = "config"
-    config_path = os.path.join(cwd,cfg)
-    os.environ["user_config_directory"] = config_path
-    os.environ["my_config_section"] = "TEST"
+    # cwd = os.getcwd()
+    # cfg = "config"
+    # config_path = os.path.join(cwd,cfg)
+    # os.environ["user_config_directory"] = config_path
+    # os.environ["my_config_section"] = "TEST"
     parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
     parameters.raw_trajectory_queue_get_timeout = 1
 

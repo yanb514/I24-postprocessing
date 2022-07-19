@@ -96,7 +96,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     while True:
         try:
             try:
-                next_to_reconcile = stitched_trajectory_queue.get(timeout = parameters.stitched_trajectory_queue_get_timeout)
+                next_to_reconcile = stitched_trajectory_queue.get(timeout = parameters.stitched_trajectory_queue_get_timeout) #20sec
             except queue.Empty: 
                 rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters.stitched_trajectory_queue_get_timeout))
                 break
@@ -139,7 +139,7 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     signal.signal(signal.SIGUSR1, handler) # ignore SIGUSR1
     
     
-    reconciled_schema_path = os.path.join(os.environ["user_config_directory"],parameters.reconciled_schema_path)
+    reconciled_schema_path = os.path.join(os.environ["USER_CONFIG_DIRECTORY"],parameters.reconciled_schema_path) #15sec
     dbw = DBWriter(parameters, collection_name = parameters.reconciled_collection, schema_file=reconciled_schema_path)
     
     # Write to db
