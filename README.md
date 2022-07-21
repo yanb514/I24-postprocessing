@@ -1,20 +1,27 @@
-# I24-trajectory-generation
+# I24-postprocessing
 
-Before running this notebook, please do the following
-- Download the trajectory data at 
-    - (3D tracking) https://vanderbilt.box.com/s/sgb996yj09bmev6yhc7slf053nz74p9q
-    - (Synthetic data, for algorithm benchmarking) https://vanderbilt.app.box.com/folder/150598703751
-        - Based on the simulation data from TransModler, details see `benchmark_TM.py`
+A real-time trajectory postprocessing pipeline for I-24 MOTION project.
+Project website: https://i24motion.org/
 
-### Postprocessing pipeline
-- Data association
-    - This step is to reduce fragments, details see `data_association.py`
-    - MOTA evaluation
-- Data rectification
-    - This step is to produce trajectory data that satisfy vehicle dynamics (e.g., velocity/acceleration smoothing)
-    - details see `rectification.py`
 
-### Data format: 
+## Postprocessing pipeline overview
+
+This pipeline consists of 5 parallel processes, managed by a mutliprocessing manager:
+1. `data_feed.py->live_data_feed()`: continuously read fragments from the raw trajectory collection with MongoDB change stream, and put them into a multiprocessing queue.
+2,3. `min_cost_flow.py-> min_cost_flow_alt_path()`: a fragment stitching algorithm using min-cost-flow formulation. It processes fragment one by one from a multiprocessing queue, and writes the stitched trajectories into another queue. Two identical stitchers are spawn for east and west bound traffic.
+4. `reconciliation.py -> reconciliation_pool()`: a trajectory reconciliation algorithm to smooth, impute and rectify trajectories, such that the dynamics (e.g., velocity, acceleration and jerk) are within a reasonable range and they satisfy internal consistency. It creates a multiprocessing pool and asynchronously assign workers to reconcile trajectories independly. The reconciled trajectories are written to another queue for bulk write to database.
+5. `reconcilation.ppy -> reconciliation_writer()`: writes processed trajectories to database.
+
+All processes are managed by python multiprocessing framework. A diagram illustrates the pipeline:
+![visio](https://user-images.githubusercontent.com/30248823/180301065-05b13405-6627-4215-bf38-d94d8587531e.png)
+
+
+
+## Evaluation
+Qualitative evaluation of the trajectory qualities can be visualized using the time-space, overhead and video-overlay repositories described below.
+Due to the lack standard metrics, we provide statistics-based evaluation in `unsupervised_evaluator.py`.
+
+## Data format: 
 1. `Frame #`: frame index (30 fps)
 2. `Timestamp`: Unix timestamp
 3. `ID`: unique vehicle ID
@@ -39,7 +46,8 @@ Before running this notebook, please do the following
 23. `lane`: lane index, calculated from y coordinate.
 **: information not needed for post-processing
 
-## Visualization
+## Other related I-24 MOTION repositories
+### I24 Visualization
 There are multiple ways to visualize data. The visualization toolbox will be updated. As of now, the best way is to run `animation.py`.
 
 ## Evaluation
