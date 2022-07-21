@@ -19,6 +19,9 @@ All processes are managed by python multiprocessing framework. A diagram illustr
 
 ## Evaluation
 Qualitative evaluation of the trajectory qualities can be visualized using the time-space, overhead and video-overlay repositories described below.
+
+![anim_batch_reconciled_timespace_overhead](https://user-images.githubusercontent.com/30248823/180271610-6baf4307-e4a1-4cb5-ae86-3df0d31e3319.gif)
+
 Due to the lack standard metrics, we provide statistics-based evaluation in `unsupervised_evaluator.py`.
 
 ## Data format: 
