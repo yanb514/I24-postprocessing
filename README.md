@@ -6,11 +6,11 @@ Project website: https://i24motion.org/
 
 ## Postprocessing pipeline overview
 
-This pipeline consists of 5 parallel processes, managed by a mutliprocessing manager:
+This pipeline consists of 4 parallel processes, managed by a mutliprocessing manager:
 1. `data_feed.py->live_data_feed()`: continuously read fragments from the raw trajectory collection with MongoDB change stream, and put them into a multiprocessing queue.
-2,3. `min_cost_flow.py-> min_cost_flow_alt_path()`: a fragment stitching algorithm using min-cost-flow formulation. It processes fragment one by one from a multiprocessing queue, and writes the stitched trajectories into another queue. Two identical stitchers are spawn for east and west bound traffic.
-4. `reconciliation.py -> reconciliation_pool()`: a trajectory reconciliation algorithm to smooth, impute and rectify trajectories, such that the dynamics (e.g., velocity, acceleration and jerk) are within a reasonable range and they satisfy internal consistency. It creates a multiprocessing pool and asynchronously assign workers to reconcile trajectories independly. The reconciled trajectories are written to another queue for bulk write to database.
-5. `reconcilation.ppy -> reconciliation_writer()`: writes processed trajectories to database.
+2. `min_cost_flow.py-> min_cost_flow_alt_path()`: a fragment stitching algorithm using min-cost-flow formulation. It processes fragment one by one from a multiprocessing queue, and writes the stitched trajectories into another queue. Two identical stitchers are spawn for east and west bound traffic.
+3. `reconciliation.py -> reconciliation_pool()`: a trajectory reconciliation algorithm to smooth, impute and rectify trajectories, such that the dynamics (e.g., velocity, acceleration and jerk) are within a reasonable range and they satisfy internal consistency. It creates a multiprocessing pool and asynchronously assign workers to reconcile trajectories independly. The reconciled trajectories are written to another queue for bulk write to database.
+4. `reconcilation.ppy -> reconciliation_writer()`: writes processed trajectories to database.
 
 All processes are managed by python multiprocessing framework. A diagram illustrates the pipeline:
 ![visio](https://user-images.githubusercontent.com/30248823/180301065-05b13405-6627-4215-bf38-d94d8587531e.png)
