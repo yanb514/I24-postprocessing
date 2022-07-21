@@ -1,6 +1,6 @@
 # I24-postprocessing
 
-A real-time trajectory postprocessing pipeline for I-24 MOTION project.
+A real-time trajectory postprocessing pipeline for I-24 MOTION project, following tracking https://github.com/DerekGloudemans/i24_track. 
 Project website: https://i24motion.org/
 
 
