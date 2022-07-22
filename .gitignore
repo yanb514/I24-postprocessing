@@ -7,9 +7,10 @@
 config.json
 config/**
 **/config
+config/*.config
 
 *.mp4
-*.sh
-*.sh.swp
-venv
-__pycache__
+#*.sh
+#*.sh.swp
+#venv
+#__pycache__
