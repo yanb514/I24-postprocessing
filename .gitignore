@@ -1,5 +1,13 @@
 
 # ignore all .log files
 *.log
+
+# ignore all config files
 *.config
 config.json
+
+*.mp4
+*.sh
+*.sh.swp
+venv
+__pycache__
