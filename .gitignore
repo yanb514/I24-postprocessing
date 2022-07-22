@@ -5,6 +5,7 @@
 # ignore all config files
 *.config
 config.json
+config/**
 
 *.mp4
 *.sh
