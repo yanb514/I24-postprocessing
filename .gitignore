@@ -1,4 +1,5 @@
 
 # ignore all .log files
 *.log
-# *.config
+*.config
+config.json

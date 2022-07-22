@@ -1,108 +1,53 @@
-# I24-postprocessing
+# I24-trajectory-generation
 
-A real-time trajectory postprocessing pipeline for I-24 MOTION project, following tracking https://github.com/DerekGloudemans/i24_track. 
-Project website: https://i24motion.org/
+Before running this notebook, please do the following
+- Download the trajectory data at 
+    - (3D tracking) https://vanderbilt.box.com/s/sgb996yj09bmev6yhc7slf053nz74p9q
+    - (Synthetic data, for algorithm benchmarking) https://vanderbilt.app.box.com/folder/150598703751
+        - Based on the simulation data from TransModler, details see `benchmark_TM.py`
 
+### Postprocessing pipeline
+- Data association
+    - This step is to reduce fragments, details see `data_association.py`
+    - MOTA evaluation
+- Data rectification
+    - This step is to produce trajectory data that satisfy vehicle dynamics (e.g., velocity/acceleration smoothing)
+    - details see `rectification.py`
 
-## Postprocessing pipeline overview
+### Data format: 
+1. `Frame #`: frame index (30 fps)
+2. `Timestamp`: Unix timestamp
+3. `ID`: unique vehicle ID
+4. `Object class`: vehicle type
+5. **`BBox xmin/ymin/xmax/ymax`: 2D bounding box dimensions
+6. ** `vel_x/vel_y`: velocity
+7. ** `fbrx/y`: the pixel coordinates of the front bottom right corner w.r.t. each vehicle's traveling direction
+8. ** `fblx/y`: ... front bottom left ...
+9. ** `bbrx/y`: ... back bottom right ...
+10. ** `bblx/y`: ... back bottom left ...
+11. ** `btlx/y`: ... back top left ...
+13. `fbr_x/_y`: the road cooridates (w.r.t some surveyed points) of the front bottom right corner
+14. `direction`: 1: south bound traffic; -1: north bound traffic
+15. `camera`: camera field of view
+16. `acceleration`: acceleration in m/s^2
+17. `speed`: speed in m/s
+18. `x/y`: back center positions in road coordinates (in meter)
+19. `theta`: angle between the travel direction and the positive x-axis. If direction = 1, theta is close to 0; if direction = -1, theta is close to pi.
+20. `width`: width of the vehicle in meter
+21. `length`: length of the vehicle in meter
+22. `height`: height of the vehicle in meter
+23. `lane`: lane index, calculated from y coordinate.
+**: information not needed for post-processing
 
-This pipeline consists of 4 parallel processes, managed by a mutliprocessing manager:
-1. `data_feed.py->live_data_feed()`: continuously read fragments from the raw trajectory collection with MongoDB change stream, and put them into a multiprocessing queue.
-2. `min_cost_flow.py-> min_cost_flow_alt_path()`: a fragment stitching algorithm using min-cost-flow formulation. It processes fragment one by one from a multiprocessing queue, and writes the stitched trajectories into another queue. Two identical stitchers are spawn for east and west bound traffic.
-3. `reconciliation.py -> reconciliation_pool()`: a trajectory reconciliation algorithm to smooth, impute and rectify trajectories, such that the dynamics (e.g., velocity, acceleration and jerk) are within a reasonable range and they satisfy internal consistency. It creates a multiprocessing pool and asynchronously assign workers to reconcile trajectories independly. The reconciled trajectories are written to another queue for bulk write to database.
-4. `reconcilation.ppy -> reconciliation_writer()`: writes processed trajectories to database.
-
-All processes are managed by python multiprocessing framework. A diagram illustrates the pipeline:
-![visio](https://user-images.githubusercontent.com/30248823/180301065-05b13405-6627-4215-bf38-d94d8587531e.png)
-
-
+## Visualization
+There are multiple ways to visualize data. The visualization toolbox will be updated. As of now, the best way is to run `animation.py`.
 
 ## Evaluation
-Qualitative evaluation of the trajectory qualities can be visualized using the time-space, overhead and video-overlay repositories described below.
+1. `synth_evaluator`: Calculate multi-object tracking performance metrics, such as TP, FP, FN, FRAG, IDS, MOTA, MOTP. Use this when ground truth data is available.
+2. `global_metrics`: Examine global traffic condition, plot histograms of the state, and identify abnormal trajectories. Use this when ground truth data is not available.
 
-![anim_batch_reconciled_timespace_overhead](https://user-images.githubusercontent.com/30248823/180271610-6baf4307-e4a1-4cb5-ae86-3df0d31e3319.gif)
-
-Due to the lack standard metrics, we provide statistics-based evaluation in `unsupervised_evaluator.py`.
-
-## Data format: 
-
-```python
-{
-    "$jsonSchema": {
-        "bsonType": "object",
-        "required": ["timestamp", "last_timestamp", "x_position"],
-        "properties": {
-            "configuration_id": {
-                "bsonType": "int",
-                "description": "A unique ID that identifies what configuration was run. It links to a metadata document that defines all the settings that were used system-wide to generate this trajectory fragment"
-                },
-            "coarse_vehicle_class": {
-                "bsonType": "int",
-                "description": "Vehicle class number"
-                },
-            
-            "timestamp": {
-                "bsonType": "array",
-                "items": {
-                    "bsonType": "double"
-                    },
-                "description": "Corrected timestamp. This timestamp may be corrected to reduce timestamp errors."
-                },
-            
- 
-            "road_segment_ids": {
-                "bsonType": "array",
-                "items": {
-                    "bsonType": "int"
-                    },
-                "description": "Unique road segment ID. This differentiates the mainline from entrance ramps and exit ramps, which get distinct road segment IDs."
-                },
-            "x_position": {
-                "bsonType": "array",
-                "items": {
-                    "bsonType": "double"
-                    },
-                "description": "Array of back-center x position along the road segment in feet. The  position x=0 occurs at the start of the road segment."
-                },
-            "y_position": {
-                "bsonType": "array",
-                "items": {
-                    "bsonType": "double"
-                    },
-                "description": "array of back-center y position across the road segment in feet. y=0 is located at the left yellow line, i.e., the left-most edge of the left-most lane of travel in each direction."
-                },
-            
-            "length": {
-                "bsonType": "double",
-                "description": "vehicle length in feet."
-                },
-            "width": {
-                "bsonType": "double",
-                "description": "vehicle width in feet"
-                },
-            "height": {
-                "bsonType": "double",
-                "description": "vehicle height in feet"
-                },
-            "direction": {
-                "bsonType": "int",
-                "description": "-1 if westbound, 1 if eastbound"
-                }
-
-            }
-        }
-    }
-```
-
-
-## Other related I-24 MOTION repositories
-### I24_logging
-https://github.com/Lab-Work/I24_logging
-### I24 Visualization
-https://github.com/yanb514/i24-overhead-visualizer
-https://github.com/zineanteoh/i24-overlay-visualizer
-### I24_transform_module
-https://github.com/Lab-Work/i24-transform-module
-### I24_database_api
-https://github.com/Lab-Work/i24_database_api
+### Benchmarking using synthetic data
+- Synthetic data that resembles the raw 3D tracking data will be generated in `benchmark_TM.py`
+    - Point-trajectory data is generated using TransModler, I added vehicle dimension and upsampled the trajectory to get the state information. Data format follows the one above
+    - Manual pollution is added to (1) mask part of the data to create fragments and (2) add noise on the bbox.
 
