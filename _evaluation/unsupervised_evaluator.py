@@ -386,7 +386,7 @@ if __name__ == '__main__':
     t2 = time.time()
     
     print("time: ", t2-t1)
-    # ue.print_res()
+    ue.print_res()
     # ue.save_res()
     
     
