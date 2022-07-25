@@ -266,11 +266,10 @@ class UnsupervisedEvaluator():
                 east_b = np.array([time_doc_dict[veh_id]+east_dict[veh_id] for veh_id in east_ids])
                 west_b = np.array([time_doc_dict[veh_id]+west_dict[veh_id] for veh_id in west_ids])
                 
-            # print(has_dimension) 
-            # print(east_b.shape)   
+  
             overlap = []
             space_gap = []
-            # veh_cache = {} # key: vehicle_id, val: [lx, ly, rx, ry]
+
             #a = M*b, where a=[lx, ly, rx, ry], b =[x,y,len,wid]
             # vectorize to all vehicles: A = M*B
             try:
@@ -327,11 +326,6 @@ class UnsupervisedEvaluator():
         return
     
 
-            
-        
-    
-        
-        
         
     def print_res(self):
         pprint.pprint(self.res, width = 1)
@@ -352,161 +346,9 @@ class UnsupervisedEvaluator():
         with open(f"res_{self.collection_name}.json", "w") as f:
             json.dump(self.res, f, indent=4, sort_keys=False,cls=NpEncoder)
         print("saved.")
-            
 
 
 
-
-#--------------------------------------------
-            
-        
-    def get_collection_info(self):
-        """
-        To set the bounds on query and on visualization
-        """
-        col1 = self.col1
-        self.col1_info = {
-            "count": col1.count(),
-            "min_first_time": col1.get_min("first_timestamp"),
-            "max_last_time": col1.get_max("last_timestamp"),
-            "min_last_time": col1.get_min("last_timestamp"),
-            "max_first_time": col1.get_max("first_timestamp"),
-            "min_x": min(col1.get_min("starting_x"), col1.get_min("ending_x"),col1.get_max("starting_x"), col1.get_max("ending_x")),
-            "max_x": max(col1.get_max("starting_x"), col1.get_max("ending_x"),col1.get_min("starting_x"), col1.get_min("ending_x"))
-            }  
-        if self.col2:
-            col2 = self.col2
-            self.col2_info = {
-                "count": col2.count(),
-                "min_first_time": col2.get_min("first_timestamp"),
-                "max_last_time": col2.get_max("last_timestamp"),
-                "min_last_time": col2.get_min("last_timestamp"),
-                "max_first_time": col2.get_max("first_timestamp"),
-                "min_x": min(col2.get_min("starting_x"), col2.get_min("ending_x"),col2.get_max("starting_x"), col2.get_max("ending_x")),
-                "max_x": max(col2.get_max("starting_x"), col2.get_max("ending_x"),col2.get_min("starting_x"), col2.get_min("ending_x"))
-                } 
-        else:
-            self.col2_info = None
-            
-            
-        
-    def delete_collection(self, collection_list):
-        '''
-        delete (reset) collections in list
-        '''
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            dbw = DBWriter(self.config, collection_name = "none", schema_file=None)
-            all_collections = dbw.db.list_collection_names()
-            
-            for col in collection_list:
-                if col not in all_collections:
-                    print(f"{col} not in collection list")
-                # dbw.reset_collection() # This line throws OperationFailure, not sure how to fix it
-                else:
-                    dbw.db[col].drop()
-                    if col not in dbw.db.list_collection_names():
-                        print("Collection {} is successfully deleted".format(col))
-                    
-        
-    def get_random(self, collection_name):
-        '''
-        Return a random document from a collection
-        '''
-        dbr = DBReader(self.config, collection_name=collection_name)
-        import random
-        doc = dbr.collection.find()[random.randrange(dbr.count())]
-        return doc
-    
-        
-    
-    def plot_fragments(self, traj_ids):
-        '''
-        Plot fragments with the reconciled trajectory (if col2 is specified)
-
-        Parameters
-        ----------
-        fragment_list : list of ObjectID fragment _ids
-        rec_id: ObjectID (optional)
-        '''
-        
-        fig, axs = plt.subplots(1, 3, figsize=(9, 3))
-        
-        
-        for f_id in traj_ids:
-            f = self.dbr_v.find_one("_id", f_id)
-            axs[0].scatter(f["timestamp"], f["x_position"], s=0.5, label=f_id)
-            axs[1].scatter(f["timestamp"], f["y_position"], s=0.5, label=f_id)
-            axs[2].scatter(f["x_position"], f["y_position"], s=0.5, label=f_id)
-
-        axs[0].set_title("time v x")
-        axs[1].set_title("time v y")
-        axs[2].set_title("x v y")
-            
-        axs[0].legend()
-        
-    def fragment_length_dist(self):
-        '''
-        Get the distribution for the #fragments that matched to one trajectory
-        '''
-        if self.col2 is None:
-            print("Collection 2 must be specified")
-            return
-        pipeline = [{'$project':{ 'count': { '$size':'$fragment_ids'} } }, 
-                       { '$group' : {'_id':'$count', 'count':{'$sum':1} } },
-                       { '$sort'  : {'count': -1 } } ]
-        cur = self.col2.collection.aggregate(pipeline)
-        pprint.pprint(list(cur))
-
-    
-    def evaluate_old(self):
-        '''
-        1. filtered fragments (not in reconciled fragment_ids)
-        2. lengths of those fragments (should be <3) TODO: Some long documents are not matched
-        3. 
-        '''
-        
-        # find all unmatched fragments
-        res = self.dbr_v.collection.aggregate([
-               {
-                  '$lookup':
-                     {
-                       'from': self.col2_name,
-                       'localField': "_id",
-                       'foreignField': "fragment_ids",
-                        'pipeline': [
-                            { '$project': { 'count': 1}  }, # dummy
-                        ],
-                       'as': "matched"
-                     }
-                },
-                {
-                 '$match': {
-                     "matched": { '$eq': [] } # select all unmatched fragments
-                   }
-                }
-            ] )
-        self.res = list(res)
-        print("{} out of {} fragments are not in reconciled ".format(len(self.res), self.col1.count()))
-        
-        # Get the length distribution of these unmatched fragments
-        import math
-        f_ids = [d['_id'] for d in self.res] # get all the ids
-        pipeline = [{'$project':{ 'length': { '$size':'$timestamp'} } },
-                    { '$match': { "_id": {'$in': f_ids } } },
-                       { '$group' : {'_id':'$length', 'count':{'$sum':1}} },
-                       { '$sort'  : {'count': -1 } } ]
-        cur = self.dbr_v.collection.aggregate(pipeline)
-        dict = {d["_id"]: math.log(d["count"]) for d in cur}
-        plt.bar(dict.keys(), dict.values(), width = 2, color='g')
-        plt.xlabel("Lengths of documents")
-        plt.ylabel("Count (log-scale)")
-        plt.title("Unmatched fragments length distribution in log")
-        
-        # pprint.pprint(list(cur))
-        
-    
-        
         
 
 if __name__ == '__main__':
@@ -529,7 +371,7 @@ if __name__ == '__main__':
     
     print("time: ", t2-t1)
     # ue.print_res()
-    ue.save_res()
+    # ue.save_res()
     
     
     #%%
@@ -539,10 +381,3 @@ if __name__ == '__main__':
     
     
     
-    # ue.get_collection_info()
-    # ue.fragment_length_dist()
-    # ue.evaluate()
-    # ue.get_stats()
-    
-    # ue.delete_collection(["batch_reconciled_transformed"])
-    # ue.delete_collection(["tracking_v1_stitched", "tracking_v1_reconciled","tracking_v1_reconciled_nll_modified","tracking_v1_stitched","batch_stitched","batch_reconciled"])
