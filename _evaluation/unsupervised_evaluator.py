@@ -10,10 +10,10 @@ Get the statistics of a collection
 Compare raw and reconciled (unsupervised)
 - what fragments are filtered out
 - unmatched fragments
-- y deviation
-- speed distribution
-- starting / ending x distribution
-- collision
+- (done)y deviation
+- (done)speed distribution
+- (done)starting / ending x distribution
+- (done)collision 
 - length, width, height distribution
 - density? flow?
 - lane distribution
@@ -30,16 +30,21 @@ Statics output write to
 
 from i24_database_api.db_reader import DBReader
 from i24_database_api.db_writer import DBWriter
-from i24_configparse import parse_cfg
 import matplotlib.pyplot as plt
-import os
 import warnings
 from bson.objectid import ObjectId
 import pprint
+from threading import Thread
+import json
+import numpy as np
+from collections import defaultdict
+from multiprocessing.pool import ThreadPool
 
+
+    
 class UnsupervisedEvaluator():
     
-    def __init__(self, config, collection1, collection2=None):
+    def __init__(self, config, trajectory_database="trajectories", timestamp_database = "transformed", collection_name=None, num_threads=100):
         '''
         Parameters
         ----------
@@ -47,20 +52,226 @@ class UnsupervisedEvaluator():
             store all the database-related parameters.
         collection1 : str
             Collection name.
-        collection2 : str, optional
-            Collection name. The default is None.
         '''
-        self.col1_name = collection1
-        self.config = config
-        self.col1 = DBReader(config, collection_name=collection1)
-        if collection2: # collection2 is optional
-            self.col2 = DBReader(config, collection_name=collection2)
-            self.col2_name = collection2
-        else:
-            self.col2 = None
-            
+        self.collection_name = collection_name
+        self.dbr_v = DBReader(config, host = config["host"], username = config["username"], password = config["password"], port = config["port"], database_name = trajectory_database, collection_name=collection_name)
+        self.dbr_t = DBReader(config, host = config["host"], username = config["username"], password = config["password"], port = config["port"], database_name = timestamp_database, collection_name=collection_name)
         print("connected to pymongo client")
+        self.res = defaultdict(dict) # min, max, avg, stdev
+        self.num_threads = num_threads
+        
+        self.res["collection"] = self.collection_name
+        self.res["traj_count"] = self.dbr_v.count()
+        self.res["time_count"] = self.dbr_t.count()
             
+       
+    def __del__(self):
+        try:
+            del self.dbr_v
+            del self.dbr_t
+        except:
+            pass
+        
+    def thread_pool(self, func, iterable = None):
+        if iterable is None:
+            iterable = self.dbr_v.collection.find({})
+        
+        pool = ThreadPool(processes=self.num_threads)
+        res = []
+        for item in iterable:
+            async_result = pool.apply_async(func, (item,)) # tuple of args for foo
+            res.append(async_result) 
+
+        pool.close()
+        pool.join()
+        res = [r.get() for r in res] # non-blocking
+        return res
+    
+    
+    def traj_evaluate(self):
+        '''
+        Results aggregated by evaluating each trajectories
+        '''
+        # local functions
+        def _get_duration(traj):
+            return traj["last_timestamp"] - traj["first_timestamp"]
+        
+        def _get_x_traveled(traj):
+            x = abs(traj["ending_x"] - traj["starting_x"])
+            return x
+        
+        def _get_y_traveled(traj):
+            return max(traj["y_position"]) - min(traj["y_position"])
+        
+        def _get_max_vx(traj):
+            dx = np.diff(traj["x_position"])
+            dt = np.diff(traj["timestamp"])
+            try: return max(dx/dt)
+            except: return np.nan
+        
+        def _get_min_vx(traj):
+            dx = np.diff(traj["x_position"])
+            dt = np.diff(traj["timestamp"])
+            try: return min(dx/dt)
+            except: return np.nan
+        
+        def _get_backward_cars(traj):
+            dx = np.diff(traj["x_position"])
+            if np.any(dx < 0):
+                return str(traj['_id'])
+            return None
+        
+        def _get_max_vy(traj):
+            dy = np.diff(traj["y_position"])
+            dt = np.diff(traj["timestamp"])
+            try: return max(dy/dt)
+            except: return np.nan
+        
+        def _get_min_vy(traj):
+            dy = np.diff(traj["y_position"])
+            dt = np.diff(traj["timestamp"])
+            try: return min(dy/dt)
+            except: return np.nan
+        
+        def _get_min_ax(traj):
+            ddx = np.diff(traj["x_position"], 2)
+            dt = np.diff(traj["timestamp"])[:-1]
+            try: return min(ddx/(dt**2))
+            except: return np.nan
+        
+        def _get_max_ax(traj):
+            ddx = np.diff(traj["x_position"], 2)
+            dt = np.diff(traj["timestamp"])[:-1]
+            try: return max(ddx/(dt**2))
+            except: return np.nan
+        
+
+        # distributions
+        # TODO: put all functions in a separate script
+        functions = [_get_duration, _get_x_traveled,
+                      _get_y_traveled, _get_max_vx, _get_min_vx,
+                      _get_max_vy, _get_min_vy,_get_max_ax,_get_min_ax]
+        # functions = []
+        
+        for fcn in functions:
+            traj_cursor = self.dbr_v.collection.find({})
+            res = self.thread_pool(fcn, iterable=traj_cursor) # cursor cannot be reused
+            
+            attr_name = fcn.__name__[5:]
+            print(f"Evaluating {attr_name}...")
+            self.res[attr_name]["min"] = np.nanmin(res)
+            self.res[attr_name]["max"] = np.nanmax(res)
+            self.res[attr_name]["median"] = np.nanmedian(res)
+            self.res[attr_name]["avg"] = np.nanmean(res)
+            self.res[attr_name]["stdev"] = np.nanstd(res)
+           
+        # get ids
+        functions = [_get_backward_cars]
+        for fcn in functions:
+            traj_cursor = self.dbr_v.collection.find({})
+            res = self.thread_pool(fcn, iterable=traj_cursor) # cursor cannot be reused
+            
+            attr_name = fcn.__name__[5:]
+            print(f"Evaluating {attr_name}...")
+            self.res[attr_name] = [r for r in res if r]
+            
+
+        return 
+        
+    
+    
+    
+    def time_evaluate(self, sample_rate=10):
+        '''
+        Evaluate based on time-indexed collection
+        sample_rate: (int) select every sample_rate timestamps to evaluate
+        '''
+        east_m = np.array([[1, 0,0,0], [0,1,0,0.5], [1,0,1,0], [0,1,0,-0.5]]).T
+        west_m = np.array([[1,0,-1,0], [0,1,0,0.5], [1, 0,0,0], [0,1,0,-0.5]]).T
+        
+        def doOverlap(pts1, pts2):
+            '''
+            pts: [lefttop_x, lefttop_y, bottomright_x, bottomright_y]
+            '''
+            # by separating axix theorem
+            return not (pts1[0] > pts2[2] or pts1[1] < pts2[3] or pts1[2] < pts2[0] or pts1[3] > pts2[1] )
+
+
+        def _get_overlaps(time_doc):
+            
+            veh_ids = time_doc['id']
+            overlap = []
+            # veh_cache = {} # key: vehicle_id, val: [lx, ly, rx, ry]
+            #a = M*b, where a=[lx, ly, rx, ry], b =[x,y,len,wid]
+            # vectorize to all vehicles: A = M*B
+    
+            # get east bound boxes
+            pipeline = [
+                {"$match": {"$and" : [{"_id": {"$in": veh_ids}}, {"direction": {"$eq":1}}]}},
+                {'$project':{ '_id': 1 } },
+                          ]
+            east_ids = self.dbr_v.collection.aggregate(pipeline)
+            east_ids = [doc["_id"] for doc in east_ids]
+            if east_ids:
+                east_b = np.array([time_doc['position'][i]+time_doc['dimensions'][i][:2] for i in range(len(veh_ids)) if veh_ids[i] in east_ids])
+                east_pts = np.matmul(east_b, east_m)
+                for i, pts1 in enumerate(east_pts):
+                    for j, pts2 in enumerate(east_pts[i+1:]):
+                        if doOverlap(pts1, pts2):
+                            overlap.append([str(east_ids[i]),str(east_ids[j])])
+
+            # west bound
+            west_ids = list(set(veh_ids) - set(east_ids))
+            if west_ids:
+                west_b = np.array([time_doc['position'][i]+time_doc['dimensions'][i][:2] for i in range(len(veh_ids)) if veh_ids[i] in west_ids])
+                west_pts = np.matmul(west_b, west_m)
+                # this can be optimized - not time consuming
+                for i, pts1 in enumerate(west_pts):
+                    for j, pts2 in enumerate(west_pts[i+1:]):
+                        if doOverlap(pts1, pts2):
+                            overlap.append([str(west_ids[i]),str(west_ids[j])])
+            return overlap
+            # return list(east_ids)
+                    
+        # start thread_pool for each timestamp
+        time_cursor = self.dbr_t.collection.find({})
+        overlaps = self.thread_pool(_get_overlaps, iterable=time_cursor)
+        # overlaps = set(overlaps) # get the unique values only - unhashable
+        overlaps = [r for r in overlaps if r] # only report the overlaps
+        
+        self.res["overlaps"] = overlaps
+        
+        return
+            
+            
+            
+            
+        
+        def _get_min_spacing(time):
+            # calculate pair-wise spacing of all pairs at this timestamp
+            # pair will be on the same lane (digitize y)
+            # get the min
+            return  
+
+        def _get_car_following_pairs(time):
+            return
+        
+        
+        
+    def print_res(self):
+        pprint.pprint(self.res, width = 1)
+    
+    def save_res(self):
+        with open(f"res_{self.collection_name}.json", "w") as f:
+            json.dump(self.res, f, indent=4)
+            
+
+
+
+
+#--------------------------------------------
+            
+        
     def get_collection_info(self):
         """
         To set the bounds on query and on visualization
@@ -121,7 +332,7 @@ class UnsupervisedEvaluator():
     
         
     
-    def plot_fragments(self, fragment_list,rec_id=None):
+    def plot_fragments(self, traj_ids):
         '''
         Plot fragments with the reconciled trajectory (if col2 is specified)
 
@@ -131,15 +342,20 @@ class UnsupervisedEvaluator():
         rec_id: ObjectID (optional)
         '''
         
-        plt.figure()
-        if self.col2 and rec_id:
-            d = self.col2.find_one("_id", rec_id)
-            plt.scatter(d["timestamp"], d["x_position"], c="r", s=0.2, label="reconciled")
-        for f_id in fragment_list:
-            f = self.col1.find_one("_id", f_id)
-            plt.scatter(f["timestamp"], f["x_position"], c="b", s=0.5, label="raw")
-        plt.legend()
+        fig, axs = plt.subplots(1, 3, figsize=(9, 3))
+        
+        
+        for f_id in traj_ids:
+            f = self.dbr_v.find_one("_id", f_id)
+            axs[0].scatter(f["timestamp"], f["x_position"], s=0.5, label=f_id)
+            axs[1].scatter(f["timestamp"], f["y_position"], s=0.5, label=f_id)
+            axs[2].scatter(f["x_position"], f["y_position"], s=0.5, label=f_id)
+
+        axs[0].set_title("time v x")
+        axs[1].set_title("time v y")
+        axs[2].set_title("x v y")
             
+        axs[0].legend()
         
     def fragment_length_dist(self):
         '''
@@ -155,18 +371,15 @@ class UnsupervisedEvaluator():
         pprint.pprint(list(cur))
 
     
-    def evaluate(self):
+    def evaluate_old(self):
         '''
         1. filtered fragments (not in reconciled fragment_ids)
         2. lengths of those fragments (should be <3) TODO: Some long documents are not matched
         3. 
         '''
-        if self.col2 is None:
-            print("Collection 2 must be specified")
-            return
         
         # find all unmatched fragments
-        res = self.col1.collection.aggregate([
+        res = self.dbr_v.collection.aggregate([
                {
                   '$lookup':
                      {
@@ -195,7 +408,7 @@ class UnsupervisedEvaluator():
                     { '$match': { "_id": {'$in': f_ids } } },
                        { '$group' : {'_id':'$length', 'count':{'$sum':1}} },
                        { '$sort'  : {'count': -1 } } ]
-        cur = self.col1.collection.aggregate(pipeline)
+        cur = self.dbr_v.collection.aggregate(pipeline)
         dict = {d["_id"]: math.log(d["count"]) for d in cur}
         plt.bar(dict.keys(), dict.values(), width = 2, color='g')
         plt.xlabel("Lengths of documents")
@@ -204,78 +417,40 @@ class UnsupervisedEvaluator():
         
         # pprint.pprint(list(cur))
         
-    def get_stats(self):
-        '''
-        get the mean, median and standard deviations for
-        - length/width/height
-        - starting_x, ending_x
-        - 
-        '''
-        # direction-agnostic filters
-        pipeline1 = [{'$group': 
-                     {'_id':'null', 
-                      'avg_starting_x': {'$avg':"$starting_x"},
-                      'avg_ending_x': {'$avg':"$ending_x"},
-                      'stdDev_starting_x': {'$stdDevPop':"$starting_x"},
-                      'stdDev_ending_x': {'$stdDevPop':"$ending_x"},
-                      } 
-                     }]
-            
-        pipeline2 = [{'$group': 
-                         {'_id':'null', # no grouping 
-                          'avg_starting_x': {'$avg':"$starting_x"},
-                          'avg_ending_x': {'$avg':"$ending_x"},
-                          'avg_veh_length': {'$avg':"$length"},
-                          'avg_veh_width': {'$avg':"$width"},
-                          'avg_veh_height': {'$avg':"$height"},
-                          'stdDev_starting_x': {'$stdDevPop':"$starting_x"},
-                          'stdDev_ending_x': {'$stdDevPop':"$ending_x"},
-                          } 
-                     }]
-            
-        # pipeline1_e = [{
-        #             '$match': { 'direction': { '$eq : 18 } }
-        #             '$group': 
-        #                  {'_id':'null', # no grouping 
-        #                   'avg_starting_x': {'$avg':"$starting_x"},
-        #                   'avg_ending_x': {'$avg':"$ending_x"},
-        #                   'avg_veh_length': {'$avg':"$length"},
-        #                   'avg_veh_width': {'$avg':"$width"},
-        #                   'avg_veh_height': {'$avg':"$height"},
-        #                   'stdDev_starting_x': {'$stdDevPop':"$starting_x"},
-        #                   'stdDev_ending_x': {'$stdDevPop':"$ending_x"},
-        #                   } 
-        #              }]
-
-        # direction-specific filters
+    
         
         
-
-        res1 = self.col1.collection.aggregate(pipeline1)
-        pprint.pprint(list(res1))
-        
-        res2 = self.col2.collection.aggregate(pipeline2)
-        pprint.pprint(list(res2))
-        
-
-
 
 if __name__ == '__main__':
+    import time
+    with open('config.json') as f:
+        config = json.load(f)
+    
+    trajectory_database = "trajectories"
+    timestamp_database = "transformed"
+    collection = "21_07_2022_gt1_alpha"
+    # collection = "tracking_v1"
 
+    ue = UnsupervisedEvaluator(config, trajectory_database=trajectory_database, timestamp_database = timestamp_database,
+                               collection_name=collection, num_threads=200)
+    t1 = time.time()
+    ue.traj_evaluate()
+    ue.time_evaluate()
+    t2 = time.time()
+    
+    print("time: ", t2-t1)
+    ue.print_res()
+    ue.save_res()
+    
+    
 
-    cwd = os.getcwd()
-    cfg = "../config"
-    config_path = os.path.join(cwd,cfg)
-    os.environ["user_config_directory"] = config_path
-    os.environ["my_config_section"] = "TEST"
-    db_param = parse_cfg("my_config_section", cfg_name = "test_param.config")
     
     # db_param.db_name = "transformed"
-    ue = UnsupervisedEvaluator(db_param, "batch_5_07072022")
-    
-    # fragment_list = [ObjectId('62c713dfc77930b8d9533454'), ObjectId('62c713fbc77930b8d9533462')]
+    # 
+    #%%
+    # fragment_list = [ObjectId('62d9bbfcd22eff2a0413727f'), ObjectId('62d9bc3ad22eff2a04137295')]
     # rec_id = ObjectId("62c730078b650aa00a3b925f")
-    # ue.plot_fragments(fragment_list=fragment_list,rec_id=None)
+    # ue.plot_fragments(fragment_list)
     
     
     

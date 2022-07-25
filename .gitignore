@@ -4,6 +4,7 @@
 
 # ignore all config files
 *.config
+*.json
 config.json
 #config/**
 #**/config
