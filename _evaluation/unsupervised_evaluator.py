@@ -109,19 +109,19 @@ class UnsupervisedEvaluator():
             return max(traj["y_position"]) - min(traj["y_position"])
         
         def _get_max_vx(traj):
-            dx = np.diff(traj["x_position"])
+            dx = np.diff(traj["x_position"]) * traj["direction"]
             dt = np.diff(traj["timestamp"])
             try: return max(dx/dt)
             except: return np.nan
         
         def _get_min_vx(traj):
-            dx = np.diff(traj["x_position"])
+            dx = np.diff(traj["x_position"]) * traj["direction"]
             dt = np.diff(traj["timestamp"])
             try: return min(dx/dt)
             except: return np.nan
         
         def _get_backward_cars(traj):
-            dx = np.diff(traj["x_position"])
+            dx = np.diff(traj["x_position"]) * traj["direction"]
             if np.any(dx < 0):
                 return str(traj['_id'])
             return None
