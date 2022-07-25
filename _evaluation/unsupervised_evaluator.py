@@ -33,6 +33,8 @@ TODO
 
 from i24_database_api.db_reader import DBReader
 from i24_database_api.db_writer import DBWriter
+from i24_database_api import transform
+
 import matplotlib.pyplot as plt
 import warnings
 from bson.objectid import ObjectId
@@ -58,6 +60,18 @@ class UnsupervisedEvaluator():
         '''
         self.collection_name = collection_name
         self.dbr_v = DBReader(config, host = config["host"], username = config["username"], password = config["password"], port = config["port"], database_name = trajectory_database, collection_name=collection_name)
+        
+        # start transform trajectory-indexed collection to time-indexed collection if not already exist
+        # this will create a new collection in the "transformed" database with the same collection name as in "trajectory" database
+        if collection_name not in self.dbr_v.client[timestamp_database].list_collection_names():
+            print("Transform to time-indexed collection first")
+            transform(host=config["host"], 
+                      port=config["port"], 
+                      username="i24-data", 
+                      password=config["password"], 
+                      read_database_name=trajectory_database, 
+                      read_collection_name=collection_name)
+            
         self.dbr_t = DBReader(config, host = config["host"], username = config["username"], password = config["password"], port = config["port"], database_name = timestamp_database, collection_name=collection_name)
         print("connected to pymongo client")
         self.res = defaultdict(dict) # min, max, avg, stdev
@@ -318,10 +332,13 @@ class UnsupervisedEvaluator():
         self.res["overlaps"] = list(overlaps)
         
         print("Evaluating min_space_gaps...")
-        self.res["min_space_gaps"]["min"] = min(space_gaps)
-        self.res["min_space_gaps"]["max"] = max(space_gaps)
-        self.res["min_space_gaps"]["avg"] = np.mean(space_gaps)
-        self.res["min_space_gaps"]["median"] = np.median(space_gaps)
+        try:
+            self.res["min_space_gaps"]["min"] = min(space_gaps)
+            self.res["min_space_gaps"]["max"] = max(space_gaps)
+            self.res["min_space_gaps"]["avg"] = np.mean(space_gaps)
+            self.res["min_space_gaps"]["median"] = np.median(space_gaps)
+        except: # empty space_gaps
+            pass
         
         return
     
@@ -341,8 +358,6 @@ class UnsupervisedEvaluator():
                     return obj.tolist()
                 return super(NpEncoder, self).default(obj)
     
-
-
         with open(f"res_{self.collection_name}.json", "w") as f:
             json.dump(self.res, f, indent=4, sort_keys=False,cls=NpEncoder)
         print("saved.")
@@ -360,7 +375,8 @@ if __name__ == '__main__':
     timestamp_database = "transformed"
     # collection = "21_07_2022_gt1_alpha"
     # collection = "batch_5_07072022"
-    collection = "groundtruth_scene_1"
+    # collection = "groundtruth_scene_1"
+    collection = "stalwart_wallaby--RAW_TRACKS"
 
     ue = UnsupervisedEvaluator(config, trajectory_database=trajectory_database, timestamp_database = timestamp_database,
                                collection_name=collection, num_threads=200)
