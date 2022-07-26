@@ -376,7 +376,7 @@ if __name__ == '__main__':
     # collection = "21_07_2022_gt1_alpha"
     # collection = "batch_5_07072022"
     # collection = "groundtruth_scene_1"
-    collection = "stalwart_wallaby--RAW_TRACKS"
+    collection = "pristine_sssnek--RAW_TRACKS"
 
     ue = UnsupervisedEvaluator(config, trajectory_database=trajectory_database, timestamp_database = timestamp_database,
                                collection_name=collection, num_threads=200)
@@ -386,8 +386,8 @@ if __name__ == '__main__':
     t2 = time.time()
     
     print("time: ", t2-t1)
-    ue.print_res()
-    # ue.save_res()
+    # ue.print_res()
+    ue.save_res()
     
     
     #%%

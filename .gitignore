@@ -4,11 +4,8 @@
 
 # ignore all config files
 *.config
-*.json
 config.json
-#config/**
-#**/config
-#config/*.config
+
 
 *.mp4
 *.sh
