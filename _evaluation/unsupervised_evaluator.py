@@ -362,8 +362,8 @@ class UnsupervisedEvaluator():
 
                     
         # start thread_pool for each timestamp
-        # functions = [_get_min_spacing, _get_overlaps]
-        functions = [_get_min_spacing]
+        functions = [_get_min_spacing, _get_overlaps]
+        # functions = [_get_min_spacing]
         for fcn in functions:
             time_cursor = self.dbr_t.collection.find({})
             res = self.thread_pool(fcn, iterable=time_cursor) 
