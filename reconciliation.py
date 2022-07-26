@@ -140,7 +140,7 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     
     
     reconciled_schema_path = os.path.join(os.environ["USER_CONFIG_DIRECTORY"],parameters.reconciled_schema_path) #15sec
-    dbw = DBWriter(parameters, collection_name = parameters.reconciled_collection, schema_file=reconciled_schema_path)
+    dbw = DBWriter(parameters, collection_name = parameters.raw_collection+"_reconciled", schema_file=reconciled_schema_path)
     
     # Write to db
     while True:

@@ -235,6 +235,38 @@ class UnsupervisedEvaluator():
                 return max(pts2[0] - pts1[2], pts1[0] - pts2[2])
             else:
                 return None
+          
+        def _get_min_spacing(time_doc):
+            '''
+            get the minimum x-difference at all lanes for a given timestamp
+            TODO: consider vehicle dimension for space gap
+            '''
+            # get the lane assignments
+            # veh_ids = time_doc['id']
+            x_pos = [pos[0] for pos in time_doc["position"]]
+            y_pos = [pos[1] for pos in time_doc["position"]]
+            lane_asg = np.digitize(y_pos, self.lanes) # lane_id < 6: east
+
+            # for each lane, sort by x
+            lane_dict = defaultdict(list) # key: lane_id, val: x_pos
+            for lane_id in np.unique(lane_asg):
+                xs = np.array(x_pos)[np.where(lane_asg==lane_id)[0]]
+                xs.sort()
+                lane_dict[lane_id] = xs
+            
+            # get x diff for each lane
+            # pprint.pprint(lane_dict)
+            min_spacing = 10e6
+            for lane_id, x_vals in lane_dict.items():
+                try:
+                    min_spacing = min(min_spacing, min(np.diff(x_vals)))
+                except ValueError:
+                    pass
+                
+            return min_spacing
+                
+            
+            
             
         def _get_overlaps(time_doc):
             '''
@@ -282,9 +314,9 @@ class UnsupervisedEvaluator():
                 
   
             overlap = []
-            space_gap = []
+            # space_gap = []
 
-            #a = M*b, where a=[lx, ly, rx, ry], b =[x,y,len,wid]
+            # east_pts = M*east_b, where east_pts=[lx, ly, rx, ry], east_b =[x,y,len,wid]
             # vectorize to all vehicles: A = M*B
             try:
                 east_pts = np.matmul(east_b, east_m)
@@ -297,8 +329,8 @@ class UnsupervisedEvaluator():
                     if doOverlap(pts1, pts2):
                         overlap.append((str(east_ids[i]),str(east_ids[j])))
                     # get space gap
-                    gap = calc_space_gap(pts1, pts2)
-                    if gap: space_gap.append(gap)
+                    # gap = calc_space_gap(pts1, pts2)
+                    # if gap: space_gap.append(gap)
 
             # west bound
             try:
@@ -312,34 +344,31 @@ class UnsupervisedEvaluator():
                     if doOverlap(pts1, pts2):
                         overlap.append((str(west_ids[i]),str(west_ids[j])))
                     # get space gap
-                    gap = calc_space_gap(pts1, pts2)
-                    if gap: space_gap.append(gap)
+                    # gap = calc_space_gap(pts1, pts2)
+                    # if gap: space_gap.append(gap)
                         
-            return overlap, space_gap
+            return overlap
 
                     
         # start thread_pool for each timestamp
-        time_cursor = self.dbr_t.collection.find({})
-        res = self.thread_pool(_get_overlaps, iterable=time_cursor) # [[overlap, spacegap], [overlap, spacegap],...]
-        # overlaps = set(overlaps) # get the unique values only - unhashable
-        # overlaps = [r[0] for r in res if r[0]] # only report the overlaps
-        # print([r[0] for r in res if r[0]])
-        overlaps = set()
-        dummy = [overlaps.add(rr) for r in res for rr in r[0]]
-        space_gaps = [min(r[1]) for r in res if r[1]] 
+        functions = [_get_min_spacing, _get_overlaps]
         
-        print("Evaluating overlaps...")
-        self.res["overlaps"] = list(overlaps)
-        
-        print("Evaluating min_space_gaps...")
-        try:
-            self.res["min_space_gaps"]["min"] = min(space_gaps)
-            self.res["min_space_gaps"]["max"] = max(space_gaps)
-            self.res["min_space_gaps"]["avg"] = np.mean(space_gaps)
-            self.res["min_space_gaps"]["median"] = np.median(space_gaps)
-        except: # empty space_gaps
-            pass
-        
+        for fcn in functions:
+            time_cursor = self.dbr_t.collection.find({})
+            res = self.thread_pool(fcn, iterable=time_cursor) 
+            attr_name = fcn.__name__[5:]
+            print(f"Evaluating {attr_name}...")
+            if "overlap" in attr_name:
+                overlaps = set()
+                dummy = [overlaps.add(rr) for r in res for rr in r]
+                self.res[attr_name] = list(overlaps)
+            else:
+                self.res[attr_name]["min"] = np.nanmin(res)
+                self.res[attr_name]["max"] = np.nanmax(res)
+                self.res[attr_name]["median"] = np.nanmedian(res)
+                self.res[attr_name]["avg"] = np.nanmean(res)
+                self.res[attr_name]["stdev"] = np.nanstd(res)
+            
         return
     
 
@@ -373,10 +402,9 @@ if __name__ == '__main__':
     
     trajectory_database = "trajectories"
     timestamp_database = "transformed"
-    # collection = "21_07_2022_gt1_alpha"
-    # collection = "batch_5_07072022"
-    # collection = "groundtruth_scene_1"
-    collection = "pristine_sssnek--RAW_TRACKS"
+    # collection = "21_07_2022_gt1_alpha_reconciled"
+    collection = "groundtruth_scene_1"
+    # collection = "pristine_sssnek--RAW_TRACKS"
 
     ue = UnsupervisedEvaluator(config, trajectory_database=trajectory_database, timestamp_database = timestamp_database,
                                collection_name=collection, num_threads=200)
@@ -386,7 +414,7 @@ if __name__ == '__main__':
     t2 = time.time()
     
     print("time: ", t2-t1)
-    # ue.print_res()
+    ue.print_res()
     ue.save_res()
     
     
