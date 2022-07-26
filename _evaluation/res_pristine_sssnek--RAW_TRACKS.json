@@ -230,6 +230,10 @@
         "62defe766a2bceeb4ccecda7",
         "62defe796a2bceeb4ccecda8"
     ],
+    "min_spacing": {
+        "min": 0.354736328125,
+        "median": 95.97492980957031
+    },
     "overlaps": [
         [
             "62defe0b6a2bceeb4ccecd70",
@@ -243,11 +247,5 @@
             "62defca26a2bceeb4ccecce7",
             "62defca16a2bceeb4ccecce6"
         ]
-    ],
-    "min_space_gaps": {
-        "min": -16.04419183731079,
-        "max": 1208.135648727417,
-        "avg": 99.83549865183737,
-        "median": 73.72876453399658
-    }
+    ]
 }

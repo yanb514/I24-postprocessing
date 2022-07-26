@@ -242,24 +242,35 @@ class UnsupervisedEvaluator():
             TODO: consider vehicle dimension for space gap
             '''
             # get the lane assignments
-            # veh_ids = time_doc['id']
-            x_pos = [pos[0] for pos in time_doc["position"]]
-            y_pos = [pos[1] for pos in time_doc["position"]]
+            veh_ids = np.array(time_doc['id'])
+            x_pos = np.array([pos[0] for pos in time_doc["position"]])
+            y_pos = np.array([pos[1] for pos in time_doc["position"]])
             lane_asg = np.digitize(y_pos, self.lanes) # lane_id < 6: east
 
-            # for each lane, sort by x
+            # for each lane, sort by x - This is not the best way to calculate!
             lane_dict = defaultdict(list) # key: lane_id, val: x_pos
             for lane_id in np.unique(lane_asg):
-                xs = np.array(x_pos)[np.where(lane_asg==lane_id)[0]]
-                xs.sort()
-                lane_dict[lane_id] = xs
+                in_lane_idx = np.where(lane_asg==lane_id)[0] # idx of vehs that are in lane_id
+                in_lane_ids = veh_ids[in_lane_idx]
+                in_lane_xs = x_pos[in_lane_idx]
+                sorted_idx = np.argsort(in_lane_xs)
+                sorted_xs = in_lane_xs[sorted_idx]
+                sorted_ids = in_lane_ids[sorted_idx] # apply the same sequence to ids
+                lane_dict[lane_id] = [sorted_xs, sorted_ids]
             
             # get x diff for each lane
             # pprint.pprint(lane_dict)
             min_spacing = 10e6
-            for lane_id, x_vals in lane_dict.items():
+            for lane_id, vals in lane_dict.items():
                 try:
-                    min_spacing = min(min_spacing, min(np.diff(x_vals)))
+                    sorted_xs, sorted_ids = vals
+                    delta_x = np.diff(sorted_xs)
+                    min_idx = np.argmin(delta_x)
+                    min_spacing_temp = delta_x[min_idx]
+                    if min_spacing_temp < min_spacing:
+                        min_spacing = min_spacing_temp
+                        min_pair = (sorted_ids[min_idx], sorted_ids[min_idx+1])
+                        
                 except ValueError:
                     pass
                 
@@ -325,7 +336,7 @@ class UnsupervisedEvaluator():
 
             for i, pts1 in enumerate(east_pts):
                 for j, pts2 in enumerate(east_pts[i+1:]):
-                    # check if two boxes overlap
+                    # check if two boxes overlap, if so append the pair ids
                     if doOverlap(pts1, pts2):
                         overlap.append((str(east_ids[i]),str(east_ids[j])))
                     # get space gap
@@ -351,8 +362,8 @@ class UnsupervisedEvaluator():
 
                     
         # start thread_pool for each timestamp
-        functions = [_get_min_spacing, _get_overlaps]
-        
+        # functions = [_get_min_spacing, _get_overlaps]
+        functions = [_get_min_spacing]
         for fcn in functions:
             time_cursor = self.dbr_t.collection.find({})
             res = self.thread_pool(fcn, iterable=time_cursor) 
@@ -364,10 +375,10 @@ class UnsupervisedEvaluator():
                 self.res[attr_name] = list(overlaps)
             else:
                 self.res[attr_name]["min"] = np.nanmin(res)
-                self.res[attr_name]["max"] = np.nanmax(res)
+                # self.res[attr_name]["max"] = np.nanmax(res)
                 self.res[attr_name]["median"] = np.nanmedian(res)
-                self.res[attr_name]["avg"] = np.nanmean(res)
-                self.res[attr_name]["stdev"] = np.nanstd(res)
+                # self.res[attr_name]["avg"] = np.nanmean(res)
+                # self.res[attr_name]["stdev"] = np.nanstd(res)
             
         return
     
@@ -402,8 +413,8 @@ if __name__ == '__main__':
     
     trajectory_database = "trajectories"
     timestamp_database = "transformed"
-    # collection = "21_07_2022_gt1_alpha_reconciled"
-    collection = "groundtruth_scene_1"
+    collection = "21_07_2022_gt1_alpha"
+    # collection = "groundtruth_scene_1"
     # collection = "pristine_sssnek--RAW_TRACKS"
 
     ue = UnsupervisedEvaluator(config, trajectory_database=trajectory_database, timestamp_database = timestamp_database,
