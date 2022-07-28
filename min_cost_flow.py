@@ -32,7 +32,35 @@ from utils.utils_mcf import Fragment, MOTGraphSingle
     # 1. check if the answers agree with nx.edmond_karp
     # 2. add more intelligent enter/exiting cost based on the direction and where they are relative to the road
     
+# Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
+class SignalHandler():
+
+    run = True
+    count_sigint = 0 # count the number of times a SIGINT is received
+    count_sigusr = 0
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.soft_stop)
+        signal.signal(signal.SIGUSR1, self.finish_processing)
+    
+    def soft_stop(self, *args):
+        signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+        self.run = False
+        self.count_sigint += 1
+        # stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigint))
+        
+    def finish_processing(self, *args):
+        # do nothing
+        self.count_sigusr += 1
+        # stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigusr))
+        
+        siginfo = signal.sigwaitinfo({signal.SIGUSR1})
+        print("py: got %d from %d by user %d\n" % (siginfo.si_signo,
+                                                 siginfo.si_pid,
+                                                 siginfo.si_uid))
+        
+        
 # @catch_critical(errors = (Exception))  
 def read_to_queue(gt_ids, gt_val, lt_val, parameters):
     '''
@@ -103,57 +131,13 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
     setattr(stitcher_logger, "_default_logger_extra",  {})
 
-    # Signal handling: 
-    # SIGINT (sent from parent process) raises KeyboardInterrupt,  close dbw and soft exit
-    # SIGUSR1 is ignored. The process terminates when queue is empty
-    # def sigusr_handler(sigusr, frame):
-    #     stitcher_logger.warning("SIGUSR1 detected in stitcher. Finish processing current queues.")
-    #     signal.signal(sigusr, signal.SIG_IGN)    
-    #     signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
-        
-    # # signal.signal(signal.SIGUSR1, handler)
-    # signal.signal(signal.SIGINT, signal.SIG_IGN) #ignore signal sent from keyboard.
-    # signal.signal(signal.SIGUSR1, sigusr_handler)
-    
-    
-    
-    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
-    class SignalHandler():
-
-        run = True
-        count_sigint = 0 # count the number of times a SIGINT is received
-        count_sigusr = 0
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-        
-        def __init__(self):
-            signal.signal(signal.SIGINT, self.soft_stop)
-            signal.signal(signal.SIGUSR1, self.finish_processing)
-        
-        def soft_stop(self, *args):
-            signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
-            self.run = False
-            self.count_sigint += 1
-            stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigint))
-            
-        def finish_processing(self, *args):
-            # do nothing
-            self.count_sigusr += 1
-            stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigusr))
-            
-            siginfo = signal.sigwaitinfo({signal.SIGUSR1})
-            print("py: got %d from %d by user %d\n" % (siginfo.si_signo,
-                                                     siginfo.si_pid,
-                                                     siginfo.si_uid))
-            
     sig_hdlr = SignalHandler()
-    
-    
-    
+
     # Make a database connection for writing
-    schema_path = os.path.join(os.environ["USER_CONFIG_DIRECTORY"],parameters.stitched_schema_path)
-    dbw = DBWriter(parameters, collection_name = parameters.raw_collection+"_stitched", schema_file=schema_path)
-    dbw.collection.drop()
-    dbw = DBWriter(parameters, collection_name = parameters.raw_collection+"_stitched", schema_file=schema_path)
+    # schema_path = os.path.join(os.environ["USER_CONFIG_DIRECTORY"],parameters.stitched_schema_path)
+    # dbw = DBWriter(parameters, collection_name = parameters.raw_collection+"_stitched", schema_file=schema_path)
+    # dbw.collection.drop()
+    # dbw = DBWriter(parameters, collection_name = parameters.raw_collection+"_stitched", schema_file=schema_path)
     
     # Get parameters
     ATTR_NAME = parameters.fragment_attr_name
@@ -177,26 +161,34 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                     # stitcher_logger.info("Flushing out final trajectories in graph")
                     stitcher_logger.info("** Flushing out {} fragments into one trajectory".format(len(path)),extra = None)
                     stitched_trajectory_queue.put(path[::-1])
-                    dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
+                    # dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
                 
                 stitcher_logger.info("fragment_queue is empty, exit.")
                 break
             
-            # fgmt.compute_stats()
+            # RANSAC fit to determine the fit coef if it's a good track, otherwise reject
+            if not fgmt.ransac_fit():
+                print('remove ',fgmt)
+                continue # skip this fgmt
+                
             m.add_node(fgmt)
-            # print(m.G.edges(data=True))
+            fgmt_id = getattr(fgmt, ATTR_NAME)
+            # print("* add ", fgmt_id)
+            # print("**", m.G.edges(data=True))
             
             # run MCF
-            fgmt_id = getattr(fgmt, ATTR_NAME)
             m.augment_path(fgmt_id)
     
             # pop path if a path is ready
+            # print("**", m.G.edges(data=True))
             all_paths = m.pop_path(time_thresh = fgmt.first_timestamp - TIME_WIN)
+            
+            
             
             for path in all_paths:
                 # stitcher_logger.debug("path: {}".format(path))
                 stitched_trajectory_queue.put(path[::-1])
-                dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
+                # dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
                 m.clean_graph(path)
                 if len(path)>1:
                     stitcher_logger.info("** stitched {} fragments into one trajectory".format(len(path)),extra = None)
@@ -217,8 +209,8 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             
         
     stitcher_logger.info("Exit stitcher while loop")
-    del dbw
-    stitcher_logger.info("DBWriter closed. Exit.")
+    # del dbw
+    # stitcher_logger.info("DBWriter closed. Exit.")
     # sys.exit()
         
     return   
@@ -259,13 +251,13 @@ def test_fragments(gt_ids, paths):
 if __name__ == '__main__':
     
     # get parameters
-    # cwd = os.getcwd()
-    # cfg = "config"
-    # config_path = os.path.join(cwd,cfg)
-    # os.environ["user_config_directory"] = config_path
-    # os.environ["my_config_section"] = "TEST"
+    cwd = os.getcwd()
+    cfg = "config"
+    config_path = os.path.join(cwd,cfg)
+    os.environ["USER_CONFIG_DIRECTORY"] = config_path
+    os.environ["my_config_section"] = "TEST"
     parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
-    parameters.raw_trajectory_queue_get_timeout = 1
+    parameters.raw_trajectory_queue_get_timeout = 0.1
 
     
     # read to queue
@@ -282,8 +274,11 @@ if __name__ == '__main__':
 
     from bson.objectid import ObjectId
     fragment_queue = queue.Queue()
-    f_ids = [ObjectId('62a37b5118c10e37c2103e45'), ObjectId('62a37bba18c10e37c2103f9b')]
-    raw = DBReader(parameters, username = "i24-data", collection_name="tracking_v1")
+    f_ids = [ObjectId('62e018c427b64c6330545fa6'), ObjectId('62e0190427b64c6330545fe6'), ObjectId('62e0190427b64c6330545fe7')] # they should stitch to two
+    # f_ids = [ ObjectId('62e0193027b64c6330546003'), ObjectId('62e0194627b64c6330546016'), ObjectId('62e0195327b64c6330546026'),  ObjectId('62e0196227b64c6330546035')]
+    # f_ids = [ ObjectId('62e0198927b64c6330546059'), ObjectId('62e0199527b64c6330546068'), ObjectId('62e019a827b64c633054607d'),  ObjectId('62e019be27b64c6330546096')]
+    
+    raw = DBReader(parameters, username = "i24-data", collection_name="morose_panda--RAW_GT1")
     for f_id in f_ids:
         f = raw.find_one("_id", f_id)
         fragment_queue.put(f)
@@ -325,22 +320,22 @@ if __name__ == '__main__':
     #     if path_o not in batch:
     #         print("difference: ", path_o)
     #%%
-    import matplotlib.pyplot as plt
-    ax1 = plt.subplot(131)
-    ax2 = plt.subplot(132)
-    ax3 = plt.subplot(133)
+    # import matplotlib.pyplot as plt
+    # ax1 = plt.subplot(131)
+    # ax2 = plt.subplot(132)
+    # ax3 = plt.subplot(133)
 
-    # d = stitched_trajectory_queue.get(block=False)
-    # plt.scatter(d["timestamp"], d["x_position"], c="r", s=0.2, label="reconciled")
-    for f_id in f_ids:
-        f = raw.find_one("_id", f_id)
-        ax1.scatter(f["timestamp"], f["x_position"], s=0.5, label=f_id)
-        ax1.set_title("time vs. x")
-        ax2.scatter(f["timestamp"], f["y_position"], s=0.5, label=f_id)
-        ax2.set_title("time vs. y")
-        ax3.scatter(f["x_position"], f["y_position"], s=0.5, label=f_id)
-        ax3.set_title("x vs. y")
-    plt.legend()
+    # # d = stitched_trajectory_queue.get(block=False)
+    # # plt.scatter(d["timestamp"], d["x_position"], c="r", s=0.2, label="reconciled")
+    # for f_id in f_ids:
+    #     f = raw.find_one("_id", f_id)
+    #     ax1.scatter(f["timestamp"], f["x_position"], s=0.5, label=f_id)
+    #     ax1.set_title("time vs. x")
+    #     ax2.scatter(f["timestamp"], f["y_position"], s=0.5, label=f_id)
+    #     ax2.set_title("time vs. y")
+    #     ax3.scatter(f["x_position"], f["y_position"], s=0.5, label=f_id)
+    #     ax3.set_title("x vs. y")
+    # plt.legend()
     
     # plot runtime
     

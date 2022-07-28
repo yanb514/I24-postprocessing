@@ -25,7 +25,9 @@ from i24_configparse import parse_cfg
 
 from utils.utils_reconciliation import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments, rectify_2d
 
-
+# verbs = ["expelliarmus", "avadakedavra", "expectopatronum", "obliviate", "riddikulus","accio","sectumsempra","Lumos","ascendio","bombarda"]
+verbs = ["medicate", "taunt", "sweettalk", "initiate", "harass", "smack", "boggle", "negotiate", "castigate", "dispute", "cajole", "improvise"]
+verbs.sort()
 
 def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue) -> None:
     """
@@ -140,9 +142,19 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     
     
     reconciled_schema_path = os.path.join(os.environ["USER_CONFIG_DIRECTORY"],parameters.reconciled_schema_path) #15sec
-    dbw = DBWriter(parameters, collection_name = parameters.raw_collection+"_reconciled", schema_file=reconciled_schema_path)
-    dbw.collection.drop()
-    dbw = DBWriter(parameters, collection_name = parameters.raw_collection+"_reconciled", schema_file=reconciled_schema_path)
+    # get next available spell
+    dbw = DBWriter(parameters, collection_name = "none", schema_file=reconciled_schema_path)
+    db = False
+    for i, verb in enumerate(verbs):
+        reconciled_name = parameters.raw_collection+"_"+verb+"s"
+        if reconciled_name not in dbw.db.list_collection_names():
+            dbw = DBWriter(parameters, collection_name = reconciled_name, schema_file=reconciled_schema_path)
+            db = True
+            break
+    if not db:
+        raise Exception("All verbs are occupied.")
+
+    
     
     # Write to db
     while True:
@@ -161,7 +173,7 @@ def write_reconciled_to_db(parameters, reconciled_queue):
             break
     
     
-    reconciled_writer.info("Final count in reconciled collection: {}".format(dbw.count()))
+    reconciled_writer.info("Final count in reconciled collection {}: {}".format(verb, dbw.count()))
     
     # Safely close the mongodb client connection
     del dbw

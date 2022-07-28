@@ -51,6 +51,7 @@ def combine_fragments(raw_collection, stitched_doc):
         stacked["length"].extend(fragment["length"])
         stacked["width"].extend(fragment["width"])
         stacked["height"].extend(fragment["height"])
+        stacked["detection_confidence"].extend(fragment["detection_confidence"])
         
         stacked["coarse_vehicle_class"].append(fragment["coarse_vehicle_class"])
         stacked["fine_vehicle_class"].append(fragment["fine_vehicle_class"])
@@ -81,6 +82,15 @@ def combine_fragments(raw_collection, stitched_doc):
     stacked["fine_vehicle_class"] = max(set(stacked["fine_vehicle_class"]), key = stacked["fine_vehicle_class"].count)
     stacked["direction"] = max(set(stacked["direction"]), key = stacked["direction"].count)
     
+    # Filter out low confidence
+    # high_conf_idx = []
+    # for i, conf in enumerate(stacked["detection_confidence"]):
+    #     if conf > 0.2:
+    #         high_conf_idx.append(i)
+        
+    stacked["x_position"] = [x if stacked["detection_confidence"][i] > 0.2 else np.nan for i,x in enumerate(stacked["x_position"]) ]
+    stacked["y_position"] = [x if stacked["detection_confidence"][i] > 0.2 else np.nan for i,x in enumerate(stacked["y_position"]) ]
+    
     return stacked
 
 
@@ -91,6 +101,7 @@ def resample(car):
     '''
     resample the original time-series to uniformly sampled time series in 30Hz
     car: document
+    leave empty slop as nan
     '''
 
     # Select time series only
