@@ -5,13 +5,12 @@ data_association module connected with database
 - how to set up queues?
 '''
 import numpy as np
-import torch
+# import torch
 from scipy import stats
 from i24_logger.log_writer import catch_critical
-from sklearn import linear_model
 
 
-loss = torch.nn.GaussianNLLLoss() 
+# loss = torch.nn.GaussianNLLLoss() 
 
 def _compute_stats(track):
     t,x,y = track['timestamp'],track['x_position'],track['y_position']
