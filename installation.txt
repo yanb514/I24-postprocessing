@@ -1,4 +1,7 @@
 conda activate postproc
-pip install git+https://github.com/DerekGLoudemans/i24_configparse@latest
+pip install git+https://github.com/DerekGloudemans/i24_configparse@latest
 pip install git+https://github.com/Lab-Work/I24_logging@latest
 pip install git+https://github.com/yanb514/i24_database_api@latest
+conda install pandas
+conda install -c anaconda networkx
+conda install scikit-learn
