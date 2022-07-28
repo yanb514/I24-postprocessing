@@ -6,7 +6,7 @@ data_association module connected with database
 '''
 import numpy as np
 # import torch
-from scipy import stats
+# from scipy import stats
 from i24_logger.log_writer import catch_critical
 
 
