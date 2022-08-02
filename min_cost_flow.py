@@ -121,8 +121,8 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     sig_hdlr = SignalHandler()
 
     # Get parameters
-    ATTR_NAME = parameters.fragment_attr_name
-    TIME_WIN = parameters.time_win
+    ATTR_NAME = parameters["fragment_attr_name"]
+    TIME_WIN = parameters["time_win"]
     
     # Initialize tracking graph
     m = MOTGraphSingle(ATTR_NAME, parameters)
@@ -131,7 +131,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     while sig_hdlr.run:
         try:
             try:
-                raw_fgmt = fragment_queue.get(timeout = parameters.raw_trajectory_queue_get_timeout)
+                raw_fgmt = fragment_queue.get(timeout = parameters["raw_trajectory_queue_get_timeout"])
                 # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
                 fgmt = Fragment(raw_fgmt)
                 
@@ -148,10 +148,10 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 break
             
             # RANSAC fit to determine the fit coef if it's a good track, otherwise reject
-            if not fgmt.ransac_fit(parameters.residual_threshold_x,
-                                   parameters.residual_threshold_y,
-                                   parameters.conf_threshold,
-                                   parameters.remain_threshold):
+            if not fgmt.ransac_fit(parameters["residual_threshold_x"],
+                                   parameters["residual_threshold_y"],
+                                   parameters["conf_threshold"],
+                                   parameters["remain_threshold"]):
                 # print('remove ',fgmt)
                 continue # skip this fgmt
                 

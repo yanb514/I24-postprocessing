@@ -44,7 +44,7 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     resampled_trajectory = resample(combined_trajectory)
     
     finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)   
-    rec_worker_logger.info("*** 3. Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
+    rec_worker_logger.info("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
 
     reconciled_queue.put(finished_trajectory)
 
@@ -59,25 +59,22 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     :return:
     """
     # parameters
-    reconciliation_args = {"lam2_x": parameters.lam2_x,
-                           "lam2_y": parameters.lam2_y,
-                           "lam1_x": parameters.lam1_x, 
-                           "lam1_y": parameters.lam1_y,
-                           "PH": parameters.ph,
-                           "IH": parameters.ih}
+    reconciliation_args={}
+    for key in ["lam2_x","lam2_y","lam1_x","lam1_y", "ph", "ih"]:
+        reconciliation_args[key] = parameters[key]
     
     rec_parent_logger = log_writer.logger
     rec_parent_logger.set_name("rec_parent")
     setattr(rec_parent_logger, "_default_logger_extra",  {})
 
-    raw = DBClient(**db_param, collection_name = parameters.raw_collection)
+    raw = DBClient(**parameters["db_param"], database_name = parameters["database_name"], collection_name = parameters["raw_collection"])
    
     # Signal handling: 
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    worker_pool = Pool(processes=parameters.reconciliation_pool_size)
+    worker_pool = Pool(processes=parameters["reconciliation_pool_size"])
     signal.signal(signal.SIGINT, original_sigint_handler)
     
-    rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(parameters.reconciliation_pool_size), extra = None)
+    rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(parameters["reconciliation_pool_size"]), extra = None)
     
     # Signal handling: 
     # SIGINT raises KeyboardInterrupt,  close dbw, close pool and exit.
@@ -93,7 +90,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     while True:
         try:
             try:
-                next_to_reconcile = stitched_trajectory_queue.get(timeout = parameters.stitched_trajectory_queue_get_timeout) #20sec
+                next_to_reconcile = stitched_trajectory_queue.get(timeout = parameters["stitched_trajectory_queue_get_timeout"]) #20sec
             except queue.Empty: 
                 rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters.stitched_trajectory_queue_get_timeout))
                 break
@@ -119,7 +116,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
 
 
 
-def write_reconciled_to_db(parameters, db_param, reconciled_queue):
+def write_reconciled_to_db(parameters, reconciled_queue):
     
     
     reconciled_writer = log_writer.logger
@@ -135,32 +132,36 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
         
     signal.signal(signal.SIGUSR1, handler) # ignore SIGUSR1
     
-    
-    reconciled_schema_path = os.path.join(os.environ["USER_CONFIG_DIRECTORY"],parameters.reconciled_schema_path) #15sec
-    # get next available spell
+    reconciled_schema_path = os.getcwd() + "/config/" + parameters["reconciled_schema_path"]
+    print(reconciled_schema_path)
 
-    dbw = DBClient(**db_param)
+    dbw = DBClient(**parameters["db_param"], database_name = parameters["database_name"])
+    print("initialize dbw")
+    
+
     trials = 0
     while trials < max_trials:
         verb = random.choice(verbs)
-        reconciled_name = parameters.raw_collection+"__"+verb
-        if reconciled_name not in dbw.db.list_collection_names():
-            dbw = DBClient(**db_param, collection_name = reconciled_name, schema_file=reconciled_schema_path)
+        reconciled_name = parameters["raw_collection"]+"__"+verb
+        
+        if reconciled_name not in dbw.list_collection_names():
+            reconciled_writer.info("reconciled_name: {}".format(reconciled_name))
+            dbw = DBClient(**parameters["db_param"], database_name = parameters["database_name"], 
+                            collection_name = reconciled_name, schema_file=reconciled_schema_path)
             break
         else:
             trials+=1
-        
     
     if trials >= max_trials:
         raise Exception("All verbs are occupied.")
-
+    
         
     
     # Write to db
     while True:
         try:
             try:
-                reconciled_traj = reconciled_queue.get(timeout = parameters.reconciliation_timeout)
+                reconciled_traj = reconciled_queue.get(timeout = parameters["reconciliation_timeout"])
             except queue.Empty:
                 reconciled_writer.warning("Getting from reconciled_queue reaches timeout.")
                 break
@@ -175,7 +176,7 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
     reconciled_writer.info("Final count in reconciled collection {}: {}".format(reconciled_name, dbw.count()))
     
     # save metadata
-    dbw.db["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters.__dict__},
+    dbw.db["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters},
                                   bypass_document_validation=True)
     # Safely close the mongodb client connection
     del dbw

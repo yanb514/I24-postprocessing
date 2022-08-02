@@ -127,9 +127,9 @@ class MOTGraphSingle:
         add all incident edges from i to other possible nodes, mark edges as match = False
         '''
         
-        TIME_WIN = self.parameters.time_win
-        VARX = self.parameters.varx
-        VARY = self.parameters.vary
+        TIME_WIN = self.parameters["time_win"]
+        VARX = self.parameters["varx"]
+        VARY = self.parameters["vary"]
         # CONF = self.parameters.conf
         
         new_id = getattr(fragment, self.attr)

@@ -1,5 +1,5 @@
 # -----------------------------
-__file__ = 'postprocess_manager.py'
+__file__ = 'postprocess.py'
 __doc__ = """
 I-24 MOTION processing software.
 Top level process for live post-processing
@@ -27,7 +27,7 @@ import reconciliation as rec
 if __name__ == '__main__':
     
     # GET PARAMAETERS
-    with open("config/test_param.json") as f:
+    with open("config/parameters.json") as f:
         parameters = json.load(f)
         
     
@@ -50,14 +50,14 @@ if __name__ == '__main__':
     # Raw trajectory fragment queue
     # -- populated by database connector that listens for updates
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    raw_fragment_queue_e = mp_manager.Queue(maxsize=parameters.raw_trajectory_queue_size) # east direction
-    raw_fragment_queue_w = mp_manager.Queue(maxsize=parameters.raw_trajectory_queue_size) # west direction
+    raw_fragment_queue_e = mp_manager.Queue(maxsize=parameters["raw_trajectory_queue_size"]) # east direction
+    raw_fragment_queue_w = mp_manager.Queue(maxsize=parameters["raw_trajectory_queue_size"]) # west direction
     
     # Stitched trajectory queue
     # -- populated by stitcher and consumed by reconciliation pool
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    stitched_trajectory_queue = mp_manager.Queue(maxsize=parameters.stitched_trajectory_queue_size) 
-    reconciled_queue = mp_manager.Queue(maxsize=parameters.reconciled_trajectory_queue_size)
+    stitched_trajectory_queue = mp_manager.Queue(maxsize=parameters["stitched_trajectory_queue_size"]) 
+    reconciled_queue = mp_manager.Queue(maxsize=parameters["reconciled_trajectory_queue_size"])
     
     # PID tracker is a single dictionary of format {processName: PID}
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -84,16 +84,16 @@ if __name__ == '__main__':
                             #                 parameters.buffer_time, True, )), # True if read from a simulated collection
                             "static_data_reader": (df.static_data_reader,
                                             (parameters, raw_fragment_queue_e, raw_fragment_queue_w, 1000,)),
-                            # "stitcher_e": (mcf.min_cost_flow_online_alt_path,
-                            #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
-                            #                 parameters, )),
-                            # "stitcher_w": (mcf.min_cost_flow_online_alt_path,
-                            #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
-                            #                 parameters, )),
-                            # "reconciliation": (rec.reconciliation_pool,
-                            #             (parameters, stitched_trajectory_queue, reconciled_queue,)),
-                            # "reconciliation_writer": (rec.write_reconciled_to_db,
-                            #             (parameters, reconciled_queue,)),
+                            "stitcher_e": (mcf.min_cost_flow_online_alt_path,
+                                            ("east", raw_fragment_queue_e, stitched_trajectory_queue,
+                                            parameters, )),
+                            "stitcher_w": (mcf.min_cost_flow_online_alt_path,
+                                            ("west", raw_fragment_queue_w, stitched_trajectory_queue,
+                                            parameters, )),
+                            "reconciliation": (rec.reconciliation_pool,
+                                        (parameters, stitched_trajectory_queue, reconciled_queue,)),
+                            "reconciliation_writer": (rec.write_reconciled_to_db,
+                                        (parameters, reconciled_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.
@@ -170,13 +170,13 @@ if __name__ == '__main__':
             
     
     # register signals depending on the mode     
-    if parameters.mode == "hard_stop":
+    if parameters["mode"] == "hard_stop":
         signal.signal(signal.SIGINT, hard_stop_hdlr)
         
-    elif parameters.mode == "soft_stop":
+    elif parameters["mode"] == "soft_stop":
         signal.signal(signal.SIGINT, soft_stop_hdlr)
         
-    elif parameters.mode == "finish":
+    elif parameters["mode"] == "finish":
         manager_logger.warning("Currently do not support finish-processing. Manually kill live_data_read instead")
         # signal.signal(signal.SIGINT, finish_hdlr)
         
@@ -203,7 +203,7 @@ if __name__ == '__main__':
             
             if not child_process.is_alive():
                 # do not restart if in one of the stopping modes
-                if parameters.mode in ["hard_stop", "soft_stop", "finish"]:
+                if parameters["mode"] in ["hard_stop", "soft_stop", "finish"]:
                     try:
                         live_process_objects.pop(pid_name)
                         print("RIP {} {}".format(pid_name, child_process))
@@ -229,8 +229,8 @@ if __name__ == '__main__':
                     
             else:
                 # Process is running; do nothing.
-                # if pid_name in live_process_objects:
-                    # print("Long live {}! {}".format(pid_name, child_process))
+                if pid_name in live_process_objects:
+                    print("Long live {}! {}".format(pid_name, child_process))
                 pass
         
         
