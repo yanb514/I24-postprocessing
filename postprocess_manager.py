@@ -84,16 +84,16 @@ if __name__ == '__main__':
                             #                 parameters.buffer_time, True, )), # True if read from a simulated collection
                             "static_data_reader": (df.static_data_reader,
                                             (parameters, raw_fragment_queue_e, raw_fragment_queue_w, 1000,)),
-                            "stitcher_e": (mcf.min_cost_flow_online_alt_path,
-                                            ("east", raw_fragment_queue_e, stitched_trajectory_queue,
-                                            parameters, )),
-                            "stitcher_w": (mcf.min_cost_flow_online_alt_path,
-                                            ("west", raw_fragment_queue_w, stitched_trajectory_queue,
-                                            parameters, )),
-                            "reconciliation": (rec.reconciliation_pool,
-                                        (parameters, stitched_trajectory_queue, reconciled_queue,)),
-                            "reconciliation_writer": (rec.write_reconciled_to_db,
-                                        (parameters, reconciled_queue,)),
+                            # "stitcher_e": (mcf.min_cost_flow_online_alt_path,
+                            #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
+                            #                 parameters, )),
+                            # "stitcher_w": (mcf.min_cost_flow_online_alt_path,
+                            #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
+                            #                 parameters, )),
+                            # "reconciliation": (rec.reconciliation_pool,
+                            #             (parameters, stitched_trajectory_queue, reconciled_queue,)),
+                            # "reconciliation_writer": (rec.write_reconciled_to_db,
+                            #             (parameters, reconciled_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.
