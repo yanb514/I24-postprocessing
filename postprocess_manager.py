@@ -11,36 +11,25 @@ import multiprocessing as mp
 import os
 import signal
 import time
+import json
 
-# Cusotmized APIs
+# Custom APIs
 from i24_configparse import parse_cfg
 from i24_logger.log_writer import logger
 
-# config_path = os.path.join(os.getcwd(),"config")
-# os.environ["USER_CONFIG_DIRECTORY"] = config_path 
-# os.environ["user_config_directory"] = config_path
-# os.environ["my_config_section"] = "TEST"
-# parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
-
-# set os environment config path
-cwd = os.getcwd()
-cfg = "config"
-config_path = os.path.join(cwd,cfg)
-os.environ["USER_CONFIG_DIRECTORY"] = config_path # note that this may not affect processes globally
-os.environ["test_config_section"] = "TEST"
-parameters = parse_cfg(env_sec_name="test_config_section", cfg_name = "test_param.config")
-
-
-# Customized modules
+# Custom modules
 import data_feed as df
 import min_cost_flow as mcf
 import reconciliation as rec
 
 
-
-
     
 if __name__ == '__main__':
+    
+    # GET PARAMAETERS
+    with open("config/test_param.json") as f:
+        parameters = json.load(f)
+        
     
     # CHANGE NAME OF THE LOGGER
     manager_logger = logger
@@ -240,8 +229,8 @@ if __name__ == '__main__':
                     
             else:
                 # Process is running; do nothing.
-                if pid_name in live_process_objects:
-                    print("Long live {}! {}".format(pid_name, child_process))
+                # if pid_name in live_process_objects:
+                    # print("Long live {}! {}".format(pid_name, child_process))
                 pass
         
         

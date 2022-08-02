@@ -17,17 +17,18 @@ import os
 import signal
 import sys
 import queue
+import random
 
 import i24_logger.log_writer as log_writer
-from i24_database_api.db_writer import DBWriter
-from i24_database_api.db_reader import DBReader
+
+from i24_database_api import DBClient
 from i24_configparse import parse_cfg
 
 from utils.utils_reconciliation import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments, rectify_2d
 
-# verbs = ["expelliarmus", "avadakedavra", "expectopatronum", "obliviate", "riddikulus","accio","sectumsempra","Lumos","ascendio","bombarda"]
-verbs = ["medicate", "taunt", "sweettalk", "initiate", "harass", "smack", "boggle", "negotiate", "castigate", "dispute", "cajole", "improvise"]
-verbs.sort()
+verbs = ["medicates", "taunts", "sweettalks", "initiates", "harasses", "smacks", "boggles", "negotiates", "castigates", "disputes", "cajoles", "improvises",
+         "surrenders", "escalates", "mumbles", "juxtaposes", "excites", "lionizes", "ruptures" "yawns","administers","flatters","foreshadows","buckles"]
+max_trials = 10
 
 def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue) -> None:
     """
@@ -41,17 +42,12 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     setattr(rec_worker_logger, "_default_logger_extra",  {})
 
     resampled_trajectory = resample(combined_trajectory)
-    rec_worker_logger.debug("*** 2. Resampled.", extra = None)
     
-    # finished_trajectory = receding_horizon_2d(resampled_trajectory, **reconciliation_args)
     finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)   
-    rec_worker_logger.info("*** 3. Reconciled a trajectory. Trajectory duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
-    
-    # resampled_trajectory["timestamp"] = list(resampled_trajectory["timestamp"])
-    # resampled_trajectory["x_position"] = list(resampled_trajectory["x_position"])
-    # resampled_trajectory["y_position"] = list(resampled_trajectory["y_position"])
+    rec_worker_logger.info("*** 3. Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
+
     reconciled_queue.put(finished_trajectory)
-    rec_worker_logger.debug("reconciled queue size: {}".format(reconciled_queue.qsize()))
+
 
 
 def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Queue, 
@@ -74,9 +70,8 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     rec_parent_logger.set_name("rec_parent")
     setattr(rec_parent_logger, "_default_logger_extra",  {})
 
-    raw = DBReader(parameters, collection_name=parameters.raw_collection)
-    # dbw.reset_collection() # This line throws OperationFailure, not sure how to fix it
-
+    raw = DBClient(**db_param, collection_name = parameters.raw_collection)
+   
     # Signal handling: 
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
     worker_pool = Pool(processes=parameters.reconciliation_pool_size)
@@ -85,7 +80,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(parameters.reconciliation_pool_size), extra = None)
     
     # Signal handling: 
-    # SIGINT raises KeyboardInterrupt,  close dbw, terminate pool and exit. # TODO: pool.terminate() or close()?
+    # SIGINT raises KeyboardInterrupt,  close dbw, close pool and exit.
     # SIGUSR1 is ignored. The process terminates when queue is empty. Close and join the pool
     def handler(sigusr, frame):
         rec_parent_logger.warning("SIGUSR1 detected. Finish processing current queues.")
@@ -105,7 +100,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
         
             # rec_parent_logger.debug("next_to_reconcile: {}".format(next_to_reconcile), extra = None)
             combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)
-            rec_parent_logger.debug("*** 1. Combined stitched fragments.", extra = None)
+            # rec_parent_logger.debug("*** 1. Combined stitched fragments.", extra = None)
             
             worker_pool.apply_async(reconcile_single_trajectory, (reconciliation_args, combined_trajectory, reconciled_queue, ))
 
@@ -124,7 +119,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
 
 
 
-def write_reconciled_to_db(parameters, reconciled_queue):
+def write_reconciled_to_db(parameters, db_param, reconciled_queue):
     
     
     reconciled_writer = log_writer.logger
@@ -143,18 +138,23 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     
     reconciled_schema_path = os.path.join(os.environ["USER_CONFIG_DIRECTORY"],parameters.reconciled_schema_path) #15sec
     # get next available spell
-    dbw = DBWriter(parameters, collection_name = "none", schema_file=reconciled_schema_path)
-    db = False
-    for i, verb in enumerate(verbs):
-        reconciled_name = parameters.raw_collection+"_"+verb+"s"
+
+    dbw = DBClient(**db_param)
+    trials = 0
+    while trials < max_trials:
+        verb = random.choice(verbs)
+        reconciled_name = parameters.raw_collection+"__"+verb
         if reconciled_name not in dbw.db.list_collection_names():
-            dbw = DBWriter(parameters, collection_name = reconciled_name, schema_file=reconciled_schema_path)
-            db = True
+            dbw = DBClient(**db_param, collection_name = reconciled_name, schema_file=reconciled_schema_path)
             break
-    if not db:
+        else:
+            trials+=1
+        
+    
+    if trials >= max_trials:
         raise Exception("All verbs are occupied.")
 
-    
+        
     
     # Write to db
     while True:
@@ -163,7 +163,6 @@ def write_reconciled_to_db(parameters, reconciled_queue):
                 reconciled_traj = reconciled_queue.get(timeout = parameters.reconciliation_timeout)
             except queue.Empty:
                 reconciled_writer.warning("Getting from reconciled_queue reaches timeout.")
-                
                 break
         
             dbw.write_one_trajectory(thread = True, **reconciled_traj)
@@ -173,8 +172,11 @@ def write_reconciled_to_db(parameters, reconciled_queue):
             break
     
     
-    reconciled_writer.info("Final count in reconciled collection {}: {}".format(verb, dbw.count()))
+    reconciled_writer.info("Final count in reconciled collection {}: {}".format(reconciled_name, dbw.count()))
     
+    # save metadata
+    dbw.db["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters.__dict__},
+                                  bypass_document_validation=True)
     # Safely close the mongodb client connection
     del dbw
     reconciled_writer.warning("DBWriter closed. Exit reconciled_writer")

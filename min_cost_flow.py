@@ -15,23 +15,12 @@ from collections import defaultdict
 import sys
 # sys.path.append('../')
 
-from i24_database_api.db_reader import DBReader
-from i24_database_api.db_writer import DBWriter
+from i24_database_api import DBClient
 import i24_logger.log_writer as log_writer
 from i24_configparse import parse_cfg
 from utils.utils_mcf import Fragment, MOTGraphSingle
 
 
-
-# config_path = os.path.join(os.getcwd(),"config")
-# os.environ["user_config_directory"] = config_path
-# parameters = parse_cfg("DEBUG", cfg_name = "test_param.config")
-
-
-# TODO:
-    # 1. check if the answers agree with nx.edmond_karp
-    # 2. add more intelligent enter/exiting cost based on the direction and where they are relative to the road
-    
 # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
 class SignalHandler():
 
@@ -67,15 +56,13 @@ def read_to_queue(gt_ids, gt_val, lt_val, parameters):
     construct MOT graph from fragment list based on the specified loss function
     '''
     # connect to database
-    raw = DBReader(host=parameters.default_host, port=parameters.default_port, username=parameters.readonly_user,   
-                   password=parameters.default_password,
-                   database_name=parameters.db_name, collection_name=parameters.raw_collection)
+    raw = DBClient(**parameters, collection_name = "")
     print("connected to raw collection")
-    gt = DBReader(host=parameters.default_host, port=parameters.default_port, username=parameters.readonly_user,   
+    gt = DBClient(host=parameters.default_host, port=parameters.default_port, username=parameters.readonly_user,   
                     password=parameters.default_password,
                     database_name=parameters.db_name, collection_name=parameters.gt_collection)
     print("connected to gt collection")
-    stitched = DBWriter(host=parameters.default_host, port=parameters.default_port, 
+    stitched = DBClient(host=parameters.default_host, port=parameters.default_port, 
             username=parameters.default_username, password=parameters.default_password,
             database_name=parameters.db_name, collection_name=parameters.stitched_collection,
             server_id=1, process_name=1, process_id=1, session_config_id=1, schema_file=None)
@@ -133,12 +120,6 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
 
     sig_hdlr = SignalHandler()
 
-    # Make a database connection for writing
-    # schema_path = os.path.join(os.environ["USER_CONFIG_DIRECTORY"],parameters.stitched_schema_path)
-    # dbw = DBWriter(parameters, collection_name = parameters.raw_collection+"_stitched", schema_file=schema_path)
-    # dbw.collection.drop()
-    # dbw = DBWriter(parameters, collection_name = parameters.raw_collection+"_stitched", schema_file=schema_path)
-    
     # Get parameters
     ATTR_NAME = parameters.fragment_attr_name
     TIME_WIN = parameters.time_win
@@ -159,7 +140,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 
                 for path in all_paths:
                     # stitcher_logger.info("Flushing out final trajectories in graph")
-                    stitcher_logger.info("** Flushing out {} fragments into one trajectory".format(len(path)),extra = None)
+                    stitcher_logger.info("** Flushing out {} fragments".format(len(path)),extra = None)
                     stitched_trajectory_queue.put(path[::-1])
                     # dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
                 
@@ -167,8 +148,11 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 break
             
             # RANSAC fit to determine the fit coef if it's a good track, otherwise reject
-            if not fgmt.ransac_fit():
-                print('remove ',fgmt)
+            if not fgmt.ransac_fit(parameters.residual_threshold_x,
+                                   parameters.residual_threshold_y,
+                                   parameters.conf_threshold,
+                                   parameters.remain_threshold):
+                # print('remove ',fgmt)
                 continue # skip this fgmt
                 
             m.add_node(fgmt)
@@ -191,7 +175,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 # dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
                 m.clean_graph(path)
                 if len(path)>1:
-                    stitcher_logger.info("** stitched {} fragments into one trajectory".format(len(path)),extra = None)
+                    stitcher_logger.info("** stitched {} fragments".format(len(path)),extra = None)
              
             if counter % 100 == 0:
                 stitcher_logger.debug("Graph nodes : {}, Graph edges: {}".format(m.G.number_of_nodes(), m.G.number_of_edges()),extra = None)

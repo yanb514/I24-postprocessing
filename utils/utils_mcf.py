@@ -45,7 +45,8 @@ class Fragment():
             return 'Fragment({!r})'.format(self.id)
         
     
-    def ransac_fit(self):
+    def ransac_fit(self, residual_threshold_x, residual_threshold_y, 
+                   conf_threshold, remain_threshold):
         '''
         remove by confidence threshold
         remove by ransac outlier mask (x-axis)
@@ -56,9 +57,9 @@ class Fragment():
         return False if tot_mask rate is higher than 50 percent (do not consider this track)
         else True otherwise
         '''
-        residual_threshold_x = 5 # tolerance in x
-        residual_threshold_y = 1 # tolerance in y
-        conf_threshold = 0.5
+        residual_threshold_x = residual_threshold_x # tolerance in x
+        residual_threshold_y = residual_threshold_y # tolerance in y
+        conf_threshold = conf_threshold
         length = len(self.t)
         
         # get confidence mask
@@ -80,7 +81,7 @@ class Fragment():
         bad_idx = np.concatenate((mask1, mask2))
         remain = length-len(bad_idx)
         # print("bad rate: {}".format(bad_ratio))
-        if remain < 5:
+        if remain < remain_threshold:
             return False
   
         # fit y only on mask

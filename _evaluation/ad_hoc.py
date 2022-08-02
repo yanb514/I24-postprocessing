@@ -188,6 +188,7 @@ if __name__ == "__main__":
     
     raw = DBReader(config, host = config["host"], username = config["username"], password = config["password"], port = config["port"], database_name = trajectory_database, collection_name=collection)
     rec = DBReader(config, host = config["host"], username = config["username"], password = config["password"], port = config["port"], database_name = trajectory_database, collection_name=collection+"_reconciled")
+    gt = DBReader(config, host = config["host"], username = config["username"], password = config["password"], port = config["port"], database_name = trajectory_database, collection_name="groundtruth_scene_1")
     
     #%% examine a single fragment
     veh_id = ObjectId("62e0194627b64c6330546016")

@@ -8,15 +8,13 @@ Created on Tue May 10 14:55:04 2022
 Live data read should be only one process, and distribute to 2 queues (east/west) based on document direction
 two seperate live_data_feed processes will mess up the change stream
 """
-from i24_database_api.db_reader import DBReader
-from i24_database_api.db_writer import DBWriter
+from i24_database_api import DBClient
 import i24_logger.log_writer as log_writer
 import time
 import signal
 import sys
 import os
 import heapq
-import pymongo
 
 class SIGINTException(Exception):
     pass
@@ -57,14 +55,13 @@ def change_stream_simulator(default_param, insert_rate):
     
     # reset the new collection
     write_to_collection = default_param.raw_collection + "_simulated"
-    raw_schema_path = os.path.join(os.environ["user_config_directory"],default_param.raw_schema_path)
-    dbw = DBWriter(default_param, collection_name = write_to_collection, schema_file = raw_schema_path)
-    dbw.collection.drop()
-    dbw = DBWriter(default_param, collection_name = write_to_collection, schema_file = raw_schema_path)
+    raw_schema_path = "config/" + default_param.raw_schema_path
+    dbw = DBClient(**default_param["db_param"], database_name =default_param.database_name, collection_name = write_to_collection, schema_file = raw_schema_path)
+    dbw.reset_collection()
     logger.info("DBWriter initiated")
     
     # initiate data reader
-    dbr = DBReader(default_param, collection_name=default_param.raw_collection)
+    dbr = DBClient(**default_param["db_param"], database_name =default_param.database_name, collection_name=default_param.raw_collection)
     logger.info("DBReader initiated")
     
     start = dbr.get_min("first_timestamp") - 1e-6
@@ -245,7 +242,7 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
     
     # Connect to a database reader
     raw_collection = default_param.raw_collection
-    dbr = DBReader(default_param, collection_name=raw_collection)
+    dbr = DBClient(**default_param["db_param"], database_name = default_param["database_name"], collection_name=raw_collection)
     
     # start from min and end at max if collection is static
     rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param.range_increment, query_sort= [("last_timestamp", "ASC")])
