@@ -14,7 +14,7 @@ import time
 import json
 
 # Custom APIs
-from i24_configparse import parse_cfg
+# from i24_configparse import parse_cfg
 from i24_logger.log_writer import logger
 
 # Custom modules
@@ -46,6 +46,8 @@ if __name__ == '__main__':
     # ----------------------------------
     print("Post-processing manager creating shared data structures")
     
+    mp_param = mp_manager.dict()
+    mp_param.update(parameters)
     
     # Raw trajectory fragment queue
     # -- populated by database connector that listens for updates
@@ -83,17 +85,17 @@ if __name__ == '__main__':
                             #                 raw_fragment_queue_e, raw_fragment_queue_w,
                             #                 parameters.buffer_time, True, )), # True if read from a simulated collection
                             "static_data_reader": (df.static_data_reader,
-                                            (parameters, raw_fragment_queue_e, raw_fragment_queue_w, 1000,)),
+                                            (mp_param, raw_fragment_queue_e, raw_fragment_queue_w, 1000,)),
                             "stitcher_e": (mcf.min_cost_flow_online_alt_path,
                                             ("east", raw_fragment_queue_e, stitched_trajectory_queue,
-                                            parameters, )),
+                                            mp_param, )),
                             "stitcher_w": (mcf.min_cost_flow_online_alt_path,
                                             ("west", raw_fragment_queue_w, stitched_trajectory_queue,
-                                            parameters, )),
+                                            mp_param, )),
                             "reconciliation": (rec.reconciliation_pool,
-                                        (parameters, stitched_trajectory_queue, reconciled_queue,)),
+                                        (mp_param, stitched_trajectory_queue, reconciled_queue,)),
                             "reconciliation_writer": (rec.write_reconciled_to_db,
-                                        (parameters, reconciled_queue,)),
+                                        (mp_param, reconciled_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.

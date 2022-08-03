@@ -67,7 +67,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     rec_parent_logger.set_name("rec_parent")
     setattr(rec_parent_logger, "_default_logger_extra",  {})
 
-    raw = DBClient(**parameters["db_param"], database_name = parameters["database_name"], collection_name = parameters["raw_collection"])
+    raw = DBClient(**parameters["db_param"], database_name = parameters["raw_database"], collection_name = parameters["raw_collection"])
    
     # Signal handling: 
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -133,20 +133,18 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     signal.signal(signal.SIGUSR1, handler) # ignore SIGUSR1
     
     reconciled_schema_path = os.getcwd() + "/config/" + parameters["reconciled_schema_path"]
-    print(reconciled_schema_path)
 
-    dbw = DBClient(**parameters["db_param"], database_name = parameters["database_name"])
-    print("initialize dbw")
-    
+    dbw = DBClient(**parameters["db_param"], database_name = parameters["raw_database"], collection_name = parameters["raw_collection"])
+    existing_cols = dbw.client[parameters["reconciled_database"]].list_collection_names()
 
     trials = 0
     while trials < max_trials:
         verb = random.choice(verbs)
         reconciled_name = parameters["raw_collection"]+"__"+verb
         
-        if reconciled_name not in dbw.list_collection_names():
+        if reconciled_name not in existing_cols:
             reconciled_writer.info("reconciled_name: {}".format(reconciled_name))
-            dbw = DBClient(**parameters["db_param"], database_name = parameters["database_name"], 
+            dbw = DBClient(**parameters["db_param"], database_name = parameters["reconciled_database"], 
                             collection_name = reconciled_name, schema_file=reconciled_schema_path)
             break
         else:
@@ -176,7 +174,7 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     reconciled_writer.info("Final count in reconciled collection {}: {}".format(reconciled_name, dbw.count()))
     
     # save metadata
-    dbw.db["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters},
+    dbw.client[parameters["meta_database"]]["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters},
                                   bypass_document_validation=True)
     # Safely close the mongodb client connection
     del dbw

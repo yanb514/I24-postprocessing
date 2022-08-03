@@ -1,7 +1,7 @@
 {
     "mode": "soft_stop",
     
-    "raw_collection": "transcendent_borg--RAW_GT1",
+    "raw_collection": "",
     "db_param": {
         "host": "10.2.218.56",
         	"port": 27017,
@@ -9,7 +9,9 @@
         	"password": "mongodb@i24"
     },
     
-	"database_name": "trajectories",
+	"raw_database": "trajectories",
+	"reconciled_database": "reconciled",
+	"meta_database": "meta",
 	"server_id": 1,
 	"session_config_id": 1,
 	
