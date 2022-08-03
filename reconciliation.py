@@ -67,6 +67,9 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     rec_parent_logger.set_name("rec_parent")
     setattr(rec_parent_logger, "_default_logger_extra",  {})
 
+    # wait to get raw collection name
+    while parameters["raw_collection"]=="":
+        time.sleep(1)
     raw = DBClient(**parameters["db_param"], database_name = parameters["raw_database"], collection_name = parameters["raw_collection"])
    
     # Signal handling: 
@@ -134,14 +137,19 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     
     reconciled_schema_path = os.getcwd() + "/config/" + parameters["reconciled_schema_path"]
 
-    dbw = DBClient(**parameters["db_param"], database_name = parameters["raw_database"], collection_name = parameters["raw_collection"])
-    existing_cols = dbw.client[parameters["reconciled_database"]].list_collection_names()
+    dbw = DBClient(**parameters["db_param"], database_name = parameters["reconciled_database"])
+    existing_cols = dbw.list_collection_names()
+    # print("existing col ", existing_cols)
 
+    # wait to get raw collection name
+    while parameters["raw_collection"]=="":
+        time.sleep(1)
+    
     trials = 0
     while trials < max_trials:
         verb = random.choice(verbs)
         reconciled_name = parameters["raw_collection"]+"__"+verb
-        
+        # print("reconcield name, ", reconciled_name)
         if reconciled_name not in existing_cols:
             reconciled_writer.info("reconciled_name: {}".format(reconciled_name))
             dbw = DBClient(**parameters["db_param"], database_name = parameters["reconciled_database"], 
@@ -153,7 +161,9 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     if trials >= max_trials:
         raise Exception("All verbs are occupied.")
     
-        
+    # save metadata
+    dbw.client[parameters["meta_database"]]["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters._getvalue()},
+                                  bypass_document_validation=True)
     
     # Write to db
     while True:
@@ -173,9 +183,7 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     
     reconciled_writer.info("Final count in reconciled collection {}: {}".format(reconciled_name, dbw.count()))
     
-    # save metadata
-    dbw.client[parameters["meta_database"]]["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters},
-                                  bypass_document_validation=True)
+    
     # Safely close the mongodb client connection
     del dbw
     reconciled_writer.warning("DBWriter closed. Exit reconciled_writer")

@@ -23,13 +23,13 @@ import min_cost_flow as mcf
 import reconciliation as rec
 
 
-    
-if __name__ == '__main__':
-    
+def main(collection_name = None):
     # GET PARAMAETERS
     with open("config/parameters.json") as f:
         parameters = json.load(f)
-        
+    
+    if collection_name is not None:
+        parameters["raw_collection"] = collection_name
     
     # CHANGE NAME OF THE LOGGER
     manager_logger = logger
@@ -231,13 +231,17 @@ if __name__ == '__main__':
                     
             else:
                 # Process is running; do nothing.
-                if pid_name in live_process_objects:
-                    print("Long live {}! {}".format(pid_name, child_process))
+                # if pid_name in live_process_objects:
+                #     print("Long live {}! {}".format(pid_name, child_process))
                 pass
         
         
     manager_logger.info("Exit manager")
     manager_logger.info("Final queue sizes, raw east: {}, raw west: {}, stitched: {}, reconciled: {}".format(raw_fragment_queue_e.qsize(), raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize(), reconciled_queue.qsize()))
+    
+if __name__ == '__main__':
+    main()
+    
     
     
     

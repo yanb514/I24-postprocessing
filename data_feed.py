@@ -241,8 +241,10 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
     setattr(logger, "_default_logger_extra",  {})
     
     # Connect to a database reader
-    dbr = DBClient(**default_param["db_param"], database_name = default_param["raw_database"], collection_name=default_param["raw_collection"])  
+    dbr = DBClient(**default_param["db_param"], database_name = default_param["raw_database"], collection_name=default_param["raw_collection"], latest_collection=True)  
     default_param["raw_collection"] = dbr.collection_name
+    # print("default param raw ", default_param["raw_collection"])
+    
     
     # start from min and end at max if collection is static
     rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param["range_increment"], query_sort= [("last_timestamp", "ASC")])
