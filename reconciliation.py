@@ -95,7 +95,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
             try:
                 next_to_reconcile = stitched_trajectory_queue.get(timeout = parameters["stitched_trajectory_queue_get_timeout"]) #20sec
             except queue.Empty: 
-                rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters.stitched_trajectory_queue_get_timeout))
+                rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters["stitched_trajectory_queue_get_timeout"]))
                 break
         
             # rec_parent_logger.debug("next_to_reconcile: {}".format(next_to_reconcile), extra = None)
@@ -199,26 +199,22 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     
 
 if __name__ == '__main__':
-    
+    import json
     # initialize parameters
-    config_path = os.path.join(os.getcwd(),"config")
-    os.environ["user_config_directory"] = config_path
-    os.environ["my_config_section"] = "TEST"
-    parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
+    with open('config/parameters.json') as f:
+        parameters = json.load(f)
 
-    reconciliation_args = {"lam2_x": parameters.lam2_x,
-                           "lam2_y": parameters.lam2_y,
-                           # "lam1_x": parameters.lam1_x, 
-                           # "lam1_y": parameters.lam1_y,
-                           "PH": parameters.ph,
-                           "IH": parameters.ih}
+    reconciliation_args={}
+    for key in ["lam2_x","lam2_y","lam1_x","lam1_y", "ph", "ih"]:
+        reconciliation_args[key] = parameters[key]
     
     # send some fragments to queue
     stitched_q = multiprocessing.Manager().Queue()
     reconciled_queue = multiprocessing.Manager().Queue()
     counter = 0 
     
-    test_dbr = DBReader(parameters, collection_name="garbage_dump_2")
+    test_dbr = DBClient(**parameters["db_param"], database_name = "trajectories", latest_collection=True)
+    
     for doc in test_dbr.collection.find({}):
         stitched_q.put([doc["_id"]])
         counter += 1
@@ -236,7 +232,7 @@ if __name__ == '__main__':
         combined_trajectory = combine_fragments(test_dbr.collection, fragment_list)
         reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue)
         
-    # print("final queue size: ",reconciled_queue.qsize())
+    print("final queue size: ",reconciled_queue.qsize())
         
     
     

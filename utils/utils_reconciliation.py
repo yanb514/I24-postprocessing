@@ -164,7 +164,8 @@ def _getQPMatrices(x, lam2, lam1, reg="l2"):
     '''
     if reg == "l1" and lam1 is None:
         raise ValueError("lam1 must be specified when regularization is set to L1")
-        
+     
+    r = np.nansum(x**2)
     # get data
     N = len(x)
     
@@ -191,7 +192,7 @@ def _getQPMatrices(x, lam2, lam1, reg="l2"):
         Q = 2*(HH/M+DD/N)
         p = -2*H.trans() * matrix(x)/M
 
-        return Q, p, H, N, M
+        return Q, p, H, N, M,r
     else:
         DD = lam2 * D3.trans() * D3
         # define matices
@@ -209,7 +210,7 @@ def _getQPMatrices(x, lam2, lam1, reg="l2"):
         p = 1/M * sparse([-2*H.trans()*matrix(x), -2*matrix(x)+lam1, 2*matrix(x)+lam1])
         G = sparse([[H*O,H*O],[-IM,OM],[OM,-IM]])
         h = spmatrix([], [], [], (2*M,1))
-        return Q, p, H, G, h, N,M
+        return Q, p, H, G, h, N,M,r
 
 def _getQPMatrices_nan(N, lam2, lam1, reg="l2"):
     '''
@@ -294,7 +295,7 @@ def rectify_1d_l1(lam2, lam1, x):
     rewrite l1 penalty to linear constraints https://math.stackexchange.com/questions/391796/how-to-expand-equation-inside-the-l2-norm
     :param args: (lam2, lam1)
     '''  
-    Q, p, H, G, h, N,M = _getQPMatrices(x, lam2, lam1, reg="l1")
+    Q, p, H, G, h, N,M,r = _getQPMatrices(x, lam2, lam1, reg="l1")
     sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
     
     # extract result
@@ -349,7 +350,7 @@ def receding_horizon_1d(x, lam2, PH, IH):
         xx = x[l: r]
         nn = len(xx)
         try:
-            Q, p, H, N,M = _getQPMatrices(xx, lam2, None, reg="l2")
+            Q, p, H, N,M,r = _getQPMatrices(xx, lam2, None, reg="l2")
         except ZeroDivisionError: 
             # M=0, all missing entries in this rolling window
             # ... simply ignore the data fitting term, assume 0 jerk motion (constant accel)
@@ -447,7 +448,7 @@ def receding_horizon_1d_l1(car, lam2, lam1, PH, IH, axis):
         else:
             xx = x[i*IH: i*IH+PH]
         # nn = len(xx)
-        Q, p, H, G, h, N,M = _getQPMatrices(xx, lam2, lam1, reg="l1")
+        Q, p, H, G, h, N,M,r = _getQPMatrices(xx, lam2, lam1, reg="l1")
         
         
         try: # if x_prev exists - not first window

@@ -22,7 +22,6 @@
                     },
                 "description": "Corrected timestamp. This timestamp may be corrected to reduce timestamp errors."
                 },
-            
             "first_timestamp": {
                 "bsonType": "double",
                 "description": "Min timestamp from all timestamps in the trajectory fragment"
@@ -93,7 +92,11 @@
                     "bsonType": ["string", "objectId"]
                     },
                 "description": "Fragments that are stitched to this trajectory."
-                } 
+                },
+            "score": {
+                "bsonType": "double",
+                "description": "Value of the reconciliation objective function at optimality"
+                }
             }
         }
     }
