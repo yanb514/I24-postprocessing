@@ -17,18 +17,12 @@ import os
 import signal
 import sys
 import queue
-import random
 
 import i24_logger.log_writer as log_writer
-
 from i24_database_api import DBClient
-from i24_configparse import parse_cfg
 
 from utils.utils_reconciliation import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments, rectify_2d
 
-verbs = ["medicates", "taunts", "sweettalks", "initiates", "harasses", "smacks", "boggles", "negotiates", "castigates", "disputes", "cajoles", "improvises",
-         "surrenders", "escalates", "mumbles", "juxtaposes", "excites", "lionizes", "ruptures" "yawns","administers","flatters","foreshadows","buckles"]
-max_trials = 10
 
 def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue) -> None:
     """
@@ -134,42 +128,20 @@ def write_reconciled_to_db(parameters, reconciled_queue):
         signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
         
     signal.signal(signal.SIGUSR1, handler) # ignore SIGUSR1
-    
     reconciled_schema_path = os.getcwd() + "/config/" + parameters["reconciled_schema_path"]
 
-    dbw = DBClient(**parameters["db_param"], database_name = parameters["reconciled_database"])
-    existing_cols = dbw.list_collection_names()
-    # print("existing col ", existing_cols)
-
     # wait to get raw collection name
-    while parameters["raw_collection"]=="":
+    while parameters["reconciled_collection"]=="":
         time.sleep(1)
-    
-    trials = 0
-    while trials < max_trials:
-        verb = random.choice(verbs)
-        reconciled_name = parameters["raw_collection"]+"__"+verb
-        # print("reconcield name, ", reconciled_name)
-        if reconciled_name not in existing_cols:
-            reconciled_writer.info("reconciled_name: {}".format(reconciled_name))
-            dbw = DBClient(**parameters["db_param"], database_name = parameters["reconciled_database"], 
-                            collection_name = reconciled_name, schema_file=reconciled_schema_path)
-            break
-        else:
-            trials+=1
-    
-    if trials >= max_trials:
-        raise Exception("All verbs are occupied.")
-    
-    # save metadata
-    dbw.client[parameters["meta_database"]]["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters._getvalue()},
-                                  bypass_document_validation=True)
-    
+        
+    dbw = DBClient(**parameters["db_param"], database_name = parameters["reconciled_database"], 
+                   collection_name = parameters["reconciled_collection"], schema_file=reconciled_schema_path)
+    REC_TIMEOUT = parameters["reconciliation_timeout"]
     # Write to db
     while True:
         try:
             try:
-                reconciled_traj = reconciled_queue.get(timeout = parameters["reconciliation_timeout"])
+                reconciled_traj = reconciled_queue.get(timeout = REC_TIMEOUT)
             except queue.Empty:
                 reconciled_writer.warning("Getting from reconciled_queue reaches timeout.")
                 break
@@ -181,7 +153,7 @@ def write_reconciled_to_db(parameters, reconciled_queue):
             break
     
     
-    reconciled_writer.info("Final count in reconciled collection {}: {}".format(reconciled_name, dbw.count()))
+    reconciled_writer.info("Final count in reconciled collection {}: {}".format(dbw.collection_name, dbw.count()))
     
     
     # Safely close the mongodb client connection

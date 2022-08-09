@@ -291,7 +291,7 @@ def cost_2(track1, track2, TIME_WIN, VARX, VARY):
        
     cone_offset = 1
     cost_offset = -2
-    n = 30 # consider n measurements
+    # n=30
     
     # if time_gap > tIME_WIN, don't stitch
     if track2.t[0] - track1.t[-1] > TIME_WIN:
@@ -303,6 +303,7 @@ def cost_2(track1, track2, TIME_WIN, VARX, VARY):
         meast = track2.t[track2.filter]
         measx = track2.x[track2.filter]
         measy = track2.y[track2.filter]
+        n = min(len(meast), 30) # consider n measurements
         meast = meast[:n]
         measx = measx[:n]
         measy = measy[:n]
@@ -313,6 +314,7 @@ def cost_2(track1, track2, TIME_WIN, VARX, VARY):
         meast = track1.t[track1.filter]
         measx = track1.x[track1.filter]
         measy = track1.y[track1.filter]
+        n = min(len(meast), 30) # consider n measurements
         meast = meast[-n:]
         measx = measx[-n:]
         measy = measy[-n:]

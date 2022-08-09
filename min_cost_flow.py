@@ -6,18 +6,13 @@ Created on Sun May 15 15:17:59 2022
 @author: yanbing_wang
 """
 import queue
-from collections import deque 
-import os
 import signal
 import time
-import heapq
 from collections import defaultdict
-import sys
-# sys.path.append('../')
+from bson.objectid import ObjectId
 
 from i24_database_api import DBClient
 import i24_logger.log_writer as log_writer
-from i24_configparse import parse_cfg
 from utils.utils_mcf import Fragment, MOTGraphSingle
 
 
@@ -123,15 +118,27 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     # Get parameters
     ATTR_NAME = parameters["fragment_attr_name"]
     TIME_WIN = parameters["time_win"]
+    RES_THRESH_X = parameters["residual_threshold_x"]
+    RES_THRESH_Y = parameters["residual_threshold_y"]
+    CONF_THRESH = parameters["conf_threshold"],
+    REMAIN_THRESH = parameters["remain_threshold"]
     
     # Initialize tracking graph
     m = MOTGraphSingle(ATTR_NAME, parameters)
     counter = 0 # iterations for log
     
+    # wait to get stitched collection name
+    while parameters["stitched_collection"]=="":
+        time.sleep(1)
+        
+    dbw = DBClient(**parameters["db_param"], database_name = parameters["stitched_database"],
+                   collection_name = parameters["stitched_collection"])
+    
+    GET_TIMEOUT = parameters["raw_trajectory_queue_get_timeout"]
     while sig_hdlr.run:
         try:
             try:
-                raw_fgmt = fragment_queue.get(timeout = parameters["raw_trajectory_queue_get_timeout"])
+                raw_fgmt = fragment_queue.get(timeout = GET_TIMEOUT)
                 # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
                 fgmt = Fragment(raw_fgmt)
                 
@@ -142,16 +149,13 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                     # stitcher_logger.info("Flushing out final trajectories in graph")
                     stitcher_logger.info("** Flushing out {} fragments".format(len(path)),extra = None)
                     stitched_trajectory_queue.put(path[::-1])
-                    # dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
+                    dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
                 
                 stitcher_logger.info("fragment_queue is empty, exit.")
                 break
             
             # RANSAC fit to determine the fit coef if it's a good track, otherwise reject
-            if not fgmt.ransac_fit(parameters["residual_threshold_x"],
-                                   parameters["residual_threshold_y"],
-                                   parameters["conf_threshold"],
-                                   parameters["remain_threshold"]):
+            if not fgmt.ransac_fit(RES_THRESH_X, RES_THRESH_Y, CONF_THRESH, REMAIN_THRESH):
                 # print('remove ',fgmt)
                 continue # skip this fgmt
                 
@@ -165,14 +169,13 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     
             # pop path if a path is ready
             # print("**", m.G.edges(data=True))
-            all_paths = m.pop_path(time_thresh = fgmt.first_timestamp - TIME_WIN)
-            
+            all_paths = m.pop_path(time_thresh = fgmt.first_timestamp - TIME_WIN)  
             
             
             for path in all_paths:
                 # stitcher_logger.debug("path: {}".format(path))
                 stitched_trajectory_queue.put(path[::-1])
-                # dbw.write_one_trajectory(thread=True, fragment_ids = path[::-1])
+                dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
                 m.clean_graph(path)
                 if len(path)>1:
                     stitcher_logger.info("** stitched {} fragments".format(len(path)),extra = None)
@@ -193,8 +196,9 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             
         
     stitcher_logger.info("Exit stitcher while loop")
-    # del dbw
-    # stitcher_logger.info("DBWriter closed. Exit.")
+    stitcher_logger.info("Final count in stitched collection {}: {}".format(dbw.collection_name, dbw.count()))
+    del dbw
+    stitcher_logger.info("DBWriter closed. Exit.")
     # sys.exit()
         
     return   
@@ -233,16 +237,22 @@ def test_fragments(gt_ids, paths):
 
 
 if __name__ == '__main__':
-    
-    # get parameters
-    cwd = os.getcwd()
-    cfg = "config"
-    config_path = os.path.join(cwd,cfg)
-    os.environ["USER_CONFIG_DIRECTORY"] = config_path
-    os.environ["my_config_section"] = "TEST"
-    parameters = parse_cfg("my_config_section", cfg_name = "test_param.config")
-    parameters.raw_trajectory_queue_get_timeout = 0.1
 
+    
+    import json
+    
+     
+    with open("config/parameters.json") as f:
+        parameters = json.load(f)
+    parameters["raw_trajectory_queue_get_timeout"] = 0.1
+
+    trajectory_database = "trajectories"
+    raw_collection = "transcendent_snek--RAW_GT1"
+    rec_collection = "transcendent_snek--RAW_GT1__lionizes"
+    
+    raw = DBClient(**parameters["db_param"], database_name = trajectory_database, collection_name=raw_collection)
+    # rec = DBClient(**parameters["db_param"], database_name = trajectory_database, collection_name=rec_collection)
+    # gt = DBClient(**parameters["db_param"], database_name = trajectory_database, collection_name="groundtruth_scene_1")
     
     # read to queue
     # gt_ids = [i for i in range(150, 180)]
@@ -256,13 +266,12 @@ if __name__ == '__main__':
     # s1 = fragment_queue.qsize()
     
 
-    from bson.objectid import ObjectId
+    
     fragment_queue = queue.Queue()
-    f_ids = [ObjectId('62e018c427b64c6330545fa6'), ObjectId('62e0190427b64c6330545fe6'), ObjectId('62e0190427b64c6330545fe7')] # they should stitch to two
+    f_ids = [ObjectId('62e40fe388f7410aaf7059c3'), ObjectId('62e40fe388f7410aaf7059c4')] # they should stitch to two
     # f_ids = [ ObjectId('62e0193027b64c6330546003'), ObjectId('62e0194627b64c6330546016'), ObjectId('62e0195327b64c6330546026'),  ObjectId('62e0196227b64c6330546035')]
     # f_ids = [ ObjectId('62e0198927b64c6330546059'), ObjectId('62e0199527b64c6330546068'), ObjectId('62e019a827b64c633054607d'),  ObjectId('62e019be27b64c6330546096')]
     
-    raw = DBReader(parameters, username = "i24-data", collection_name="morose_panda--RAW_GT1")
     for f_id in f_ids:
         f = raw.find_one("_id", f_id)
         fragment_queue.put(f)

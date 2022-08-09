@@ -93,9 +93,13 @@
                     },
                 "description": "Fragments that are stitched to this trajectory."
                 },
-            "score": {
+            "x_score": {
                 "bsonType": "double",
-                "description": "Value of the reconciliation objective function at optimality"
+                "description": "Value of the reconciliation objective function (x) at optimality"
+                },
+            "y_score": {
+                "bsonType": "double",
+                "description": "Value of the reconciliation objective function (y) at optimality"
                 }
             }
         }

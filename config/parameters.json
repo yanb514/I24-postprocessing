@@ -1,7 +1,7 @@
 {
     "mode": "soft_stop",
     
-    "raw_collection": "",
+    "raw_collection": "visionary_hippo--RAW_GT1",
     "db_param": {
         "host": "10.2.218.56",
         	"port": 27017,
@@ -10,7 +10,9 @@
     },
     
 	"raw_database": "trajectories",
+	"stitched_database": "stitched",
 	"reconciled_database": "reconciled",
+	"reconciled_collection": "",
 	"meta_database": "meta",
 	"server_id": 1,
 	"session_config_id": 1,
@@ -41,7 +43,7 @@
     "remain_threshold": 5,
     
     "reconciliation_timeout": 10,
-    "reconciliation_pool_size": 10,
+    "reconciliation_pool_size": 20,
     "lam2_x": 1.67e-2,
     "lam2_y": 1.67e-2,
     "lam1_x": 0.0012,

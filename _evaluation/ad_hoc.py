@@ -7,8 +7,7 @@ Created on Wed Jul 27 08:40:52 2022
 """
 import matplotlib.pyplot as plt
 import json
-from i24_database_api.db_reader import DBReader
-from i24_database_api.db_writer import DBWriter
+from i24_database_api import DBClient
 from bson.objectid import ObjectId
 import numpy as np
 from sklearn import linear_model
@@ -47,13 +46,17 @@ def plot_traj(veh_ids, dbr):
     
     for f_id in veh_ids: 
         f = dbr.find_one("_id", f_id)
-        print(f_id, len(f["timestamp"]))
+        # print(f_id, "length: ", len(f["timestamp"]), 'gt_ids: ', f["gt_ids"])
         l = str(f_id)[10:] + f["flags"][0]
-        conf = np.array(f["detection_confidence"])
+        try:
+            conf = np.array(f["detection_confidence"])
+            axs[3].scatter(f["timestamp"], conf , s=0.5, label=l)
+        except KeyError:
+            conf = 0.1
         axs[0].scatter(f["timestamp"], f["x_position"], s=conf*10, label=l)
         axs[1].scatter(f["timestamp"], f["y_position"], s=conf*10, label=l)
         axs[2].scatter(f["x_position"], f["y_position"], s=conf*10, label=l)
-        axs[3].scatter(f["timestamp"], conf , s=0.5, label=l)
+        
 
     axs[0].set_title("time v x")
     axs[1].set_title("time v y")
@@ -184,27 +187,29 @@ if __name__ == "__main__":
         config = json.load(f)
     
     trajectory_database = "trajectories"
-    collection = "morose_panda--RAW_GT1"
+    raw_collection = "transcendent_snek--RAW_GT1"
+    rec_collection = "transcendent_snek--RAW_GT1__lionizes"
     
-    raw = DBReader(config, host = config["host"], username = config["username"], password = config["password"], port = config["port"], database_name = trajectory_database, collection_name=collection)
-    rec = DBReader(config, host = config["host"], username = config["username"], password = config["password"], port = config["port"], database_name = trajectory_database, collection_name=collection+"_reconciled")
-    gt = DBReader(config, host = config["host"], username = config["username"], password = config["password"], port = config["port"], database_name = trajectory_database, collection_name="groundtruth_scene_1")
+    raw = DBClient(**config, database_name = trajectory_database, collection_name=raw_collection)
+    rec = DBClient(**config, database_name = trajectory_database, collection_name=rec_collection)
+    gt = DBClient(**config, database_name = trajectory_database, collection_name="groundtruth_scene_1_130")
     
     #%% examine a single fragment
-    veh_id = ObjectId("62e0194627b64c6330546016")
-    plot_traj_attr(veh_id, raw, ["x_position", "y_position", "detection_confidence"])
-    ransac_fit(veh_id, raw)
+    # veh_id = ObjectId("62e0194627b64c6330546016")
+    # plot_traj_attr(veh_id, raw, ["x_position", "y_position", "detection_confidence"])
+    # ransac_fit(veh_id, raw)
     
     #%% plot framgnets together
     # fgmt_ids = [ ObjectId('62e0193027b64c6330546003'), ObjectId('62e0194627b64c6330546016'), ObjectId('62e0195327b64c6330546026'),  ObjectId('62e0196227b64c6330546035')] # should be one
     # fgmt_ids = [ObjectId('62e018c427b64c6330545fa6'), ObjectId('62e0190427b64c6330545fe6'), ObjectId('62e0190427b64c6330545fe7')] # they should stitch to two
-    fgmt_ids = [ObjectId('62e0198927b64c6330546059'), ObjectId('62e019a827b64c633054607d'), ObjectId('62e019be27b64c6330546096')] # they should stitch to two
+    fgmt_ids = [ObjectId('62e40fe788f7410aaf7059ce'), ObjectId('62e40fe688f7410aaf7059ca')] # they should stitch to two
     
     plot_traj(fgmt_ids, raw)
     
     #%% plot from a reconciled trajectory and its fragments
-    rec_id = ObjectId("62e157022b084202528584bf")
-    plot_stitched(rec_id, rec, raw)
+    # rec_id = [ObjectId('62d5a228172006d4926dd9d5')]
+    # plot_traj(rec_id, gt)
+    # plot_stitched(rec_id, rec, raw)
     
     
     

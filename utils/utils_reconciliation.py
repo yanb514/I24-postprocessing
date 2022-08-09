@@ -274,13 +274,15 @@ def rectify_2d(car, reg = "l2", **kwargs):
         
     elif reg == "l1": 
         lam1_x, lam1_y = kwargs["lam1_x"], kwargs["lam1_y"] # additional arguments for l1
-        xhat = rectify_1d_l1(lam2_x, lam1_x, car["x_position"])
-        yhat = rectify_1d_l1(lam2_y, lam1_y, car["y_position"])
+        xhat, cx1 = rectify_1d_l1(lam2_x, lam1_x, car["x_position"])
+        yhat, cy1 = rectify_1d_l1(lam2_y, lam1_y, car["y_position"])
         
     # write to document
     car["timestamp"] = list(car["timestamp"])
     car["x_position"] = list(xhat)
     car["y_position"] = list(yhat)
+    car["x_score"] = cx1
+    car["y_score"] = cy1
     
     return car           
 
@@ -300,11 +302,15 @@ def rectify_1d_l1(lam2, lam1, x):
     
     # extract result
     xhat = sol["x"][:N]
-    # u = sol["x"][N:N+M]
-    # v = sol["x"][N+M:]
+    u = sol["x"][N:N+M]
+    v = sol["x"][N+M:]
     # print(sol["status"])
     
-    return xhat
+    # first term of the cost function
+    c1 = np.nansum((x-H*xhat-(u-v))**2)/M
+    
+    
+    return xhat, c1
 
 
 

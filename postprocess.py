@@ -31,10 +31,10 @@ def main(collection_name = None):
     if collection_name is not None:
         parameters["raw_collection"] = collection_name
     
+    
     # CHANGE NAME OF THE LOGGER
     manager_logger = logger
     manager_logger.set_name("postproc_manager")
-    # manager_logger.info("name is {}".format(manager_logger._logger.name))
     setattr(manager_logger, "_default_logger_extra",  {})
     
     # CREATE A MANAGER
@@ -44,10 +44,12 @@ def main(collection_name = None):
     # SHARED DATA STRUCTURES
     # ----------------------------------
     # ----------------------------------
-    print("Post-processing manager creating shared data structures")
-    
     mp_param = mp_manager.dict()
     mp_param.update(parameters)
+    
+    # initialize some db collections
+    df.initialize_db(mp_param)
+    manager_logger.info("Post-processing manager initialized db collections. Creating shared data structures")
     
     # Raw trajectory fragment queue
     # -- populated by database connector that listens for updates

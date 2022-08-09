@@ -15,7 +15,51 @@ import signal
 import sys
 import os
 import heapq
+import random
 
+verbs = ["medicates", "taunts", "sweettalks", "initiates", "harasses", "smacks", "boggles", "negotiates", "castigates", "disputes", "cajoles", "improvises",
+         "surrenders", "escalates", "mumbles", "juxtaposes", "excites", "lionizes", "ruptures", "yawns","administers","flatters","foreshadows","buckles"]
+max_trials = 10
+
+ 
+def initialize_db(parameters):
+    '''
+    initialize the postprocessing pipeline (called by manager)
+    1. get the latest raw collection if parameters["raw_collection"] == ""
+    2. create a new stitched collection
+    3. create a new reconciled collection
+    '''
+    
+    # get the latest collection if raw_collection is empty
+    dbc = DBClient(**parameters["db_param"], database_name = parameters["raw_database"], 
+                          collection_name = parameters["raw_collection"], latest_collection=True)
+    parameters["raw_collection"] = dbc.collection_name # raw_collection should NOT be empty
+      
+    rec_db = dbc.client[parameters["reconciled_database"]]
+    existing_cols = rec_db.list_collection_names()
+
+    connected = False
+    while not connected:
+        verb = random.choice(verbs)
+        reconciled_name = parameters["raw_collection"]+"__"+verb
+        
+        if reconciled_name not in existing_cols:
+            parameters["stitched_collection"] = reconciled_name
+            parameters["reconciled_collection"] = reconciled_name
+            print("** initialized reconcield name, ", reconciled_name)
+            connected = True
+
+    # save metadata
+    dbc.client[parameters["meta_database"]]["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters._getvalue()},
+                                  bypass_document_validation=True)
+    
+    del dbc
+    return
+    
+    
+    
+    
+    
 class SIGINTException(Exception):
     pass
 
@@ -241,8 +285,11 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
     setattr(logger, "_default_logger_extra",  {})
     
     # Connect to a database reader
-    dbr = DBClient(**default_param["db_param"], database_name = default_param["raw_database"], collection_name=default_param["raw_collection"], latest_collection=True)  
-    default_param["raw_collection"] = dbr.collection_name
+    while default_param["raw_collection"] == "":
+        time.sleep(1)
+        
+    dbr = DBClient(**default_param["db_param"], database_name = default_param["raw_database"], collection_name=default_param["raw_collection"])  
+    # default_param["raw_collection"] = dbr.collection_name
     # print("default param raw ", default_param["raw_collection"])
     
     
