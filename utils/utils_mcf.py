@@ -4,7 +4,7 @@ import networkx as nx
 import queue
 from collections import deque
 from utils.utils_stitcher_cost import min_nll_cost, nll, nll_modified, cost_1, cost_2
-from sklearn import linear_model
+
 
     
 class Fragment():
@@ -16,8 +16,8 @@ class Fragment():
         '''
 
         # delete the unnucessary fields in traj_doc
-        field_names = ["_id", "ID","timestamp","x_position","y_position","direction","last_timestamp", "first_timestamp", "length","width","height","detection_confidence"]
-        attr_names = ["id","ID","t","x","y","dir","last_timestamp","first_timestamp","length","width","height","detection_confidence"]
+        field_names = ["_id", "ID","timestamp","x_position","y_position","direction","last_timestamp", "first_timestamp", "length","width","height","filter","fitx","fity"]
+        attr_names = ["id","ID","t","x","y","dir","last_timestamp","first_timestamp","length","width","height","filter","fitx","fity"]
         
         for i in range(len(field_names)): # set as many attributes as possible
             try: 
@@ -32,7 +32,6 @@ class Fragment():
             setattr(self, "x", np.array(self.x))#*0.3048)
             setattr(self, "y", np.array(self.y))#*0.3048)
             setattr(self, "t", np.array(self.t))
-            setattr(self, "detection_confidence", np.array(self.detection_confidence))
 
         except:
             pass
@@ -43,60 +42,7 @@ class Fragment():
             return 'Fragment({!r})'.format(self.ID)
         except:
             return 'Fragment({!r})'.format(self.id)
-        
     
-    def ransac_fit(self, residual_threshold_x, residual_threshold_y, 
-                   conf_threshold, remain_threshold):
-        '''
-        remove by confidence threshold
-        remove by ransac outlier mask (x-axis)
-        get total mask (both lowconf and outlier)
-        apply ransac again on y-axis
-        save fitx, fity and tot_mask
-        
-        return False if tot_mask rate is higher than 50 percent (do not consider this track)
-        else True otherwise
-        '''
-        residual_threshold_x = residual_threshold_x # tolerance in x
-        residual_threshold_y = residual_threshold_y # tolerance in y
-        conf_threshold = conf_threshold
-        length = len(self.t)
-        
-        # get confidence mask
-        lowconf_mask = np.array(self.detection_confidence < conf_threshold)
-        highconf_mask = np.logical_not(lowconf_mask)
-        
-        # fit x only on highconf
-        ransacx = linear_model.RANSACRegressor(residual_threshold=residual_threshold_x)
-        X = self.t.reshape(1, -1).T
-        x = self.x
-        ransacx.fit(X[highconf_mask], x[highconf_mask])
-        fitx = [ransacx.estimator_.coef_[0], ransacx.estimator_.intercept_]
-        inlier_mask = ransacx.inlier_mask_
-        outlier_mask = np.logical_not(inlier_mask) # mask if True
-        
-        # total mask (filtered by both outlier and by low confidence)
-        mask1 = np.arange(length)[lowconf_mask] # all the bad indices
-        mask2 = np.arange(length)[highconf_mask][outlier_mask]
-        bad_idx = np.concatenate((mask1, mask2))
-        remain = length-len(bad_idx)
-        # print("bad rate: {}".format(bad_ratio))
-        if remain < remain_threshold:
-            return False
-  
-        # fit y only on mask
-        ransacy = linear_model.RANSACRegressor(residual_threshold=residual_threshold_y)
-        y = self.y
-        ransacy.fit(X[highconf_mask][inlier_mask], y[highconf_mask][inlier_mask])
-        fity = [ransacy.estimator_.coef_[0], ransacy.estimator_.intercept_]
-        
-        # save to object
-        self.fitx = fitx
-        self.fity = fity
-        filter = np.ones(length, dtype=bool)
-        filter[bad_idx] = False
-        self.filter = filter # all good ones are True
-        return True
 
         
 

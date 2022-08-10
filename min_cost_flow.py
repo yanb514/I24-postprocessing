@@ -118,10 +118,6 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     # Get parameters
     ATTR_NAME = parameters["fragment_attr_name"]
     TIME_WIN = parameters["time_win"]
-    RES_THRESH_X = parameters["residual_threshold_x"]
-    RES_THRESH_Y = parameters["residual_threshold_y"]
-    CONF_THRESH = parameters["conf_threshold"],
-    REMAIN_THRESH = parameters["remain_threshold"]
     
     # Initialize tracking graph
     m = MOTGraphSingle(ATTR_NAME, parameters)
@@ -155,7 +151,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 break
             
             # RANSAC fit to determine the fit coef if it's a good track, otherwise reject
-            if not fgmt.ransac_fit(RES_THRESH_X, RES_THRESH_Y, CONF_THRESH, REMAIN_THRESH):
+            if len(raw_fgmt["filter"]) == 0:
                 # print('remove ',fgmt)
                 continue # skip this fgmt
                 
@@ -229,8 +225,7 @@ def test_fragments(gt_ids, paths):
     for key,val in gt_id_st_fgm_ids.items():
         if len(val) > 1:
             print("fragments: ", [paths[i] for i in val])
-            FGMT += len(val)-1
-                
+            FGMT += len(val)-1             
 
     return FGMT, IDS
     

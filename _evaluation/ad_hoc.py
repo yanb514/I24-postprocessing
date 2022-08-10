@@ -24,7 +24,7 @@ def plot_traj_attr(veh_id, dbr, attr_names):
                 series = [vector[2] for vector in traj["variance"]]
                 axs[i].scatter(traj["timestamp"], series, s=0.5, label = attr)
             else:
-                axs[i].scatter(traj["timestamp"], traj[attr], s=0.5, label = veh_id)
+                axs[i].scatter(traj["timestamp"], traj[attr], s=0.5, label = traj["fitx"])
             axs[i].set_title("time v {}".format(attr))
             axs[0].legend()
         except Exception as e:
@@ -42,7 +42,8 @@ def plot_traj(veh_ids, dbr):
     rec_id: ObjectID (optional)
     '''
     
-    fig, axs = plt.subplots(1, 4, figsize=(12, 3))
+    fig, axs = plt.subplots(1, 3, figsize=(12, 3))
+    s = 10
     
     for f_id in veh_ids: 
         f = dbr.find_one("_id", f_id)
@@ -50,18 +51,19 @@ def plot_traj(veh_ids, dbr):
         l = str(f_id)[10:] + f["flags"][0]
         try:
             conf = np.array(f["detection_confidence"])
-            axs[3].scatter(f["timestamp"], conf , s=0.5, label=l)
+            axs[0].scatter(f["timestamp"], f["x_position"], s=s, alpha=conf, label=l)
+            axs[1].scatter(f["timestamp"], f["y_position"], s=s, alpha=conf, label=l)
+            axs[2].scatter(f["x_position"], f["y_position"], s=s, alpha=conf,  label=l)
+            
         except KeyError:
-            conf = 0.1
-        axs[0].scatter(f["timestamp"], f["x_position"], s=conf*10, label=l)
-        axs[1].scatter(f["timestamp"], f["y_position"], s=conf*10, label=l)
-        axs[2].scatter(f["x_position"], f["y_position"], s=conf*10, label=l)
+            axs[0].scatter(f["timestamp"], f["x_position"], s=s,  label=l)
+            axs[1].scatter(f["timestamp"], f["y_position"], s=s, label=l)
+            axs[2].scatter(f["x_position"], f["y_position"], s=s,  label=l)
         
 
     axs[0].set_title("time v x")
     axs[1].set_title("time v y")
     axs[2].set_title("x v y")
-    axs[3].set_title("time v onfidence")
     axs[0].legend()
     return axs
         
@@ -76,7 +78,6 @@ def plot_stitched(rec_id, rec, raw):
     axs[0].scatter(rec_traj["timestamp"], rec_traj["x_position"], s=1, c='k')
     axs[1].scatter(rec_traj["timestamp"], rec_traj["y_position"],  s=1, c='k')
     axs[2].scatter(rec_traj["x_position"], rec_traj["y_position"],  s=1, c='k')
-    axs[3].scatter(rec_traj["timestamp"], rec_traj["detection_confidence"],  s=1, c='k')
     
     return
       
@@ -185,29 +186,28 @@ def ransac_fit(veh_id, dbr):
 if __name__ == "__main__":
     with open('config.json') as f:
         config = json.load(f)
+        
+    raw_collection = "pristine_stork--RAW_GT1"
+    rec_collection = "pristine_stork--RAW_GT1__surrenders"
     
-    trajectory_database = "trajectories"
-    raw_collection = "transcendent_snek--RAW_GT1"
-    rec_collection = "transcendent_snek--RAW_GT1__lionizes"
-    
-    raw = DBClient(**config, database_name = trajectory_database, collection_name=raw_collection)
-    rec = DBClient(**config, database_name = trajectory_database, collection_name=rec_collection)
-    gt = DBClient(**config, database_name = trajectory_database, collection_name="groundtruth_scene_1_130")
+    raw = DBClient(**config, database_name = "trajectories", collection_name=raw_collection)
+    rec = DBClient(**config, database_name = "reconciled", collection_name=rec_collection)
+    # gt = DBClient(**config, database_name = "trajectories", collection_name="groundtruth_scene_1_130")
     
     #%% examine a single fragment
-    # veh_id = ObjectId("62e0194627b64c6330546016")
-    # plot_traj_attr(veh_id, raw, ["x_position", "y_position", "detection_confidence"])
+    veh_id = ObjectId('62e404c51b6a12ef2b2ae1d3')
+    plot_traj_attr(veh_id, raw, ["x_position", "y_position", "filter"])
     # ransac_fit(veh_id, raw)
     
     #%% plot framgnets together
     # fgmt_ids = [ ObjectId('62e0193027b64c6330546003'), ObjectId('62e0194627b64c6330546016'), ObjectId('62e0195327b64c6330546026'),  ObjectId('62e0196227b64c6330546035')] # should be one
     # fgmt_ids = [ObjectId('62e018c427b64c6330545fa6'), ObjectId('62e0190427b64c6330545fe6'), ObjectId('62e0190427b64c6330545fe7')] # they should stitch to two
-    fgmt_ids = [ObjectId('62e40fe788f7410aaf7059ce'), ObjectId('62e40fe688f7410aaf7059ca')] # they should stitch to two
+    # fgmt_ids = [ObjectId('62e40fe788f7410aaf7059ce'), ObjectId('62e40fe688f7410aaf7059ca')] # they should stitch to two
     
-    plot_traj(fgmt_ids, raw)
+    # plot_traj(fgmt_ids, raw)
     
     #%% plot from a reconciled trajectory and its fragments
-    # rec_id = [ObjectId('62d5a228172006d4926dd9d5')]
+    # rec_id = ObjectId('62f18953fa8677f9c2fdc0fa')
     # plot_traj(rec_id, gt)
     # plot_stitched(rec_id, rec, raw)
     

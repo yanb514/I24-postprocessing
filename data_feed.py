@@ -10,17 +10,45 @@ two seperate live_data_feed processes will mess up the change stream
 """
 from i24_database_api import DBClient
 import i24_logger.log_writer as log_writer
+from i24_logger.log_writer import catch_critical
 import time
 import signal
 import sys
 import os
 import heapq
 import random
+import numpy as np
+from sklearn import linear_model
+import threading
 
 verbs = ["medicates", "taunts", "sweettalks", "initiates", "harasses", "smacks", "boggles", "negotiates", "castigates", "disputes", "cajoles", "improvises",
          "surrenders", "escalates", "mumbles", "juxtaposes", "excites", "lionizes", "ruptures", "yawns","administers","flatters","foreshadows","buckles"]
 max_trials = 10
 
+    
+class SIGINTException(Exception):
+    pass
+
+class SignalHandler():
+    '''
+    Signal handling: in live/static data read, SIGINT and SIGUSR1 are handled in the same way
+    Soft terminate current process. Close ports and exit.
+    '''
+    run = True
+    # count = 0 # count the number of times a signal is received
+    # signal.signal(signal.SIGINT, signal.SIG_IGN)  
+    
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.shut_down)
+        signal.signal(signal.SIGUSR1, self.shut_down)
+        signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+    
+    def shut_down(self, *args):
+        self.run = False
+        raise SIGINTException
+        # self.count += 1
+        # logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
+        
  
 def initialize_db(parameters):
     '''
@@ -56,33 +84,77 @@ def initialize_db(parameters):
     del dbc
     return
     
-    
-    
-    
-    
-class SIGINTException(Exception):
-    pass
+def thread_update_one(raw, _id, filter, fitx, fity):
+    raw.update_one({"_id": _id}, {"$set": {"filter": list(filter),
+                                                "fitx": list(fitx),
+                                                "fity": list(fity)}}, upsert = True)
 
-class SignalHandler():
-    '''
-    Signal handling: in live/static data read, SIGINT and SIGUSR1 are handled in the same way
-    Soft terminate current process. Close ports and exit.
-    '''
-    run = True
-    # count = 0 # count the number of times a signal is received
-    # signal.signal(signal.SIGINT, signal.SIG_IGN)  
+
     
-    def __init__(self):
-        signal.signal(signal.SIGINT, self.shut_down)
-        signal.signal(signal.SIGUSR1, self.shut_down)
-        signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
-    
-    def shut_down(self, *args):
-        self.run = False
-        raise SIGINTException
-        # self.count += 1
-        # logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
+@catch_critical(errors = (Exception))
+def add_filter(traj, raw, residual_threshold_x, residual_threshold_y, 
+               conf_threshold, remain_threshold):
+    '''
+    add a filter to trajectories based on
+    - RANSAC fit on x and
+    - bad detection confidence
+    get total mask (both lowconf and outlier)
+    apply ransac again on y-axis
+    save fitx, fity and tot_mask
+    and save filter field to raw collection
+    '''
+    filter = True
+    t = np.array(traj["timestamp"])
+    x = np.array(traj["x_position"])
+    y = np.array(traj["y_position"])
+    conf = np.array(traj["detection_confidence"])
         
+    length = len(t)
+    
+    # get confidence mask
+    lowconf_mask = np.array(conf < conf_threshold)
+    highconf_mask = np.logical_not(lowconf_mask)
+    
+    # fit x only on highconf
+    ransacx = linear_model.RANSACRegressor(residual_threshold=residual_threshold_x)
+    X = t.reshape(1, -1).T
+    ransacx.fit(X[highconf_mask], x[highconf_mask])
+    fitx = [ransacx.estimator_.coef_[0], ransacx.estimator_.intercept_]
+    inlier_mask = ransacx.inlier_mask_
+    outlier_mask = np.logical_not(inlier_mask) # mask if True
+    
+    # total mask (filtered by both outlier and by low confidence)
+    mask1 = np.arange(length)[lowconf_mask] # all the bad indices
+    mask2 = np.arange(length)[highconf_mask][outlier_mask]
+    bad_idx = np.concatenate((mask1, mask2))
+    remain = length-len(bad_idx)
+    # print("bad rate: {}".format(bad_ratio))
+    if remain < remain_threshold:
+        filter = []
+  
+    # fit y only on mask
+    ransacy = linear_model.RANSACRegressor(residual_threshold=residual_threshold_y)
+    ransacy.fit(X[highconf_mask][inlier_mask], y[highconf_mask][inlier_mask])
+    fity = [ransacy.estimator_.coef_[0], ransacy.estimator_.intercept_]
+    
+    # save to raw collection
+    if filter:
+        filter = length*[1]
+        for i in bad_idx:         
+            filter[i]=0
+
+
+    # save filter to database- non-blocking
+    _id = traj["_id"]
+    thread = threading.Thread(target=thread_update_one, args=(raw, _id, filter, fitx, fity,))
+    thread.start()
+
+
+    # update traj document
+    traj["filter"] = filter
+    traj["fitx"] = fitx
+    traj["fity"] = fity
+    return traj
         
 def change_stream_simulator(default_param, insert_rate):
     '''
@@ -287,7 +359,13 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
     # Connect to a database reader
     while default_param["raw_collection"] == "":
         time.sleep(1)
-        
+     
+    # get parameters for fitting
+    RES_THRESH_X = default_param["residual_threshold_x"]
+    RES_THRESH_Y = default_param["residual_threshold_y"]
+    CONF_THRESH = default_param["conf_threshold"],
+    REMAIN_THRESH = default_param["remain_threshold"]
+    
     dbr = DBClient(**default_param["db_param"], database_name = default_param["raw_database"], collection_name=default_param["raw_collection"])  
     # default_param["raw_collection"] = dbr.collection_name
     # print("default param raw ", default_param["raw_collection"])
@@ -316,6 +394,9 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
     
                 for doc in next_batch:
                     if len(doc["timestamp"]) > 3: 
+                        doc = add_filter(doc, dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
+                                       CONF_THRESH, REMAIN_THRESH)
+                        
                         if doc["direction"] == 1:
                             # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
                             east_queue.put(doc)

@@ -51,11 +51,13 @@ def combine_fragments(raw_collection, stitched_doc):
         stacked["length"].extend(fragment["length"])
         stacked["width"].extend(fragment["width"])
         stacked["height"].extend(fragment["height"])
-        stacked["detection_confidence"].extend(fragment["detection_confidence"])
-        
+        # stacked["detection_confidence"].extend(fragment["detection_confidence"])
         stacked["coarse_vehicle_class"].append(fragment["coarse_vehicle_class"])
         stacked["fine_vehicle_class"].append(fragment["fine_vehicle_class"])
         stacked["direction"].append(fragment["direction"])
+        
+        stacked["filter"].extend(fragment["filter"])
+        
        
     # first fragment
     first_id = fragment_ids[0]
@@ -82,15 +84,14 @@ def combine_fragments(raw_collection, stitched_doc):
     stacked["fine_vehicle_class"] = max(set(stacked["fine_vehicle_class"]), key = stacked["fine_vehicle_class"].count)
     stacked["direction"] = max(set(stacked["direction"]), key = stacked["direction"].count)
     
-    # Filter out low confidence
-    # high_conf_idx = []
-    # for i, conf in enumerate(stacked["detection_confidence"]):
-    #     if conf > 0.2:
-    #         high_conf_idx.append(i)
-        
-    stacked["x_position"] = [x if stacked["detection_confidence"][i] > 0.2 else np.nan for i,x in enumerate(stacked["x_position"]) ]
-    stacked["y_position"] = [x if stacked["detection_confidence"][i] > 0.2 else np.nan for i,x in enumerate(stacked["y_position"]) ]
-    
+    # Apply filter
+    # good_idx = [i for i in range(len(stacked["filter"])) if stacked["filter"][i] == 1 ]
+
+    stacked["x_position"] = [stacked["x_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
+    stacked["y_position"] = [stacked["y_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
+    # else: # to tackle matrics range problems in solvers.qp()
+    # stacked["x_position"] = np.array(stacked["x_position"])
+    # stacked["y_position"] = np.array(stacked["y_position"])
     return stacked
 
 
@@ -105,25 +106,23 @@ def resample(car):
     '''
 
     # Select time series only
-    try:
-        time_series_field = ["timestamp", "x_position", "y_position"]
-        data = {key: car[key] for key in time_series_field}
-        
-        # Read to dataframe and resample
-        df = pd.DataFrame(data, columns=data.keys()) 
-        index = pd.to_timedelta(df["timestamp"], unit='s')
-        df = df.set_index(index)
-        df = df.drop(columns = "timestamp")
-        df = df.resample('0.033333333S').mean() # close to 30Hz
-        df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
+    time_series_field = ["timestamp", "x_position", "y_position"]
+    data = {key: car[key] for key in time_series_field}
     
-        # df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq() # resample to 25Hz snaps to the closest integer
-        car['x_position'] = df['x_position'].values
-        car['y_position'] = df['y_position'].values
-        car['timestamp'] = df.index.values
+    # Read to dataframe and resample
+    df = pd.DataFrame(data, columns=data.keys()) 
+    index = pd.to_timedelta(df["timestamp"], unit='s')
+    df = df.set_index(index)
+    df = df.drop(columns = "timestamp")
+    
+    df = df.resample('0.033333333S').mean() # close to 30Hz
+    df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
+
+    # df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq() # resample to 25Hz snaps to the closest integer
+    car['x_position'] = df['x_position'].values
+    car['y_position'] = df['y_position'].values
+    car['timestamp'] = df.index.values
         
-    except Exception as e:
-        logger.error(e)
     return car
 
   
@@ -165,7 +164,6 @@ def _getQPMatrices(x, lam2, lam1, reg="l2"):
     if reg == "l1" and lam1 is None:
         raise ValueError("lam1 must be specified when regularization is set to L1")
      
-    r = np.nansum(x**2)
     # get data
     N = len(x)
     
@@ -173,6 +171,7 @@ def _getQPMatrices(x, lam2, lam1, reg="l2"):
     idx = [i.item() for i in np.argwhere(~np.isnan(x)).flatten()]
     x = x[idx]
     M = len(x)
+    
     
     if M == 0:
         raise ZeroDivisionError
@@ -192,7 +191,7 @@ def _getQPMatrices(x, lam2, lam1, reg="l2"):
         Q = 2*(HH/M+DD/N)
         p = -2*H.trans() * matrix(x)/M
 
-        return Q, p, H, N, M,r
+        return Q, p, H, N, M
     else:
         DD = lam2 * D3.trans() * D3
         # define matices
@@ -210,7 +209,8 @@ def _getQPMatrices(x, lam2, lam1, reg="l2"):
         p = 1/M * sparse([-2*H.trans()*matrix(x), -2*matrix(x)+lam1, 2*matrix(x)+lam1])
         G = sparse([[H*O,H*O],[-IM,OM],[OM,-IM]])
         h = spmatrix([], [], [], (2*M,1))
-        return Q, p, H, G, h, N,M,r
+        return Q, p, H, G, h, N,M
+    
 
 def _getQPMatrices_nan(N, lam2, lam1, reg="l2"):
     '''
@@ -255,7 +255,7 @@ def rectify_1d(lam2, x):
 
 
 
-@catch_critical(errors = (Exception))
+# @catch_critical(errors = (Exception))
 def rectify_2d(car, reg = "l2", **kwargs):
     '''
     rectify on x and y component independently
@@ -274,8 +274,15 @@ def rectify_2d(car, reg = "l2", **kwargs):
         
     elif reg == "l1": 
         lam1_x, lam1_y = kwargs["lam1_x"], kwargs["lam1_y"] # additional arguments for l1
-        xhat, cx1 = rectify_1d_l1(lam2_x, lam1_x, car["x_position"])
-        yhat, cy1 = rectify_1d_l1(lam2_y, lam1_y, car["y_position"])
+        
+        max_acc = 99
+        min_acc = -99
+        
+        while max_acc > 10 or min_acc < -10:
+            xhat, cx1, max_acc, min_acc = rectify_1d_l1(lam2_x, lam1_x, car["x_position"])
+            yhat, cy1, _,_ = rectify_1d_l1(lam2_y, lam1_y, car["y_position"])
+            lam2_x *= 1.1 # incrementally adjust
+            # print("increased lam2_x")
         
     # write to document
     car["timestamp"] = list(car["timestamp"])
@@ -283,6 +290,7 @@ def rectify_2d(car, reg = "l2", **kwargs):
     car["y_position"] = list(yhat)
     car["x_score"] = cx1
     car["y_score"] = cy1
+
     
     return car           
 
@@ -297,9 +305,9 @@ def rectify_1d_l1(lam2, lam1, x):
     rewrite l1 penalty to linear constraints https://math.stackexchange.com/questions/391796/how-to-expand-equation-inside-the-l2-norm
     :param args: (lam2, lam1)
     '''  
-    Q, p, H, G, h, N,M,r = _getQPMatrices(x, lam2, lam1, reg="l1")
+
+    Q, p, H, G, h, N,M = _getQPMatrices(x, lam2, lam1, reg="l1")
     sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
-    
     # extract result
     xhat = sol["x"][:N]
     u = sol["x"][N:N+M]
@@ -307,10 +315,18 @@ def rectify_1d_l1(lam2, lam1, x):
     # print(sol["status"])
     
     # first term of the cost function
-    c1 = np.nansum((x-H*xhat-(u-v))**2)/M
+    c1 = np.sqrt(np.nansum((x-H*xhat-(u-v))**2)/M)
+    # get the max acceleration
+    D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
+    acc = D2*xhat
+    max_acc = max(acc)
+    min_acc = min(acc)
+    return xhat, c1, max_acc, min_acc
+    
+
     
     
-    return xhat, c1
+    
 
 
 
@@ -477,6 +493,12 @@ def receding_horizon_1d_l1(car, lam2, lam1, PH, IH, axis):
         x_prev = xhat[IH:IH+cs]
     
     return xfinal
+
+
+
+
+
+
 
 
 @catch_critical(errors = (Exception))

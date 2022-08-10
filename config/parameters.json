@@ -1,7 +1,7 @@
 {
     "mode": "soft_stop",
     
-    "raw_collection": "visionary_hippo--RAW_GT1",
+    "raw_collection": "pristine_stork--RAW_GT1",
     "db_param": {
         "host": "10.2.218.56",
         	"port": 27017,

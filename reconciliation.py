@@ -36,11 +36,19 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     setattr(rec_worker_logger, "_default_logger_extra",  {})
 
     resampled_trajectory = resample(combined_trajectory)
-    
-    finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)   
-    rec_worker_logger.info("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
+    try:
+        finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)  
+        reconciled_queue.put(finished_trajectory)
+    except Exception as e:
+        print("*** ",str(e), " skipped reconciliation.")
+        # resampled_trajectory['x_position'] = list(resampled_trajectory['x_position'])
+        # resampled_trajectory['y_position'] = list(resampled_trajectory['y_position'])
+        # resampled_trajectory['timestamp'] = list(resampled_trajectory['timestamp'])
+        # resampled_trajectory["exception"] = str(e)
+        
+    # rec_worker_logger.info("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
 
-    reconciled_queue.put(finished_trajectory)
+    # reconciled_queue.put(finished_trajectory)
 
 
 
@@ -72,6 +80,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     signal.signal(signal.SIGINT, original_sigint_handler)
     
     rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(parameters["reconciliation_pool_size"]), extra = None)
+    TIMEOUT = parameters["stitched_trajectory_queue_get_timeout"]
     
     # Signal handling: 
     # SIGINT raises KeyboardInterrupt,  close dbw, close pool and exit.
@@ -87,7 +96,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     while True:
         try:
             try:
-                next_to_reconcile = stitched_trajectory_queue.get(timeout = parameters["stitched_trajectory_queue_get_timeout"]) #20sec
+                next_to_reconcile = stitched_trajectory_queue.get(timeout = TIMEOUT) #20sec
             except queue.Empty: 
                 rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters["stitched_trajectory_queue_get_timeout"]))
                 break
@@ -172,6 +181,8 @@ def write_reconciled_to_db(parameters, reconciled_queue):
 
 if __name__ == '__main__':
     import json
+    import numpy as np
+
     # initialize parameters
     with open('config/parameters.json') as f:
         parameters = json.load(f)
@@ -185,14 +196,17 @@ if __name__ == '__main__':
     reconciled_queue = multiprocessing.Manager().Queue()
     counter = 0 
     
-    test_dbr = DBClient(**parameters["db_param"], database_name = "trajectories", latest_collection=True)
+    test_dbr = DBClient(**parameters["db_param"], database_name = "reconciled", collection_name = "pristine_stork--RAW_GT1__surrenders")
     
     for doc in test_dbr.collection.find({}):
-        stitched_q.put([doc["_id"]])
-        counter += 1
-        print("doc length: ", len(doc["timestamp"]))
-        if counter > 5:
-            break
+        # stitched_q.put([doc["_id"]])
+        # counter += 1
+        # print("doc length: ", len(doc["timestamp"]))
+        # if counter > 15:
+        #     break
+        # stitched_q.put(doc)
+        print(doc["_id"])
+        print(doc["fragment_ids"])
         
     print("current q size: ", stitched_q.qsize())
     
@@ -200,9 +214,13 @@ if __name__ == '__main__':
     # reconciliation_pool(parameters, stitched_q)
     
     while not stitched_q.empty():
-        fragment_list = stitched_q.get(block=False)
-        combined_trajectory = combine_fragments(test_dbr.collection, fragment_list)
-        reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue)
+        doc = stitched_q.get(block=False)
+        # combined_trajectory = combine_fragments(test_dbr.collection, fragment_list)
+        # reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue)
+        doc["timestamp"] = np.array(doc["timestamp"])
+        doc["x_position"] = np.array(doc["x_position"])
+        doc["y_position"] = np.array(doc["y_position"])
+        rec_doc = rectify_2d(doc, reg = "l1", **reconciliation_args)  
         
     print("final queue size: ",reconciled_queue.qsize())
         
