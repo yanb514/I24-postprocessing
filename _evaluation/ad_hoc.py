@@ -188,15 +188,15 @@ if __name__ == "__main__":
         config = json.load(f)
         
     raw_collection = "pristine_stork--RAW_GT1"
-    rec_collection = "pristine_stork--RAW_GT1__surrenders"
+    rec_collection = "pristine_stork--RAW_GT1__initiates"
     
     raw = DBClient(**config, database_name = "trajectories", collection_name=raw_collection)
     rec = DBClient(**config, database_name = "reconciled", collection_name=rec_collection)
     # gt = DBClient(**config, database_name = "trajectories", collection_name="groundtruth_scene_1_130")
     
     #%% examine a single fragment
-    veh_id = ObjectId('62e404c51b6a12ef2b2ae1d3')
-    plot_traj_attr(veh_id, raw, ["x_position", "y_position", "filter"])
+    # veh_id = ObjectId('62e404c51b6a12ef2b2ae1d3')
+    # plot_traj_attr(veh_id, raw, ["x_position", "y_position", "filter"])
     # ransac_fit(veh_id, raw)
     
     #%% plot framgnets together
@@ -207,9 +207,9 @@ if __name__ == "__main__":
     # plot_traj(fgmt_ids, raw)
     
     #%% plot from a reconciled trajectory and its fragments
-    # rec_id = ObjectId('62f18953fa8677f9c2fdc0fa')
+    rec_id = ObjectId('62f18953fa8677f9c2fdc0fa')
     # plot_traj(rec_id, gt)
-    # plot_stitched(rec_id, rec, raw)
+    plot_stitched(rec_id, rec, raw)
     
     
     

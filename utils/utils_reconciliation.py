@@ -283,6 +283,7 @@ def rectify_2d(car, reg = "l2", **kwargs):
             yhat, cy1, _,_ = rectify_1d_l1(lam2_y, lam1_y, car["y_position"])
             lam2_x *= 1.1 # incrementally adjust
             # print("increased lam2_x")
+        # print("*** residual is {}, {}".format(cx1, cy1))
         
     # write to document
     car["timestamp"] = list(car["timestamp"])
@@ -310,12 +311,15 @@ def rectify_1d_l1(lam2, lam1, x):
     sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
     # extract result
     xhat = sol["x"][:N]
-    u = sol["x"][N:N+M]
-    v = sol["x"][N+M:]
+    # u = sol["x"][N:N+M]
+    # v = sol["x"][N+M:]
     # print(sol["status"])
     
     # first term of the cost function
-    c1 = np.sqrt(np.nansum((x-H*xhat-(u-v))**2)/M)
+    xhat_re = np.reshape(xhat, -1) # (N,)
+    c1 = np.sqrt(np.nansum((x-xhat_re)**2)/M) # RMSE
+    # c1 = np.nansum(np.abs(x-xhat_re))/M # MAE
+    
     # get the max acceleration
     D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
     acc = D2*xhat

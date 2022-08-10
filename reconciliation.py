@@ -196,17 +196,17 @@ if __name__ == '__main__':
     reconciled_queue = multiprocessing.Manager().Queue()
     counter = 0 
     
-    test_dbr = DBClient(**parameters["db_param"], database_name = "reconciled", collection_name = "pristine_stork--RAW_GT1__surrenders")
+    test_dbr = DBClient(**parameters["db_param"], database_name = "trajectories", collection_name = "pristine_stork--RAW_GT1")
     
-    for doc in test_dbr.collection.find({}):
-        # stitched_q.put([doc["_id"]])
-        # counter += 1
-        # print("doc length: ", len(doc["timestamp"]))
-        # if counter > 15:
-        #     break
+    for doc in test_dbr.collection.find({})[:1]:
+        stitched_q.put([doc["_id"]])
+        counter += 1
+        print("doc length: ", len(doc["timestamp"]))
+        if counter > 15:
+            break
         # stitched_q.put(doc)
-        print(doc["_id"])
-        print(doc["fragment_ids"])
+        # print(doc["_id"])
+        # print(doc["fragment_ids"])
         
     print("current q size: ", stitched_q.qsize())
     
@@ -214,13 +214,13 @@ if __name__ == '__main__':
     # reconciliation_pool(parameters, stitched_q)
     
     while not stitched_q.empty():
-        doc = stitched_q.get(block=False)
-        # combined_trajectory = combine_fragments(test_dbr.collection, fragment_list)
-        # reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue)
-        doc["timestamp"] = np.array(doc["timestamp"])
-        doc["x_position"] = np.array(doc["x_position"])
-        doc["y_position"] = np.array(doc["y_position"])
-        rec_doc = rectify_2d(doc, reg = "l1", **reconciliation_args)  
+        fragment_list = stitched_q.get(block=False)
+        combined_trajectory = combine_fragments(test_dbr.collection, fragment_list)
+        reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue)
+        # doc["timestamp"] = np.array(doc["timestamp"])
+        # doc["x_position"] = np.array(doc["x_position"])
+        # doc["y_position"] = np.array(doc["y_position"])
+        # rec_doc = rectify_2d(doc, reg = "l1", **reconciliation_args)  
         
     print("final queue size: ",reconciled_queue.qsize())
         

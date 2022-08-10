@@ -73,10 +73,9 @@ def plot_traj(veh_ids, dbr, axs = None):
         f = dbr.find_one({"_id": f_id})
         # print(f_id, "length: ", len(f["timestamp"]), 'gt_ids: ', f["gt_ids"])
         l = str(f_id)[-4:]
-        
-        axs[0].scatter(f["timestamp"], f["x_position"], s=3, label=l)
-        axs[1].scatter(f["timestamp"], f["y_position"], s=3, label=l)
-        axs[2].scatter(f["x_position"], f["y_position"], s=3, label=l)
+        axs[0].scatter(f["timestamp"], f["x_position"], s=5, marker = "o", label=l)
+        axs[1].scatter(f["timestamp"], f["y_position"], s=5, marker = "X", label=l)
+        axs[2].scatter(f["x_position"], f["y_position"], s=5, marker = "X", label=l)
         
 
     axs[0].set_title("time v x")
@@ -179,24 +178,27 @@ if __name__ == '__main__':
     with open("config.json") as f:
         config = json.load(f)
 
-    trajectory_database = "trajectories"
-    raw_collection = "demure_wallaby--RAW_GT1"
-    rec_collection = "demure_wallaby--RAW_GT1__improvises"
+    raw_collection = "pristine_stork--RAW_GT1"
+    rec_collection = "pristine_stork--RAW_GT1__initiates"
     
     dbc = DBClient(**config)
-    raw = dbc.client[trajectory_database][raw_collection]
+    raw = dbc.client["trajectories"][raw_collection]
     rec = dbc.client["reconciled"][rec_collection]
     eval = dbc.client["reconciled"]["evaluation"]
     
     clean_raw(raw)
-    test_fragments(raw, rec, eval)
-    eval_doc = eval.find_one({"collection": rec_collection})
-    fgmt = eval_doc["fragments"]
-    ids = eval_doc["id_switches"]
+    # test_fragments(raw, rec, eval)
+    # eval_doc = eval.find_one({"collection": rec_collection})
+    # fgmt = eval_doc["fragments"]
+    # ids = eval_doc["id_switches"]
     
     #%%
     # visualize understitch
-    for gt_id, corr_st_ids in islice(fgmt.items(), 4,7):  # use islice(d.items(), 3) 
-        plot_stitched(corr_st_ids, rec, raw)
+    # for gt_id, corr_st_ids in islice(fgmt.items(), 4,7):  # use islice(d.items(), 3) 
+    #     plot_stitched(corr_st_ids, rec, raw)
 
+    #%% 
+    rec_ids = [ObjectId('62f31bf571bed60bb3f1c586'), ObjectId('62f31bf671bed60bb3f1c595'), ObjectId('62f31bf871bed60bb3f1c5b0'), 
+               ObjectId('62f31bf971bed60bb3f1c5c3'), ObjectId('62f31bfa71bed60bb3f1c5d0'), ObjectId('62f31bfa71bed60bb3f1c5d3')]
+    plot_stitched(rec_ids, rec, raw)
     

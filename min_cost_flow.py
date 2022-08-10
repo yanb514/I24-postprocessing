@@ -124,11 +124,11 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     counter = 0 # iterations for log
     
     # wait to get stitched collection name
-    while parameters["stitched_collection"]=="":
-        time.sleep(1)
+    # while parameters["stitched_collection"]=="":
+    #     time.sleep(1)
         
-    dbw = DBClient(**parameters["db_param"], database_name = parameters["stitched_database"],
-                   collection_name = parameters["stitched_collection"])
+    # dbw = DBClient(**parameters["db_param"], database_name = parameters["stitched_database"],
+    #                collection_name = parameters["stitched_collection"])
     
     GET_TIMEOUT = parameters["raw_trajectory_queue_get_timeout"]
     while sig_hdlr.run:
@@ -145,7 +145,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                     # stitcher_logger.info("Flushing out final trajectories in graph")
                     stitcher_logger.info("** Flushing out {} fragments".format(len(path)),extra = None)
                     stitched_trajectory_queue.put(path[::-1])
-                    dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
+                    # dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
                 
                 stitcher_logger.info("fragment_queue is empty, exit.")
                 break
@@ -171,7 +171,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             for path in all_paths:
                 # stitcher_logger.debug("path: {}".format(path))
                 stitched_trajectory_queue.put(path[::-1])
-                dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
+                # dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
                 m.clean_graph(path)
                 if len(path)>1:
                     stitcher_logger.info("** stitched {} fragments".format(len(path)),extra = None)
@@ -192,8 +192,8 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             
         
     stitcher_logger.info("Exit stitcher while loop")
-    stitcher_logger.info("Final count in stitched collection {}: {}".format(dbw.collection_name, dbw.count()))
-    del dbw
+    # stitcher_logger.info("Final count in stitched collection {}: {}".format(dbw.collection_name, dbw.count()))
+    # del dbw
     stitcher_logger.info("DBWriter closed. Exit.")
     # sys.exit()
         
@@ -235,57 +235,29 @@ if __name__ == '__main__':
 
     
     import json
-    
-     
     with open("config/parameters.json") as f:
         parameters = json.load(f)
     parameters["raw_trajectory_queue_get_timeout"] = 0.1
 
-    trajectory_database = "trajectories"
-    raw_collection = "transcendent_snek--RAW_GT1"
-    rec_collection = "transcendent_snek--RAW_GT1__lionizes"
+    raw_collection = "pristine_stork--RAW_GT1"
+    rec_collection = "pristine_stork--RAW_GT1__initiates"
     
-    raw = DBClient(**parameters["db_param"], database_name = trajectory_database, collection_name=raw_collection)
-    # rec = DBClient(**parameters["db_param"], database_name = trajectory_database, collection_name=rec_collection)
+    dbc = DBClient(**parameters["db_param"])
+    raw = dbc.client["trajectories"][raw_collection]
+    rec = dbc.client["reconciled"][rec_collection]
     # gt = DBClient(**parameters["db_param"], database_name = trajectory_database, collection_name="groundtruth_scene_1")
     
-    # read to queue
-    # gt_ids = [i for i in range(150, 180)]
-    # gt_ids = [150]
-    # gt_val = 30
-    # lt_val = 100
-    
-    # fragment_queue,actual_gt_ids,_ = read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
-    # stitched_trajectory_queue = queue.Queue()
-    # print("actual_gt_ids: ", len(actual_gt_ids))
-    # s1 = fragment_queue.qsize()
-    
 
-    
     fragment_queue = queue.Queue()
-    f_ids = [ObjectId('62e40fe388f7410aaf7059c3'), ObjectId('62e40fe388f7410aaf7059c4')] # they should stitch to two
+    f_ids = [ObjectId('62e403fa1b6a12ef2b2ae143'),ObjectId('62e404221b6a12ef2b2ae15b'),ObjectId('62e4045d1b6a12ef2b2ae185'),ObjectId('62e4047b1b6a12ef2b2ae197'), ObjectId('62e404951b6a12ef2b2ae1a6'),ObjectId('62e404ae1b6a12ef2b2ae1b9')]
     # f_ids = [ ObjectId('62e0193027b64c6330546003'), ObjectId('62e0194627b64c6330546016'), ObjectId('62e0195327b64c6330546026'),  ObjectId('62e0196227b64c6330546035')]
     # f_ids = [ ObjectId('62e0198927b64c6330546059'), ObjectId('62e0199527b64c6330546068'), ObjectId('62e019a827b64c633054607d'),  ObjectId('62e019be27b64c6330546096')]
     
     for f_id in f_ids:
-        f = raw.find_one("_id", f_id)
+        f = raw.find_one({"_id": f_id})
         fragment_queue.put(f)
     s1 = fragment_queue.qsize()
-    
-    
-    # --------- start batch stitching --------- 
-    # print("MCF Batch...")
-    # t1 = time.time()
-    # min_cost_flow_batch("west", fragment_queue, stitched_trajectory_queue, parameters)
-    # # stitch_raw_trajectory_fragments("west", fragment_queue,stitched_trajectory_queue, parameters)
-    # batch = list(stitched_trajectory_queue.queue)
-    # s2 = stitched_trajectory_queue.qsize()
-    # t2 = time.time()
-    # print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
-    # # test
-    # FGMT, IDS = test_fragments(gt_ids, batch)
-    # print("FGMT: {}, IDS: {}".format(FGMT, IDS))
-    
+
     
 
     # --------- start online stitching --------- 
@@ -298,50 +270,7 @@ if __name__ == '__main__':
     t2 = time.time()
     print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
     
-    # test
-    # FGMT, IDS = test_fragments(gt_ids, online)
-    # print("FGMT: {}, IDS: {}".format(FGMT, IDS))
-    
-    
-    
-    # for path_o in online:
-    #     if path_o not in batch:
-    #         print("difference: ", path_o)
-    #%%
-    # import matplotlib.pyplot as plt
-    # ax1 = plt.subplot(131)
-    # ax2 = plt.subplot(132)
-    # ax3 = plt.subplot(133)
 
-    # # d = stitched_trajectory_queue.get(block=False)
-    # # plt.scatter(d["timestamp"], d["x_position"], c="r", s=0.2, label="reconciled")
-    # for f_id in f_ids:
-    #     f = raw.find_one("_id", f_id)
-    #     ax1.scatter(f["timestamp"], f["x_position"], s=0.5, label=f_id)
-    #     ax1.set_title("time vs. x")
-    #     ax2.scatter(f["timestamp"], f["y_position"], s=0.5, label=f_id)
-    #     ax2.set_title("time vs. y")
-    #     ax3.scatter(f["x_position"], f["y_position"], s=0.5, label=f_id)
-    #     ax3.set_title("x vs. y")
-    # plt.legend()
-    
-    # plot runtime
-    
-    # import numpy as np
-    # plt.figure()
-    # plt.scatter(np.arange(s1), time_arr, label="run time (sec)")
-    # plt.xlabel("# fragments")
-    # plt.ylabel("cumulative run time (sec)")
-    
-    # plt.figure()
-    # plt.scatter(np.arange(s1), cache_arr, label = "cache size")
-    # plt.xlabel("# fragments")
-    # plt.ylabel("memory size (# fragments)")
-    
-    # plt.figure()
-    # plt.scatter(np.arange(s1), nodes_arr, label = "cache size")
-    # plt.xlabel("# fragments")
-    # plt.ylabel("# nodes in G")
     
     
     
