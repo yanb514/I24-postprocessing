@@ -436,5 +436,19 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
     sys.exit() # for linux
 
     
+if __name__ == '__main__':
+
+    
+    import json
+    with open("config/parameters.json") as f:
+        parameters = json.load(f)
+
+    raw_collection = "pristine_stork--RAW_GT1"
+    rec_collection = "pristine_stork--RAW_GT1__cajoles"
+    
+    dbc = DBClient(**parameters["db_param"])
+    raw = dbc.client["trajectories"][raw_collection]
+    rec = dbc.client["reconciled"][rec_collection]
+    
     
     

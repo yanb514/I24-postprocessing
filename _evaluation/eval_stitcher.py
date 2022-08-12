@@ -69,7 +69,7 @@ def plot_traj(veh_ids, dbr, axs = None):
     rec_id: ObjectID (optional)
     '''
     if axs is None:
-        fig, axs = plt.subplots(1, 3, figsize=(12, 3))
+        fig, axs = plt.subplots(1, 4, figsize=(12, 3))
     
     for f_id in veh_ids: 
         f = dbr.find_one({"_id": f_id})
@@ -83,6 +83,7 @@ def plot_traj(veh_ids, dbr, axs = None):
         axs[0].scatter(dates[filter], x[filter], s=5, marker = "o", label=l)
         axs[1].scatter(dates[filter], y[filter], s=5, marker = "X", label=l)
         axs[2].scatter(x[filter], y[filter], s=5, marker = "X", label=l)
+        axs[3].scatter(dates, f["detection_confidence"], s=5, marker = "X", label=l)
         axs[0].scatter(dates[~filter], x[~filter], s=5, c="lightgrey")
         axs[1].scatter(dates[~filter], y[~filter], s=5, c="lightgrey")
         axs[2].scatter(x[~filter], y[~filter], s=5, c="lightgrey")
@@ -91,7 +92,7 @@ def plot_traj(veh_ids, dbr, axs = None):
     axs[0].set_title("time v x")
     axs[1].set_title("time v y")
     axs[2].set_title("x v y")
-    # axs[3].set_title("time v onfidence")
+    axs[3].set_title("time v confidence")
     axs[0].legend()
     
     return axs
@@ -100,11 +101,11 @@ def plot_stitched(rec_ids, rec, raw):
     '''
     plot rec_id and the fragments it stitched together
     '''
-    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+    fig, axs = plt.subplots(1, 4, figsize=(12, 4))
     for rec_id in rec_ids:
         rec_traj = rec.find_one({"_id": rec_id})
         print(rec_traj["fragment_ids"])
-        print(rec_traj["flags"])
+        # print(rec_traj["flags"])
         if "post_flag" in rec_traj:
             print("post_flag: ", rec_traj["post_flag"])
         dates = [datetime.utcfromtimestamp(t) for t in rec_traj["timestamp"]]
@@ -132,6 +133,9 @@ def test_fragments(raw, stitched, eval=None):
         d = eval.find_one({"collection": stitched._Collection__name})
         if d and "fragments" in d and "id_switches" in d:
             print("already evaluated.")
+            fgmt = d["fragments"]
+            ids = d["id_switches"]
+            print(f"ids_count: {len(ids)}, fgmt_count: {len(fgmt)}")
             return
     
     print("evaluating stitcher results...")    
@@ -210,9 +214,7 @@ if __name__ == '__main__':
     
     clean_raw(raw)
     test_fragments(raw, rec, eval)
-    eval_doc = eval.find_one({"collection": rec_collection})
-    fgmt = eval_doc["fragments"]
-    ids = eval_doc["id_switches"]
+    
     
     #%%
     # visualize understitch
@@ -220,8 +222,7 @@ if __name__ == '__main__':
     #     plot_stitched(corr_st_ids, rec, raw)
 
     #%% 
-    # rec_ids = [ObjectId('62f31bf571bed60bb3f1c586'), ObjectId('62f31bf671bed60bb3f1c595'), ObjectId('62f31bf871bed60bb3f1c5b0'), 
-    #             ObjectId('62f31bf971bed60bb3f1c5c3'), ObjectId('62f31bfa71bed60bb3f1c5d0'), ObjectId('62f31bfa71bed60bb3f1c5d3')]
-    # rec_ids = [ObjectId('62f564f4ad4eb6169eadcf80')]
-    # plot_stitched(rec_ids, rec, raw)
+    rec_ids = [ObjectId('62f56ea80eb8cead00df6ba1'), ObjectId('62f56eac0eb8cead00df6bcc')]
+    # rec_ids = [ObjectId('62f56eaa0eb8cead00df6bb5')]
+    plot_stitched(rec_ids, rec, raw)
     

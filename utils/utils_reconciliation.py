@@ -116,6 +116,12 @@ def resample(car):
     df = df.resample('0.033333333S').mean() # close to 30Hz
     df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
 
+    # resample to 25hz
+    # df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq()
+    # df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
+    # df = df.interpolate(method='linear')
+
+
     # df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq() # resample to 25Hz snaps to the closest integer
     car['x_position'] = df['x_position'].values
     car['y_position'] = df['y_position'].values
@@ -275,12 +281,17 @@ def rectify_2d(car, reg = "l2", **kwargs):
         
         max_acc = 99
         min_acc = -99
-        
-        while max_acc > 10 or min_acc < -10:
-            xhat, cx1, max_acc, min_acc = rectify_1d_l1(lam2_x, lam1_x, car["x_position"])
-            yhat, cy1, _,_ = rectify_1d_l1(lam2_y, lam1_y, car["y_position"])
-            lam2_x *= 1.1 # incrementally adjust
-            # print("increased lam2_x")
+        # trials=0
+        # while (max_acc > 10 or min_acc < -10):
+        xhat, cx1, max_acc, min_acc = rectify_1d_l1(lam2_x, lam1_x, car["x_position"])
+        yhat, cy1, _,_ = rectify_1d_l1(lam2_y, lam1_y, car["y_position"])
+            # lam2_x *=1.1 # incrementally adjust
+            # lam1_x = 1e-6
+            # print("max_acc: {:.2f}, min_acc: {:.2f}, cx1:{:.2f}".format(max_acc, min_acc,cx1))
+            # trials+=1
+            # if trials >= 10:
+            #     car["post_flag"] = "exceeds max reconciliation trials"
+            #     break
         # print("*** residual is {}, {}".format(cx1, cy1))
         
     # write to document

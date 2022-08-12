@@ -31,7 +31,7 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     :return:
     """
     
-    rec_worker_logger = log_writer.logger
+    rec_worker_logger = log_writer.logger 
     rec_worker_logger.set_name("rec_worker")
     setattr(rec_worker_logger, "_default_logger_extra",  {})
 
@@ -186,7 +186,7 @@ def write_reconciled_to_db(parameters, reconciled_queue):
 if __name__ == '__main__':
     import json
     import numpy as np
-
+    from bson.objectid import ObjectId
     # initialize parameters
     with open('config/parameters.json') as f:
         parameters = json.load(f)
@@ -202,7 +202,7 @@ if __name__ == '__main__':
     
     test_dbr = DBClient(**parameters["db_param"], database_name = "trajectories", collection_name = "pristine_stork--RAW_GT1")
     
-    for doc in test_dbr.collection.find({})[:1]:
+    for doc in test_dbr.collection.find({"_id": ObjectId("62e404b31b6a12ef2b2ae1bd")}):
         stitched_q.put([doc["_id"]])
         counter += 1
         print("doc length: ", len(doc["timestamp"]))
@@ -225,7 +225,8 @@ if __name__ == '__main__':
         # doc["x_position"] = np.array(doc["x_position"])
         # doc["y_position"] = np.array(doc["y_position"])
         # rec_doc = rectify_2d(doc, reg = "l1", **reconciliation_args)  
-        
+     
+    r = reconciled_queue.get()
     print("final queue size: ",reconciled_queue.qsize())
         
     
