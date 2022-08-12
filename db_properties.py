@@ -19,8 +19,7 @@ if __name__ == '__main__':
     # parameters["collection_name"] = ""
     client = DBClient(**parameters)
     print(client)
-    db = client.client["reconciled"]
-    print(db.list_collection_names())
+    print(client.client.list_databases())
     # client.reset_collection()
     # print(client.collection_name)
     
