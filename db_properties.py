@@ -5,7 +5,7 @@ Created on Tue May 24 11:02:50 2022
 
 @author: yanbing_wang
 """
-from src.i24_database_api import DBClient
+from i24_database_api import DBClient
 from i24_configparse import parse_cfg
 import os
 import json
