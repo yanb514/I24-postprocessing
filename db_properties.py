@@ -19,7 +19,7 @@ if __name__ == '__main__':
     # parameters["collection_name"] = ""
     client = DBClient(**parameters)
     print(client)
-    print(client.client.list_databases_names())
+    print(client.client.list_database_names())
     
     # client.reset_collection()
     # print(client.collection_name)
