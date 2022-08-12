@@ -36,20 +36,27 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     setattr(rec_worker_logger, "_default_logger_extra",  {})
 
     resampled_trajectory = resample(combined_trajectory)
-    try:
-        finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)  
-        reconciled_queue.put(finished_trajectory)
-    except Exception as e:
-        print("*** ",str(e), " skipped reconciliation.")
+    if "post_flag" in resampled_trajectory:
+        # skip reconciliation
         # resampled_trajectory['x_position'] = list(resampled_trajectory['x_position'])
         # resampled_trajectory['y_position'] = list(resampled_trajectory['y_position'])
         # resampled_trajectory['timestamp'] = list(resampled_trajectory['timestamp'])
-        # resampled_trajectory["exception"] = str(e)
-        
-    # rec_worker_logger.info("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
+        # reconciled_queue.put(resampled_trajectory)
+        rec_worker_logger.info("+++ Flag as low conf, skip reconciliation", extra = None)
 
-    # reconciled_queue.put(finished_trajectory)
-
+    else:
+        try:
+            finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)  
+            reconciled_queue.put(finished_trajectory)
+            rec_worker_logger.info("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
+    
+        except Exception as e:
+            rec_worker_logger.info("+++ Flag as {}, skip reconciliation".format(str(e)), extra = None)
+            # resampled_trajectory['x_position'] = list(resampled_trajectory['x_position'])
+            # resampled_trajectory['y_position'] = list(resampled_trajectory['y_position'])
+            # resampled_trajectory['timestamp'] = list(resampled_trajectory['timestamp'])
+            # resampled_trajectory["post_flag"] = str(e)
+            # reconciled_queue.put(resampled_trajectory)
 
 
 def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Queue, 
@@ -101,10 +108,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
                 rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters["stitched_trajectory_queue_get_timeout"]))
                 break
         
-            # rec_parent_logger.debug("next_to_reconcile: {}".format(next_to_reconcile), extra = None)
-            combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)
-            # rec_parent_logger.debug("*** 1. Combined stitched fragments.", extra = None)
-            
+            combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)    
             worker_pool.apply_async(reconcile_single_trajectory, (reconciliation_args, combined_trajectory, reconciled_queue, ))
 
         except (KeyboardInterrupt, BrokenPipeError): # handle SIGINT here

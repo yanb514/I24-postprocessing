@@ -150,13 +150,14 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 stitcher_logger.info("fragment_queue is empty, exit.")
                 break
             
+            fgmt_id = getattr(fgmt, ATTR_NAME)
             # RANSAC fit to determine the fit coef if it's a good track, otherwise reject
             if len(raw_fgmt["filter"]) == 0:
-                # print('remove ',fgmt)
+                stitched_trajectory_queue.put([fgmt_id])
                 continue # skip this fgmt
                 
             m.add_node(fgmt)
-            fgmt_id = getattr(fgmt, ATTR_NAME)
+            
             # print("* add ", fgmt_id)
             # print("**", m.G.edges(data=True))
             
@@ -240,7 +241,7 @@ if __name__ == '__main__':
     parameters["raw_trajectory_queue_get_timeout"] = 0.1
 
     raw_collection = "pristine_stork--RAW_GT1"
-    rec_collection = "pristine_stork--RAW_GT1__initiates"
+    rec_collection = "pristine_stork--RAW_GT1__juxtaposes"
     
     dbc = DBClient(**parameters["db_param"])
     raw = dbc.client["trajectories"][raw_collection]
@@ -249,12 +250,33 @@ if __name__ == '__main__':
     
 
     fragment_queue = queue.Queue()
-    f_ids = [ObjectId('62e403fa1b6a12ef2b2ae143'),ObjectId('62e404221b6a12ef2b2ae15b'),ObjectId('62e4045d1b6a12ef2b2ae185'),ObjectId('62e4047b1b6a12ef2b2ae197'), ObjectId('62e404951b6a12ef2b2ae1a6'),ObjectId('62e404ae1b6a12ef2b2ae1b9')]
-    # f_ids = [ ObjectId('62e0193027b64c6330546003'), ObjectId('62e0194627b64c6330546016'), ObjectId('62e0195327b64c6330546026'),  ObjectId('62e0196227b64c6330546035')]
-    # f_ids = [ ObjectId('62e0198927b64c6330546059'), ObjectId('62e0199527b64c6330546068'), ObjectId('62e019a827b64c633054607d'),  ObjectId('62e019be27b64c6330546096')]
+    # f_ids = [Ob jectId('62e403fe1b6a12ef2b2ae146'),ObjectId('62e404381b6a12ef2b2ae168'),ObjectId('62e404741b6a12ef2b2ae192'),ObjectId('62e4048c1b6a12ef2b2ae1a2')] # stitch to 1
+    # f_ids = [ObjectId('62e4032b1b6a12ef2b2ae0cc'), ObjectId('62e4039f1b6a12ef2b2ae108')] # to 1
+    # f_ids = [ ObjectId('62e403c41b6a12ef2b2ae126'), ObjectId('62e403e51b6a12ef2b2ae13c'), ObjectId('62e404251b6a12ef2b2ae15c'),  ObjectId('62e404461b6a12ef2b2ae173')] # to 1
+    # f_ids = [ObjectId('62e403fa1b6a12ef2b2ae143'), ObjectId('62e404221b6a12ef2b2ae15b'), 
+    #           ObjectId('62e4045d1b6a12ef2b2ae185'),ObjectId('62e4047b1b6a12ef2b2ae197'), 
+    #           ObjectId('62e404951b6a12ef2b2ae1a6'), ObjectId('62e404ae1b6a12ef2b2ae1b9')]
+    # f_ids = [ObjectId('62e403041b6a12ef2b2ae0bd'), ObjectId('62e4031f1b6a12ef2b2ae0c8'), ObjectId('62e403221b6a12ef2b2ae0c9')] # stitch to 2
+    # f_ids = [ObjectId('62e403e61b6a12ef2b2ae13d'), ObjectId('62e4041b1b6a12ef2b2ae158'), ObjectId('62e4042f1b6a12ef2b2ae162'),
+    #          ObjectId('62e404501b6a12ef2b2ae179'), ObjectId('62e4046e1b6a12ef2b2ae18e')] # to 1
+
+
+    # initiates
+    # f_ids = [ObjectId('62e402d51b6a12ef2b2ae0a0'), ObjectId('62e402df1b6a12ef2b2ae0a5')] # to2
+    # f_ids = [ObjectId('62e402ce1b6a12ef2b2ae09a'), ObjectId('62e402e11b6a12ef2b2ae0a6'), ObjectId('62e402f11b6a12ef2b2ae0b0')] # to3
+    # f_ids = [ObjectId('62e402251b6a12ef2b2ae036'), ObjectId('62e402631b6a12ef2b2ae058'), ObjectId('62e4026c1b6a12ef2b2ae062'), ObjectId('62e402731b6a12ef2b2ae066'), ObjectId('62e402881b6a12ef2b2ae076')] # to2
+    # f_ids = [ObjectId('62e403041b6a12ef2b2ae0bd'), ObjectId('62e4031f1b6a12ef2b2ae0c8'), ObjectId('62e403221b6a12ef2b2ae0c9')]
     
+    # juxtaposes
+    # f_ids = [ObjectId('62e4037d1b6a12ef2b2ae0f3'), ObjectId('62e403891b6a12ef2b2ae0fa'), ObjectId('62e403961b6a12ef2b2ae102')]#3
+    # f_ids = [ObjectId('62e402ef1b6a12ef2b2ae0ae'), ObjectId('62e403041b6a12ef2b2ae0bd'), ObjectId('62e4031f1b6a12ef2b2ae0c8')] # 2
+    # f_ids = [ObjectId('62e403011b6a12ef2b2ae0bb'), ObjectId('62e403061b6a12ef2b2ae0c0')] # 2
+    # f_ids = [ObjectId('62e402211b6a12ef2b2ae02f'), ObjectId('62e402631b6a12ef2b2ae05a'), ObjectId('62e4026c1b6a12ef2b2ae060')] #2
+    # f_ids = [ObjectId('62e4021d1b6a12ef2b2ae02d'), ObjectId('62e402221b6a12ef2b2ae031')] # 2
+    f_ids = [ObjectId('62e4029a1b6a12ef2b2ae080'), ObjectId('62e402d41b6a12ef2b2ae09f')] # 2
     for f_id in f_ids:
         f = raw.find_one({"_id": f_id})
+        # print(f_id, "fity ", f["fity"])
         fragment_queue.put(f)
     s1 = fragment_queue.qsize()
 

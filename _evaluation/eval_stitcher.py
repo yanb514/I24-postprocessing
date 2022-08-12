@@ -10,6 +10,8 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
 from itertools import islice
+from datetime import datetime
+import matplotlib.dates as md
 
 def convert_2_dict_mongodb(obj):
     result = {}
@@ -71,11 +73,19 @@ def plot_traj(veh_ids, dbr, axs = None):
     
     for f_id in veh_ids: 
         f = dbr.find_one({"_id": f_id})
+        filter = np.array(f["filter"], dtype=bool)
         # print(f_id, "length: ", len(f["timestamp"]), 'gt_ids: ', f["gt_ids"])
         l = str(f_id)[-4:]
-        axs[0].scatter(f["timestamp"], f["x_position"], s=5, marker = "o", label=l)
-        axs[1].scatter(f["timestamp"], f["y_position"], s=5, marker = "X", label=l)
-        axs[2].scatter(f["x_position"], f["y_position"], s=5, marker = "X", label=l)
+        dates = [datetime.utcfromtimestamp(t) for t in f["timestamp"]]   
+        dates=md.date2num(dates)
+        x = np.array(f["x_position"])
+        y = np.array(f["y_position"])
+        axs[0].scatter(dates[filter], x[filter], s=5, marker = "o", label=l)
+        axs[1].scatter(dates[filter], y[filter], s=5, marker = "X", label=l)
+        axs[2].scatter(x[filter], y[filter], s=5, marker = "X", label=l)
+        axs[0].scatter(dates[~filter], x[~filter], s=5, c="lightgrey")
+        axs[1].scatter(dates[~filter], y[~filter], s=5, c="lightgrey")
+        axs[2].scatter(x[~filter], y[~filter], s=5, c="lightgrey")
         
 
     axs[0].set_title("time v x")
@@ -83,22 +93,34 @@ def plot_traj(veh_ids, dbr, axs = None):
     axs[2].set_title("x v y")
     # axs[3].set_title("time v onfidence")
     axs[0].legend()
+    
     return axs
 
 def plot_stitched(rec_ids, rec, raw):
     '''
     plot rec_id and the fragments it stitched together
     '''
-    fig, axs = plt.subplots(1, 3, figsize=(12, 3))
+    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
     for rec_id in rec_ids:
         rec_traj = rec.find_one({"_id": rec_id})
         print(rec_traj["fragment_ids"])
+        print(rec_traj["flags"])
+        if "post_flag" in rec_traj:
+            print("post_flag: ", rec_traj["post_flag"])
+        dates = [datetime.utcfromtimestamp(t) for t in rec_traj["timestamp"]]
+        dates=md.date2num(dates)
         axs = plot_traj(rec_traj["fragment_ids"], raw, axs=axs)
-        axs[0].scatter(rec_traj["timestamp"], rec_traj["x_position"], s=1)
-        axs[1].scatter(rec_traj["timestamp"], rec_traj["y_position"],  s=1)
+        # plt.xticks( rotation=25 )
+        axs[0].scatter(dates, rec_traj["x_position"], s=1)
+        axs[1].scatter(dates, rec_traj["y_position"],  s=1)
         axs[2].scatter(rec_traj["x_position"], rec_traj["y_position"],  s=1)
         # axs[3].scatter(rec_traj["timestamp"], rec_traj["detection_confidence"],  s=1, c='k')
     
+    xfmt = md.DateFormatter('%H:%M:%S')
+    for i in range(2):
+        axs[i].xaxis.set_major_formatter(xfmt)
+        axs[i].tick_params('x', labelrotation=30)
+    plt.gcf().subplots_adjust(bottom=0.2)
     return
     
 def test_fragments(raw, stitched, eval=None):
@@ -107,7 +129,7 @@ def test_fragments(raw, stitched, eval=None):
     write results to collection (eval) in evaluation database
     '''   
     if eval is not None:
-        d = eval.find_one({})
+        d = eval.find_one({"collection": stitched._Collection__name})
         if d and "fragments" in d and "id_switches" in d:
             print("already evaluated.")
             return
@@ -179,7 +201,7 @@ if __name__ == '__main__':
         config = json.load(f)
 
     raw_collection = "pristine_stork--RAW_GT1"
-    rec_collection = "pristine_stork--RAW_GT1__initiates"
+    rec_collection = "pristine_stork--RAW_GT1__cajoles"
     
     dbc = DBClient(**config)
     raw = dbc.client["trajectories"][raw_collection]
@@ -187,10 +209,10 @@ if __name__ == '__main__':
     eval = dbc.client["reconciled"]["evaluation"]
     
     clean_raw(raw)
-    # test_fragments(raw, rec, eval)
-    # eval_doc = eval.find_one({"collection": rec_collection})
-    # fgmt = eval_doc["fragments"]
-    # ids = eval_doc["id_switches"]
+    test_fragments(raw, rec, eval)
+    eval_doc = eval.find_one({"collection": rec_collection})
+    fgmt = eval_doc["fragments"]
+    ids = eval_doc["id_switches"]
     
     #%%
     # visualize understitch
@@ -198,7 +220,8 @@ if __name__ == '__main__':
     #     plot_stitched(corr_st_ids, rec, raw)
 
     #%% 
-    rec_ids = [ObjectId('62f31bf571bed60bb3f1c586'), ObjectId('62f31bf671bed60bb3f1c595'), ObjectId('62f31bf871bed60bb3f1c5b0'), 
-               ObjectId('62f31bf971bed60bb3f1c5c3'), ObjectId('62f31bfa71bed60bb3f1c5d0'), ObjectId('62f31bfa71bed60bb3f1c5d3')]
-    plot_stitched(rec_ids, rec, raw)
+    # rec_ids = [ObjectId('62f31bf571bed60bb3f1c586'), ObjectId('62f31bf671bed60bb3f1c595'), ObjectId('62f31bf871bed60bb3f1c5b0'), 
+    #             ObjectId('62f31bf971bed60bb3f1c5c3'), ObjectId('62f31bfa71bed60bb3f1c5d0'), ObjectId('62f31bfa71bed60bb3f1c5d3')]
+    # rec_ids = [ObjectId('62f564f4ad4eb6169eadcf80')]
+    # plot_stitched(rec_ids, rec, raw)
     

@@ -419,7 +419,7 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
             logger.warning("static_data_reader reaches the end of query range iteration. Exit")
             break
         
-        except SIGINTException:  # rri reaches the end
+        except SIGINTException:  # SIGINT detected
             logger.warning("SIGINT/SIGUSR1 detected. Checkpoint not implemented.")
             break
         

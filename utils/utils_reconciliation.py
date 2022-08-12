@@ -85,13 +85,11 @@ def combine_fragments(raw_collection, stitched_doc):
     stacked["direction"] = max(set(stacked["direction"]), key = stacked["direction"].count)
     
     # Apply filter
-    # good_idx = [i for i in range(len(stacked["filter"])) if stacked["filter"][i] == 1 ]
-
-    stacked["x_position"] = [stacked["x_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
-    stacked["y_position"] = [stacked["y_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
-    # else: # to tackle matrics range problems in solvers.qp()
-    # stacked["x_position"] = np.array(stacked["x_position"])
-    # stacked["y_position"] = np.array(stacked["y_position"])
+    if len(stacked["filter"]) == 0: # no good measurements
+        stacked["post_flag"] = "low conf fragment"
+    else:
+        stacked["x_position"] = [stacked["x_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
+        stacked["y_position"] = [stacked["y_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
     return stacked
 
 
@@ -317,8 +315,8 @@ def rectify_1d_l1(lam2, lam1, x):
     
     # first term of the cost function
     xhat_re = np.reshape(xhat, -1) # (N,)
-    c1 = np.sqrt(np.nansum((x-xhat_re)**2)/M) # RMSE
-    # c1 = np.nansum(np.abs(x-xhat_re))/M # MAE
+    # c1 = np.sqrt(np.nansum((x-xhat_re)**2)/M) # RMSE
+    c1 = np.nansum(np.abs(x-xhat_re))/M # MAE
     
     # get the max acceleration
     D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
