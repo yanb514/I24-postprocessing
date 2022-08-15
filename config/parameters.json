@@ -1,8 +1,8 @@
 {
     "mode": "soft_stop",
-    "description": "use bhattacharyya_distance distance for stitching cost, tune var",
+    "description": "bhattar dist add y variance, conf filter only (no ransac filter), add opt2_l1 adjusting lam2",
     
-    "raw_collection": "pristine_stork--RAW_GT1",
+    "raw_collection": "ostentatious_hippo--RAW_GT1",
     "db_param": {
         "host": "10.2.218.56",
         	"port": 27017,
@@ -25,8 +25,8 @@
 	"stitched_trajectory_queue_size": 10000,
     "reconciled_trajectory_queue_size": 1000,
     "raw_trajectory_queue_get_timeout": 2,
-    "stitched_trajectory_queue_put_timeout": 20,
-    "stitched_trajectory_queue_get_timeout": 100,
+    "stitched_trajectory_queue_put_timeout": 10,
+    "stitched_trajectory_queue_get_timeout": 10,
     
     "range_increment": 1,
     "buffer_time": 10,
@@ -45,8 +45,10 @@
     
     "reconciliation_timeout": 10,
     "reconciliation_pool_size": 20,
-    "lam2_x": 1.67e-2,
-    "lam2_y": 1.67e-2,
+    "lam2_x": 0,
+    "lam2_y": 0,
+    "lam3_x": 1.67e-2,
+    "lam3_y": 1.67e-2,
     "lam1_x": 0.0012,
     "lam1_y": 0.0012,
     "ph": 100,

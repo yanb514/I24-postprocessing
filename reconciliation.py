@@ -22,7 +22,7 @@ import i24_logger.log_writer as log_writer
 from i24_database_api import DBClient
 
 from utils.utils_reconciliation import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments, rectify_2d
-
+from utils.utils_opt import combine_fragments, resample, opt1, opt2, opt1_l1, opt2_l1
 
 def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue) -> None:
     """
@@ -46,7 +46,8 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
 
     else:
         try:
-            finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)  
+            # finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)  
+            finished_trajectory = opt2_l1(resampled_trajectory, **reconciliation_args)  
             reconciled_queue.put(finished_trajectory)
             rec_worker_logger.info("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
     
@@ -69,7 +70,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     """
     # parameters
     reconciliation_args={}
-    for key in ["lam2_x","lam2_y","lam1_x","lam1_y", "ph", "ih"]:
+    for key in ["lam2_x","lam2_y", "lam3_x", "lam3_y","lam1_x","lam1_y"]:
         reconciliation_args[key] = parameters[key]
     
     rec_parent_logger = log_writer.logger
@@ -192,7 +193,7 @@ if __name__ == '__main__':
         parameters = json.load(f)
 
     reconciliation_args={}
-    for key in ["lam2_x","lam2_y","lam1_x","lam1_y", "ph", "ih"]:
+    for key in ["lam3_x","lam3_y", "lam2_x", "lam2_y", "lam1_x", "lam1_y"]:
         reconciliation_args[key] = parameters[key]
     
     # send some fragments to queue
@@ -200,9 +201,9 @@ if __name__ == '__main__':
     reconciled_queue = multiprocessing.Manager().Queue()
     counter = 0 
     
-    test_dbr = DBClient(**parameters["db_param"], database_name = "trajectories", collection_name = "pristine_stork--RAW_GT1")
+    test_dbr = DBClient(**parameters["db_param"], database_name = "trajectories", collection_name = "ostentatious_hippo--RAW_GT1")
     
-    for doc in test_dbr.collection.find({"_id": ObjectId("62e404b31b6a12ef2b2ae1bd")}):
+    for doc in test_dbr.collection.find({"_id": ObjectId("62f6c97cba08cdedcca3700f")}):
         stitched_q.put([doc["_id"]])
         counter += 1
         print("doc length: ", len(doc["timestamp"]))
@@ -229,6 +230,12 @@ if __name__ == '__main__':
     r = reconciled_queue.get()
     print("final queue size: ",reconciled_queue.qsize())
         
+    
+    #%% plot
+    import matplotlib.pyplot as plt
+    plt.scatter(doc["timestamp"], doc["x_position"])
+    plt.scatter(r["timestamp"], r["x_position"])
+    print(r["x_score"], r["y_score"])
     
     
     

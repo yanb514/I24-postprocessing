@@ -38,26 +38,29 @@ def clean_raw(raw):
     raw: raw collection
     update gt_ids field from nested list to a flattened list with no repeated values
     '''
-    # check if gt_ids field is already updated (has to be empty or a flattened list instance)
-    d = raw.find_one({})
-    if "gt_ids" in d: 
-        if len(d["gt_ids"]) == 0 or isinstance(d["gt_ids"][0], ObjectId):
-            print("collection already cleaned")
-            return 
+
+    def flatten(S):
+        if S == []:
+            return S
+        if isinstance(S[0], list):
+            return flatten(S[0]) + flatten(S[1:])
+        return S[:1] + flatten(S[1:])
         
     for f in raw.find({}):
         f_id = f["_id"]
-        gt_ids_set = set()
         try:
-            for l in f["gt_ids"]:
-                for gt_id in l:
-                    gt_ids_set.add(gt_id) # a fragment may associate to multiple gt_ids
+            flat = flatten(f["gt_ids"])
+        except KeyError:
+            pass
+        gt_ids_set = set(flat)
+        try:
             raw.update_one({"_id": f_id}, { "$set": { 'gt_ids': list(gt_ids_set) } })
         except KeyError:
             raw.update_one({"_id": f_id}, { "$set": { 'gt_ids': [] } })
         except TypeError:
             pass
     print("cleaned raw collection gt_ids field")
+    
             
 def plot_traj(veh_ids, dbr, axs = None):
     '''
@@ -204,15 +207,15 @@ if __name__ == '__main__':
     with open("config.json") as f:
         config = json.load(f)
 
-    raw_collection = "pristine_stork--RAW_GT1"
-    rec_collection = "pristine_stork--RAW_GT1__cajoles"
+    raw_collection = "ostentatious_hippo--RAW_GT1" # collection name is the same in both databases
+    rec_collection = "ostentatious_hippo--RAW_GT1__sweettalks"
     
     dbc = DBClient(**config)
     raw = dbc.client["trajectories"][raw_collection]
     rec = dbc.client["reconciled"][rec_collection]
     eval = dbc.client["reconciled"]["evaluation"]
     
-    clean_raw(raw)
+    # clean_raw(raw)
     test_fragments(raw, rec, eval)
     
     
@@ -222,7 +225,7 @@ if __name__ == '__main__':
     #     plot_stitched(corr_st_ids, rec, raw)
 
     #%% 
-    rec_ids = [ObjectId('62f56ea80eb8cead00df6ba1'), ObjectId('62f56eac0eb8cead00df6bcc')]
-    # rec_ids = [ObjectId('62f56eaa0eb8cead00df6bb5')]
+    # rec_ids = [ObjectId('62f817ff6b65259ae112b652'), ObjectId('62f817ff6b65259ae112b65f')] # 
+    rec_ids = [ObjectId('62f818016b65259ae112b67b')]
     plot_stitched(rec_ids, rec, raw)
     

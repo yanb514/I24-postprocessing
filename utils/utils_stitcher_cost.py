@@ -460,6 +460,8 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
         meast = meast[:n]
         measx = measx[:n]
         measy = measy[:n]
+        dir = 1
+        pt = t1[-1]
         
     else:
         anchor = 2
@@ -471,32 +473,49 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
         meast = meast[-n:]
         measx = measx[-n:]
         measy = measy[-n:]
+        dir = -1
+        pt = t2[0]
         
         
     # find where to start the cone
-    gap = t2[0] - t1[-1]
-    if gap > 0: # no time overlap between tracks
-        pt = t1[-1] if anchor == 1 else t2[0]
-    else: # tracks are partially overlap in time
-        pt = t1[-1] if anchor == 2 else t2[0]
+    # gap = t2[0] - t1[-1]
+    if anchor==2 and t1[0] > t2[0]: # t1 is completely overlap with t2
+        pt = t1[-1]
+        tdiff = meast * 0 # all zeros
+    else:
+        tdiff = (meast - pt) * dir
 
-    tdiff = abs(meast - pt)
-    tdiff = tdiff[:n] if anchor == 1 else tdiff[-n:] # cap length at ~1sec
+
+    # tdiff = meast - pt
+    tdiff[tdiff<0] = 0 # cap non-negative
+
+    
     
     slope, intercept = fitx
     targetx = slope * meast + intercept
     slope, intercept = fity
     targety = slope * meast + intercept
     
-    sigma_arr = 0.1 + (0.05 + tdiff * 0.01) * fitx[0] #0.1,0.1,0.1, sigma in unit ft
-    var_arr = sigma_arr**2
+    sigmax = (0.05 + tdiff * 0.01) * fitx[0] #0.1,0.1, sigma in unit ft
+    varx = sigmax**2
+    vary_pred = np.var(y1) if anchor == 1 else np.var(y2)
+    # vary_pred = np.var(targety)
+    vary_pred = max(vary_pred, 2) # lower bound at 2
+    vary_meas = np.var(measy)
+    vary_meas = max(vary_meas, 2) # lower bound at 2
+    
+    
     
     bd = []
     for i, t in enumerate(tdiff):
         mu1 = np.array([targetx[i], targety[i]]) # predicted state
         mu2 = np.array([measx[i], measy[i]]) # measured state
-        cov1 = np.diag([var_arr[i], VARY]) # prediction variance - grows as tdiff
-        cov2 = np.diag([var_arr[0], VARY])  # measurement variance - does not grow as tdiff
+        cov1 = np.diag([varx[i], vary_pred]) # prediction variance - grows as tdiff
+        cov2 = np.diag([varx[0], vary_meas])  # measurement variance - does not grow as tdiff
+        # mu1 = np.array([targetx[i]]) # predicted state
+        # mu2 = np.array([measx[i]]) # measured state
+        # cov1 = np.diag([varx[i]]) # prediction variance - grows as tdiff
+        # cov2 = np.diag([varx[0]])  # measurement variance - does not grow as tdiff
         bd.append(bhattacharyya_distance(mu1, mu2, cov1, cov2))
     
     nll = np.mean(bd)

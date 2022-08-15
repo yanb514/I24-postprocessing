@@ -240,8 +240,8 @@ if __name__ == '__main__':
         parameters = json.load(f)
     parameters["raw_trajectory_queue_get_timeout"] = 0.1
 
-    raw_collection = "pristine_stork--RAW_GT1"
-    rec_collection = "pristine_stork--RAW_GT1__juxtaposes"
+    raw_collection = "ostentatious_hippo--RAW_GT1" # collection name is the same in both databases
+    rec_collection = "ostentatious_hippo--RAW_GT1__sweettalks"
     
     dbc = DBClient(**parameters["db_param"])
     raw = dbc.client["trajectories"][raw_collection]
@@ -273,7 +273,16 @@ if __name__ == '__main__':
     # f_ids = [ObjectId('62e403011b6a12ef2b2ae0bb'), ObjectId('62e403061b6a12ef2b2ae0c0')] # 2
     # f_ids = [ObjectId('62e402211b6a12ef2b2ae02f'), ObjectId('62e402631b6a12ef2b2ae05a'), ObjectId('62e4026c1b6a12ef2b2ae060')] #2
     # f_ids = [ObjectId('62e4021d1b6a12ef2b2ae02d'), ObjectId('62e402221b6a12ef2b2ae031')] # 2
-    f_ids = [ObjectId('62e4029a1b6a12ef2b2ae080'), ObjectId('62e402d41b6a12ef2b2ae09f')] # 2
+    # f_ids = [ObjectId('62e4029a1b6a12ef2b2ae080'), ObjectId('62e402d41b6a12ef2b2ae09f')] # 2
+    
+    # ostentatious_hippo--RAW_GT1__disputes
+    # f_ids = [ObjectId('62f6c95fba08cdedcca36fdd'), ObjectId('62f6c969ba08cdedcca36fef')] # 1
+    # sweettalks
+    # f_ids = [ObjectId('62f6c99cba08cdedcca3704a'), ObjectId('62f6c99dba08cdedcca3704b')] #2
+    # f_ids = [ObjectId('62f6c97cba08cdedcca3700f'), ObjectId('62f6c97bba08cdedcca3700e')] # 1
+    # f_ids = [ObjectId('62f6c96bba08cdedcca36ff4'), ObjectId('62f6c978ba08cdedcca37009')] #1
+    # f_ids = [ObjectId('62f6c943ba08cdedcca36fb6'), ObjectId('62f6c94eba08cdedcca36fc9')] # 1
+    f_ids = [ObjectId('62f6c926ba08cdedcca36f7f'), ObjectId('62f6c933ba08cdedcca36f98'), ObjectId('62f6c939ba08cdedcca36fa0')] # 1
     for f_id in f_ids:
         f = raw.find_one({"_id": f_id})
         # print(f_id, "fity ", f["fity"])

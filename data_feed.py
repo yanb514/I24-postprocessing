@@ -85,9 +85,10 @@ def initialize_db(parameters):
     return
     
 def thread_update_one(raw, _id, filter, fitx, fity):
-    raw.update_one({"_id": _id}, {"$set": {"filter": list(filter),
-                                                "fitx": list(fitx),
-                                                "fity": list(fity)}}, upsert = True)
+    filter = [1 if i else 0 for i in filter]
+    raw.update_one({"_id": _id}, {"$set": {"filter": filter,
+                                            "fitx": list(fitx),
+                                            "fity": list(fity)}}, upsert = True)
 
 
     
@@ -114,47 +115,62 @@ def add_filter(traj, raw, residual_threshold_x, residual_threshold_y,
     # get confidence mask
     lowconf_mask = np.array(conf < conf_threshold)
     highconf_mask = np.logical_not(lowconf_mask)
+    num_highconf = np.count_nonzero(highconf_mask)
+    if num_highconf < 4:
+        traj["filter"] = []
     
-    # fit x only on highconf
-    ransacx = linear_model.RANSACRegressor(residual_threshold=residual_threshold_x)
-    X = t.reshape(1, -1).T
-    ransacx.fit(X[highconf_mask], x[highconf_mask])
-    fitx = [ransacx.estimator_.coef_[0], ransacx.estimator_.intercept_]
-    inlier_mask = ransacx.inlier_mask_
-    outlier_mask = np.logical_not(inlier_mask) # mask if True
+    else:
+        # fit x only on highconf
+        ransacx = linear_model.RANSACRegressor(residual_threshold=residual_threshold_x)
+        X = t.reshape(1, -1).T
+        ransacx.fit(X[highconf_mask], x[highconf_mask])
+        fitx = [ransacx.estimator_.coef_[0], ransacx.estimator_.intercept_]
+        
+        # --- with ransac outlier mask
+        # inlier_mask = ransacx.inlier_mask_ # True if inlier
+        # outlier_mask = np.logical_not(inlier_mask) # True if outlier
+        # total mask (filtered by both outlier and by low confidence)
+        # mask1 = np.arange(length)[lowconf_mask] # all the bad indices
+        # mask2 = np.arange(length)[highconf_mask][outlier_mask]
+        
+        # bad_idx = np.concatenate((mask1, mask2))
+        # remain = length-len(bad_idx)
+        
+        # # print("bad rate: {}".format(bad_ratio))
+        # if remain < remain_threshold:
+        #     filter = []
+      
+        # # fit y only on mask
+        # ransacy = linear_model.RANSACRegressor(residual_threshold=residual_threshold_y)
+        # ransacy.fit(X[highconf_mask][inlier_mask], y[highconf_mask][inlier_mask])
+        # fity = [ransacy.estimator_.coef_[0], ransacy.estimator_.intercept_]
+        
+        # # save to raw collection
+        # if filter:
+        #     filter = length*[1]
+        #     for i in bad_idx:         
+        #         filter[i]=0
     
-    # total mask (filtered by both outlier and by low confidence)
-    mask1 = np.arange(length)[lowconf_mask] # all the bad indices
-    mask2 = np.arange(length)[highconf_mask][outlier_mask]
-    bad_idx = np.concatenate((mask1, mask2))
-    remain = length-len(bad_idx)
-    # print("bad rate: {}".format(bad_ratio))
-    if remain < remain_threshold:
-        filter = []
-  
-    # fit y only on mask
-    ransacy = linear_model.RANSACRegressor(residual_threshold=residual_threshold_y)
-    ransacy.fit(X[highconf_mask][inlier_mask], y[highconf_mask][inlier_mask])
-    fity = [ransacy.estimator_.coef_[0], ransacy.estimator_.intercept_]
+        
+        # ----- no ransac outlier masks
+        ransacy = linear_model.RANSACRegressor(residual_threshold=residual_threshold_y)
+        ransacy.fit(X[highconf_mask], y[highconf_mask])
+        fity = [ransacy.estimator_.coef_[0], ransacy.estimator_.intercept_]
+        filter = 1*highconf_mask
+
+        # save filter to database- non-blocking
+        _id = traj["_id"]
+        thread = threading.Thread(target=thread_update_one, args=(raw, _id, filter, fitx, fity,))
+        thread.start()
     
-    # save to raw collection
-    if filter:
-        filter = length*[1]
-        for i in bad_idx:         
-            filter[i]=0
-
-
-    # save filter to database- non-blocking
-    _id = traj["_id"]
-    thread = threading.Thread(target=thread_update_one, args=(raw, _id, filter, fitx, fity,))
-    thread.start()
-
-
-    # update traj document
-    traj["filter"] = filter
-    traj["fitx"] = fitx
-    traj["fity"] = fity
+        # update traj document
+        traj["filter"] = filter
+        traj["fitx"] = fitx
+        traj["fity"] = fity
+    
     return traj
+
+
         
 def change_stream_simulator(default_param, insert_rate):
     '''
@@ -438,17 +454,15 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
     
 if __name__ == '__main__':
 
-    
+    import queue
     import json
     with open("config/parameters.json") as f:
         parameters = json.load(f)
 
-    raw_collection = "pristine_stork--RAW_GT1"
-    rec_collection = "pristine_stork--RAW_GT1__cajoles"
-    
-    dbc = DBClient(**parameters["db_param"])
-    raw = dbc.client["trajectories"][raw_collection]
-    rec = dbc.client["reconciled"][rec_collection]
+    parameters["raw_collection"] = "pristine_stork--RAW_GT1"
+    east_queue = queue.Queue()
+    west_queue = queue.Queue()
+    static_data_reader(parameters, east_queue, west_queue, min_queue_size = 1000)
     
     
     
