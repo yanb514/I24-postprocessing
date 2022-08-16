@@ -36,7 +36,7 @@
     "varx": 2,
     "vary": 0.5,
     "inclusion": 0,
-    "fragment_attr_name": "id",
+    "fragment_attr_name": "_id",
     "raw_trajectory_queue_get_timeout": 8,
     "residual_threshold_x": 5,
     "residual_threshold_y": 1,

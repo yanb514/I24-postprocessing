@@ -105,12 +105,16 @@ def add_filter(traj, raw, residual_threshold_x, residual_threshold_y,
     and save filter field to raw collection
     '''
     filter = True
+    try:
+        filter.pop("filter")
+    except:
+        pass
     t = np.array(traj["timestamp"])
     x = np.array(traj["x_position"])
     y = np.array(traj["y_position"])
     conf = np.array(traj["detection_confidence"])
         
-    length = len(t)
+    # length = len(t)
     
     # get confidence mask
     lowconf_mask = np.array(conf < conf_threshold)
@@ -159,14 +163,14 @@ def add_filter(traj, raw, residual_threshold_x, residual_threshold_y,
         filter = 1*highconf_mask
 
         # save filter to database- non-blocking
-        _id = traj["_id"]
-        thread = threading.Thread(target=thread_update_one, args=(raw, _id, filter, fitx, fity,))
-        thread.start()
+        # _id = traj["_id"]
+        # thread = threading.Thread(target=thread_update_one, args=(raw, _id, filter, fitx, fity,))
+        # thread.start()
     
         # update traj document
-        traj["filter"] = filter
-        traj["fitx"] = fitx
-        traj["fity"] = fity
+        traj["filter"] = list(filter)
+        traj["fitx"] = list(fitx)
+        traj["fity"] = list(fity)
     
     return traj
 

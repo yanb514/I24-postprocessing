@@ -22,6 +22,9 @@ import data_feed as df
 import min_cost_flow as mcf
 import reconciliation as rec
 
+config_path = os.path.join(os.getcwd(),"config")
+os.environ["USER_CONFIG_DIRECTORY"] = config_path 
+
 
 def main(collection_name = None):
     # GET PARAMAETERS

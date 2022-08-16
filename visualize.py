@@ -361,24 +361,6 @@ def main(rec, gt = "groundtruth_scene_1_130", framerate = 25, x_min=0, x_max=200
     
 if __name__=="__main__":
     
-    main(rec = "fastidious_lynx--RAW_GT1__surrenders")
+    main(rec = "ostentatious_hippo--RAW_GT1__improvises")
 
-    # with open('config.json') as f:
-    #     parameters = json.load(f)
-    
-    # gt = "groundtruth_scene_1_130"
-    # rec = "fastidious_lynx--RAW_GT1__surrenders"
-    # raw = rec.split("__")[0]
-    # # collection2 = None
-    # framerate = 25
-    # x_min = 0
-    # x_max = 2000
-    # offset = 0
-    # duration = 90
-
-    # p = OverheadCompare(parameters, 
-    #             collections = [gt, raw, rec],
-    #             framerate = framerate, x_min = x_min, x_max=x_max, offset = offset, duration=duration)
-    # p.animate(save=True, extra="_8.6")
-    
     

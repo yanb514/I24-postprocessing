@@ -1,9 +1,10 @@
-import heapq
 import numpy as np
 import networkx as nx
 import queue
 from collections import deque
-from utils.utils_stitcher_cost import min_nll_cost, nll, nll_modified, cost_1, cost_2, cost_3
+from utils.utils_stitcher_cost import cost_3
+# from scipy import stats
+from i24_logger.log_writer import catch_critical
 
 
     
@@ -15,33 +16,34 @@ class Fragment():
         - id, timestamp, x_position, y_position, length, width, last_timsetamp, first_timestamp, direction
         '''
 
-        # delete the unnucessary fields in traj_doc
-        field_names = ["_id", "ID","timestamp","x_position","y_position","direction","last_timestamp", "first_timestamp", "length","width","height","filter","fitx","fity"]
-        attr_names = ["id","ID","t","x","y","dir","last_timestamp","first_timestamp","length","width","height","filter","fitx","fity"]
+        # # delete the unnucessary fields in traj_doc
+        # field_names = ["_id", "ID","timestamp","x_position","y_position","direction","last_timestamp", "first_timestamp", "length","width","height","filter","fitx","fity"]
+        # attr_names = ["id","ID","t","x","y","dir","last_timestamp","first_timestamp","length","width","height","filter","fitx","fity"]
         
-        for i in range(len(field_names)): # set as many attributes as possible
-            try: 
-                if field_names[i] in {"_id", "ID"}: # cast bson ObjectId type to str
-                    setattr(self, attr_names[i], str(traj_doc[field_names[i]]))
-                else:
-                    setattr(self, attr_names[i], traj_doc[field_names[i]])
-            except: pass
+        # for i in range(len(field_names)): # set as many attributes as possible
+        #     try: 
+        #         if field_names[i] in {"_id", "ID"}: # cast bson ObjectId type to str
+        #             setattr(self, attr_names[i], str(traj_doc[field_names[i]]))
+        #         else:
+        #             setattr(self, attr_names[i], traj_doc[field_names[i]])
+        #     except: pass
         
 
-        try: # cast to np array
-            setattr(self, "x", np.array(self.x))#*0.3048)
-            setattr(self, "y", np.array(self.y))#*0.3048)
-            setattr(self, "t", np.array(self.t))
+        # try: # cast to np array
+        #     setattr(self, "x", np.array(self.x))#*0.3048)
+        #     setattr(self, "y", np.array(self.y))#*0.3048)
+        #     setattr(self, "t", np.array(self.t))
 
-        except:
-            pass
+        # except:
+        #     pass
+        self.data = traj_doc
             
         
     def __repr__(self):
         try:
-            return 'Fragment({!r})'.format(self.ID)
+            return 'Fragment({!r})'.format(self.data["ID"])
         except:
-            return 'Fragment({!r})'.format(self.id)
+            return 'Fragment({!r})'.format(self.data["_id"])
     
 
         
@@ -64,7 +66,8 @@ class MOTGraphSingle:
         # self.fragment_dict = {}
         self.in_graph_deque = deque() # keep track of fragments that are currently in graph, ordered by last_timestamp
                         
-                                
+          
+    @catch_critical(errors = (Exception))
     def add_node(self, fragment):
         '''
         add one node i in G
@@ -76,22 +79,21 @@ class MOTGraphSingle:
         TIME_WIN = self.parameters["time_win"]
         VARX = self.parameters["varx"]
         VARY = self.parameters["vary"]
-        # CONF = self.parameters.conf
         
-        new_id = getattr(fragment, self.attr)
+        # new_id = getattr(fragment, self.attr)
+        new_id = fragment[self.attr]
         self.G.add_edge("t", new_id, weight=0, match=True)
-        self.G.nodes[new_id]["subpath"] = [new_id]
-        self.G.nodes[new_id]["last_timestamp"] = fragment.last_timestamp
+        self.G.nodes[new_id]["subpath"] = [new_id] # list of ids
+        self.G.nodes[new_id]["last_timestamp"] = fragment["last_timestamp"]
+        self.G.nodes[new_id]["filters"] = [fragment["filter"]] # list of lists
 
         for fgmt in reversed(self.in_graph_deque):
-            # cost = min_nll_cost(fgmt, fragment, TIME_WIN, VARX, VARY)
-            # cost = nll(fgmt, fragment, TIME_WIN, VARX, VARY)
-            # cost = cost_1(fgmt, fragment, TIME_WIN, VARX, VARY, CONF)
+            # TODO: fix args
             cost = cost_3(fgmt, fragment, TIME_WIN, VARX, VARY)
-            # print(getattr(fgmt, self.attr), getattr(fragment, self.attr), cost)
+            # print(fgmt.data["_id"], fragment.data["_id"], cost)
             
             if cost <= 0:  # new edge points from new_id to existing nodes, with postive cost
-                fgmt_id = getattr(fgmt, self.attr)
+                fgmt_id = fgmt[self.attr]
                 self.G.add_edge(new_id, fgmt_id, weight = -cost, match = False)
         
         # add Fragment pointer to the dictionary
@@ -99,14 +101,15 @@ class MOTGraphSingle:
         # self.fragment_dict[new_id] = fragment
 
         # check for time-out fragments in deque and compress paths
-        while self.in_graph_deque[0].last_timestamp < fragment.first_timestamp - TIME_WIN:
+        while self.in_graph_deque[0]["last_timestamp"] < fragment["first_timestamp"] - TIME_WIN:
             fgmt = self.in_graph_deque.popleft()
-            fgmt_id = getattr(fgmt, self.attr)
+            fgmt_id = fgmt[self.attr]
             for v,_,data in self.G.in_edges(fgmt_id, data = True):
                 if data["match"] and v != "t":
                     # compress fgmt and v -> roll up subpath 
                     # TODO: need to check the order
                     self.G.nodes[v]["subpath"].extend(self.G.nodes[fgmt_id]["subpath"])
+                    self.G.nodes[v]["filters"].extend(self.G.nodes[fgmt_id]["filters"])
                     self.G.remove_node(fgmt_id)
                     break
         
@@ -122,7 +125,7 @@ class MOTGraphSingle:
                 pass
         
     
-            
+    @catch_critical(errors = (Exception))        
     def find_legal_neighbors(self, node):
         '''
         find ``neighbors`` of node x in G such that 
@@ -145,7 +148,7 @@ class MOTGraphSingle:
 
             
             
-        
+    @catch_critical(errors = (Exception))    
     def find_alternating_path(self, root):
         '''
         construct an alternative matching tree (Hungarian tree) from root, alternate between unmatched edge and matched edge
@@ -177,7 +180,7 @@ class MOTGraphSingle:
         # print("alt path for {} is {}".format(root, best_path))           
         return best_path, best_dist
     
-    
+    @catch_critical(errors = (Exception))
     def augment_path(self, node):
         '''
         calculate an alternating path by adding node to G (assume node is already properly added to G)
@@ -203,11 +206,14 @@ class MOTGraphSingle:
         return None   
     
     
+    @catch_critical(errors = (Exception))
     def get_all_traj(self):
         '''
+        only called at final flushing
         traverse G along matched edges
         '''
-        self.all_paths = []
+        self.all_paths = [] # list of lists [[id1, id2],[id3, id4]]
+        # self.all_filters = [] # list of lists of lists [[[1,1,0,0],[0,1,0]], [[0,0,1],[1,1]]]
         
         def dfs(node, path):
             if not node: # at the leaf
@@ -228,20 +234,22 @@ class MOTGraphSingle:
         return self.all_paths
             
         
-    
+    @catch_critical(errors = (Exception))
     def pop_path(self, time_thresh):
         '''
         examine tail and pop if timeout (last_timestamp < time_thresh)
         remove the paths from G
         return paths
         '''
-        all_paths = []
+        all_paths = [] # list of lists [[id1, id2],[id3, id4]]
+        # all_filters = [] # list of lists of lists [[[1,1,0,0],[0,1,0]], [[0,0,1],[1,1]]]
         
         def dfs(node, path):
             if not node: # at the leaf
                 all_paths.append(list(path))
                 
                 return list(path)
+            
             path = path + self.G.nodes[node]["subpath"]
             next = self.get_next_match(node)
             return dfs(next, path)
@@ -255,7 +263,22 @@ class MOTGraphSingle:
                 
         return all_paths
         
+    
+    @catch_critical(errors = (Exception))
+    def get_filters(self, path):
+        filters = []
+        for _id in path:
+            try:
+                filters.extend(self.G.nodes[_id]["filters"])
+            except KeyError:
+                pass
+        return filters
+            
+       
         
+       
+        
+       
 if __name__ == '__main__':
     import os
     from i24_configparse import parse_cfg

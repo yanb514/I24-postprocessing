@@ -14,7 +14,7 @@ dt = 1/30
 
 
 @catch_critical(errors = (Exception))
-def combine_fragments(raw_collection, stitched_doc):
+def combine_fragments(raw_collection, fragment_ids, filters):
     '''
     stack fragments from stitched_doc to a single document
     fragment_ids should be sorted by last_timestamp (see PathCache data structures for details)
@@ -28,12 +28,12 @@ def combine_fragments(raw_collection, stitched_doc):
     
     stacked = defaultdict(list)
 
-    if isinstance(stitched_doc, list):
-        fragment_ids = stitched_doc
-    else:
-        fragment_ids = stitched_doc["fragment_ids"]
-    if isinstance(fragment_ids[0], str):
-        fragment_ids = [ObjectId(_id) for _id in fragment_ids]
+    # if isinstance(stitched_doc, list):
+    #     fragment_ids = stitched_doc
+    # else:
+    #     fragment_ids = stitched_doc["fragment_ids"]
+    # if isinstance(fragment_ids[0], str):
+    #     fragment_ids = [ObjectId(_id) for _id in fragment_ids]
 
     # logger.info("fragment_ids type: {}, {}".format(type(fragment_ids), fragment_ids))
     # logger.debug("first doc {}".format(raw_collection.find_one(fragment_ids[0]))) # this returns none

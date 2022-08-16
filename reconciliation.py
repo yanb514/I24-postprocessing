@@ -21,7 +21,7 @@ import queue
 import i24_logger.log_writer as log_writer
 from i24_database_api import DBClient
 
-from utils.utils_reconciliation import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments, rectify_2d
+# from utils.utils_reconciliation import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments, rectify_2d
 from utils.utils_opt import combine_fragments, resample, opt1, opt2, opt1_l1, opt2_l1
 
 def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue) -> None:
@@ -104,12 +104,12 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     while True:
         try:
             try:
-                next_to_reconcile = stitched_trajectory_queue.get(timeout = TIMEOUT) #20sec
+                fragment_ids, filters = stitched_trajectory_queue.get(timeout = TIMEOUT) #20sec
             except queue.Empty: 
                 rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters["stitched_trajectory_queue_get_timeout"]))
                 break
         
-            combined_trajectory = combine_fragments(raw.collection, next_to_reconcile)    
+            combined_trajectory = combine_fragments(raw.collection, fragment_ids, filters)    
             worker_pool.apply_async(reconcile_single_trajectory, (reconciliation_args, combined_trajectory, reconciled_queue, ))
 
         except (KeyboardInterrupt, BrokenPipeError): # handle SIGINT here

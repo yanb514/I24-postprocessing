@@ -13,7 +13,7 @@ from bson.objectid import ObjectId
 
 from i24_database_api import DBClient
 import i24_logger.log_writer as log_writer
-from utils.utils_mcf import Fragment, MOTGraphSingle
+from utils.utils_mcf import MOTGraphSingle
 
 
 # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
@@ -134,26 +134,29 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     while sig_hdlr.run:
         try:
             try:
-                raw_fgmt = fragment_queue.get(timeout = GET_TIMEOUT)
+                fgmt = fragment_queue.get(timeout = GET_TIMEOUT)
                 # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
-                fgmt = Fragment(raw_fgmt)
+                # fgmt = Fragment(raw_fgmt)
                 
             except queue.Empty: # queue is empty
                 all_paths = m.get_all_traj()
                 
                 for path in all_paths:
+                    filters = m.get_filters(path)
+                    stitched_trajectory_queue.put((path[::-1], filters[::-1]))
+                    
                     # stitcher_logger.info("Flushing out final trajectories in graph")
                     stitcher_logger.info("** Flushing out {} fragments".format(len(path)),extra = None)
-                    stitched_trajectory_queue.put(path[::-1])
                     # dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
                 
                 stitcher_logger.info("fragment_queue is empty, exit.")
                 break
             
-            fgmt_id = getattr(fgmt, ATTR_NAME)
+            # fgmt_id = getattr(fgmt, ATTR_NAME)
+            fgmt_id = fgmt[ATTR_NAME]
             # RANSAC fit to determine the fit coef if it's a good track, otherwise reject
-            if len(raw_fgmt["filter"]) == 0:
-                stitched_trajectory_queue.put([fgmt_id])
+            if len(fgmt["filter"]) == 0:
+                stitched_trajectory_queue.put(([fgmt_id], []))
                 continue # skip this fgmt
                 
             m.add_node(fgmt)
@@ -166,12 +169,12 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     
             # pop path if a path is ready
             # print("**", m.G.edges(data=True))
-            all_paths = m.pop_path(time_thresh = fgmt.first_timestamp - TIME_WIN)  
+            all_paths = m.pop_path(time_thresh = fgmt["first_timestamp"] - TIME_WIN)  
             
             
             for path in all_paths:
-                # stitcher_logger.debug("path: {}".format(path))
-                stitched_trajectory_queue.put(path[::-1])
+                filters = m.get_filters(path)
+                stitched_trajectory_queue.put((path[::-1], filters[::-1]))
                 # dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
                 m.clean_graph(path)
                 if len(path)>1:
@@ -186,7 +189,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
         
         except Exception as e: 
             if sig_hdlr.run:
-                stitcher_logger.warning("No signals received. Exception: {}".format(e))
+                stitcher_logger.error("Unexpected exception: {}".format(e))
             else:
                 stitcher_logger.warning("SIGINT detected. Exception:{}".format(e))
             break

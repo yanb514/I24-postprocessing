@@ -31,19 +31,19 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     '''
     
     cost_offset = -3
+
+    filter1 = np.array(track1["filter"], dtype=bool) # convert fomr [1,0] to [True, False]
+    filter2 = np.array(track2["filter"], dtype=bool)
     
-    filter1 = np.array(track1.filter, dtype=bool) # convert fomr [1,0] to [True, False]
-    filter2 = np.array(track2.filter, dtype=bool)
+    t1 = np.array(track1["timestamp"])[filter1]
+    t2 = np.array(track2["timestamp"])[filter2]
     
-    t1 = track1.t[filter1]
-    t2 = track2.t[filter2]
+    x1 = np.array(track1["x_position"])[filter1]
+    x2 = np.array(track2["x_position"])[filter2]
     
-    x1 = track1.x[filter1]
-    x2 = track2.x[filter2]
-    
-    y1 = track1.y[filter1]
-    y2 = track2.y[filter2]
-    
+    y1 = np.array(track1["y_position"])[filter1]
+    y2 = np.array(track2["y_position"])[filter2]
+
     
     # if time_gap > tIME_WIN, don't stitch
     if t2[0] - t1[-1] > TIME_WIN:
@@ -51,7 +51,7 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
             
     if len(t1) >= len(t2):
         anchor = 1
-        fitx, fity = track1.fitx, track1.fity
+        fitx, fity = track1["fitx"], track1["fity"]
         meast = t2
         measx = x2
         measy = y2
@@ -64,7 +64,7 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
         
     else:
         anchor = 2
-        fitx, fity = track2.fitx, track2.fity
+        fitx, fity = track2["fitx"], track2["fity"]
         meast = t1
         measx = x1
         measy = y1
