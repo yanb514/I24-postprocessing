@@ -69,9 +69,9 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     :return:
     """
     # parameters
-    reconciliation_args={}
-    for key in ["lam2_x","lam2_y", "lam3_x", "lam3_y","lam1_x","lam1_y"]:
-        reconciliation_args[key] = parameters[key]
+    reconciliation_args=parameters["reconciliation_args"]
+    # for key in ["lam2_x","lam2_y", "lam3_x", "lam3_y","lam1_x","lam1_y"]:
+    #     reconciliation_args[key] = parameters[key]
     
     rec_parent_logger = log_writer.logger
     rec_parent_logger.set_name("rec_parent")

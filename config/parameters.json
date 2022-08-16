@@ -45,12 +45,14 @@
     
     "reconciliation_timeout": 10,
     "reconciliation_pool_size": 20,
-    "lam2_x": 0,
-    "lam2_y": 0,
-    "lam3_x": 1.67e-2,
-    "lam3_y": 1.67e-2,
-    "lam1_x": 0.0012,
-    "lam1_y": 0.0012,
+    "reconciliation_args":{
+        "lam2_x": 0,
+        "lam2_y": 0,
+        "lam3_x": 1.67e-2,
+        "lam3_y": 1.67e-2,
+        "lam1_x": 0.0012,
+        "lam1_y": 0.0012
+    },
     "ph": 100,
     "ih": 20
 
