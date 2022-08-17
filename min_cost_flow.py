@@ -248,8 +248,8 @@ if __name__ == '__main__':
         parameters = json.load(f)
     parameters["raw_trajectory_queue_get_timeout"] = 0.1
 
-    raw_collection = "morose_panda--RAW_GT1" # collection name is the same in both databases
-    rec_collection = "morose_panda--RAW_GT1__sweettalks"
+    raw_collection = "sympathetic_cnidarian--RAW_GT1" # collection name is the same in both databases
+    rec_collection = "sympathetic_cnidarian--RAW_GT1__juxtaposes"
     
     dbc = DBClient(**parameters["db_param"])
     raw = dbc.client["trajectories"][raw_collection]
@@ -259,7 +259,7 @@ if __name__ == '__main__':
 
     fragment_queue = queue.Queue()
     # morose panda
-    f_ids = [ObjectId('62e018c427b64c6330545fa6'),ObjectId('62e0190427b64c6330545fe6'),ObjectId('62e0190427b64c6330545fe7')]
+    # f_ids = [ObjectId('62e018c427b64c6330545fa6'),ObjectId('62e0190427b64c6330545fe6'),ObjectId('62e0190427b64c6330545fe7')]
     
     # f_ids = [ObjectId('62e403fe1b6a12ef2b2ae146'),ObjectId('62e404381b6a12ef2b2ae168'),ObjectId('62e404741b6a12ef2b2ae192'),ObjectId('62e4048c1b6a12ef2b2ae1a2')] # stitch to 1
     # f_ids = [ObjectId('62e4032b1b6a12ef2b2ae0cc'), ObjectId('62e4039f1b6a12ef2b2ae108')] # to 1
