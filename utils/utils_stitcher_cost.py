@@ -30,7 +30,7 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     use bhattacharyya_distance
     '''
     
-    cost_offset = -3
+    cost_offset = 0
 
     filter1 = np.array(track1["filter"], dtype=bool) # convert fomr [1,0] to [True, False]
     filter2 = np.array(track2["filter"], dtype=bool)
@@ -119,7 +119,7 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     
     nll = np.mean(bd)
     
-    # print("id1: {}, id2: {}, cost:{:.2f}".format(track1.id[-4:], track2.id[-4:], nll))
+    # print("id1: {}, id2: {}, cost:{:.2f}".format(str(track1['_id'])[-4:], str(track2['_id'])[-4:], nll))
     # print("")
     
     return nll + cost_offset

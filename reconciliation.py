@@ -176,7 +176,7 @@ def write_reconciled_to_db(parameters, reconciled_queue):
     
     # Safely close the mongodb client connection
     del dbw
-    reconciled_writer.warning("DBWriter closed. Exit reconciled_writer")
+    # reconciled_writer.warning("DBWriter closed. Exit reconciled_writer")
     sys.exit(0)
 
 

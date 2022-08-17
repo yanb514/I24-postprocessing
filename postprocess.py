@@ -15,6 +15,8 @@ import json
 
 # Custom APIs
 # from i24_configparse import parse_cfg
+config_path = os.path.join(os.getcwd(),"config")
+os.environ["USER_CONFIG_DIRECTORY"] = config_path 
 from i24_logger.log_writer import logger
 
 # Custom modules
@@ -22,8 +24,7 @@ import data_feed as df
 import min_cost_flow as mcf
 import reconciliation as rec
 
-config_path = os.path.join(os.getcwd(),"config")
-os.environ["USER_CONFIG_DIRECTORY"] = config_path 
+
 
 
 def main(collection_name = None):
@@ -125,7 +126,7 @@ def main(collection_name = None):
         
 
     # manager_logger.info("Started all processes.")
-    print("Started all processes.")
+    # print("Started all processes.")
     # print(pid_tracker)
 
 
@@ -213,7 +214,7 @@ def main(collection_name = None):
                 if parameters["mode"] in ["hard_stop", "soft_stop", "finish"]:
                     try:
                         live_process_objects.pop(pid_name)
-                        print("RIP {} {}".format(pid_name, child_process))
+                        print("RIP {}, you will be missed".format(pid_name))
                     except:
                         pass
                     

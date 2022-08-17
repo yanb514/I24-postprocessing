@@ -156,9 +156,13 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             # fgmt_id = getattr(fgmt, ATTR_NAME)
             fgmt_id = fgmt[ATTR_NAME]
             # RANSAC fit to determine the fit coef if it's a good track, otherwise reject
-            if len(fgmt["filter"]) == 0:
-                stitched_trajectory_queue.put(([fgmt_id], []))
-                continue # skip this fgmt
+            try:
+                if len(fgmt["filter"]) == 0:
+                    # stitched_trajectory_queue.put(([fgmt_id], []))
+                    stitcher_logger.info("* skip {} - LOW CONF".format(fgmt_id))
+                    continue # skip this fgmt
+            except:
+                pass
                 
             m.add_node(fgmt)
             
@@ -179,7 +183,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 # dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
                 m.clean_graph(path)
                 if len(path)>1:
-                    stitcher_logger.debug("** stitched {} fragments".format(len(path)),extra = None)
+                    stitcher_logger.info("** stitched {} fragments".format(len(path)),extra = None)
              
             if counter % 100 == 0:
                 stitcher_logger.debug("Graph nodes : {}, Graph edges: {}".format(m.G.number_of_nodes(), m.G.number_of_edges()),extra = None)
@@ -244,8 +248,8 @@ if __name__ == '__main__':
         parameters = json.load(f)
     parameters["raw_trajectory_queue_get_timeout"] = 0.1
 
-    raw_collection = "ostentatious_hippo--RAW_GT1" # collection name is the same in both databases
-    rec_collection = "ostentatious_hippo--RAW_GT1__sweettalks"
+    raw_collection = "morose_panda--RAW_GT1" # collection name is the same in both databases
+    rec_collection = "morose_panda--RAW_GT1__sweettalks"
     
     dbc = DBClient(**parameters["db_param"])
     raw = dbc.client["trajectories"][raw_collection]
@@ -254,7 +258,10 @@ if __name__ == '__main__':
     
 
     fragment_queue = queue.Queue()
-    # f_ids = [Ob jectId('62e403fe1b6a12ef2b2ae146'),ObjectId('62e404381b6a12ef2b2ae168'),ObjectId('62e404741b6a12ef2b2ae192'),ObjectId('62e4048c1b6a12ef2b2ae1a2')] # stitch to 1
+    # morose panda
+    f_ids = [ObjectId('62e018c427b64c6330545fa6'),ObjectId('62e0190427b64c6330545fe6'),ObjectId('62e0190427b64c6330545fe7')]
+    
+    # f_ids = [ObjectId('62e403fe1b6a12ef2b2ae146'),ObjectId('62e404381b6a12ef2b2ae168'),ObjectId('62e404741b6a12ef2b2ae192'),ObjectId('62e4048c1b6a12ef2b2ae1a2')] # stitch to 1
     # f_ids = [ObjectId('62e4032b1b6a12ef2b2ae0cc'), ObjectId('62e4039f1b6a12ef2b2ae108')] # to 1
     # f_ids = [ ObjectId('62e403c41b6a12ef2b2ae126'), ObjectId('62e403e51b6a12ef2b2ae13c'), ObjectId('62e404251b6a12ef2b2ae15c'),  ObjectId('62e404461b6a12ef2b2ae173')] # to 1
     # f_ids = [ObjectId('62e403fa1b6a12ef2b2ae143'), ObjectId('62e404221b6a12ef2b2ae15b'), 
@@ -286,10 +293,20 @@ if __name__ == '__main__':
     # f_ids = [ObjectId('62f6c97cba08cdedcca3700f'), ObjectId('62f6c97bba08cdedcca3700e')] # 1
     # f_ids = [ObjectId('62f6c96bba08cdedcca36ff4'), ObjectId('62f6c978ba08cdedcca37009')] #1
     # f_ids = [ObjectId('62f6c943ba08cdedcca36fb6'), ObjectId('62f6c94eba08cdedcca36fc9')] # 1
-    f_ids = [ObjectId('62f6c926ba08cdedcca36f7f'), ObjectId('62f6c933ba08cdedcca36f98'), ObjectId('62f6c939ba08cdedcca36fa0')] # 1
+    # f_ids = [ObjectId('62f6c926ba08cdedcca36f7f'), ObjectId('62f6c933ba08cdedcca36f98'), ObjectId('62f6c939ba08cdedcca36fa0')] # 1
+    # get parameters for fitting
+    RES_THRESH_X = parameters["residual_threshold_x"]
+    RES_THRESH_Y = parameters["residual_threshold_y"]
+    CONF_THRESH = 0.01 #parameters["conf_threshold"],
+    REMAIN_THRESH = parameters["remain_threshold"]
+    from data_feed import add_filter
+    
     for f_id in f_ids:
         f = raw.find_one({"_id": f_id})
         # print(f_id, "fity ", f["fity"])
+        f = add_filter(f, raw.collection, RES_THRESH_X, RES_THRESH_Y, 
+                       CONF_THRESH, REMAIN_THRESH)
+        print(f["filter"])
         fragment_queue.put(f)
     s1 = fragment_queue.qsize()
 

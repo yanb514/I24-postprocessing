@@ -92,9 +92,9 @@ class MOTGraphSingle:
             cost = cost_3(fgmt, fragment, TIME_WIN, VARX, VARY)
             # print(fgmt.data["_id"], fragment.data["_id"], cost)
             
-            if cost <= 0:  # new edge points from new_id to existing nodes, with postive cost
+            if cost <= 3:  # new edge points from new_id to existing nodes, with postive cost
                 fgmt_id = fgmt[self.attr]
-                self.G.add_edge(new_id, fgmt_id, weight = -cost, match = False)
+                self.G.add_edge(new_id, fgmt_id, weight = 3-cost, match = False)
         
         # add Fragment pointer to the dictionary
         self.in_graph_deque.append(fragment)
