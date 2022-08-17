@@ -1,0 +1,57 @@
+[
+{
+    "host": "laptop",
+    "command": "static_data_reader",
+    "args": [],
+    "kwargs":{},
+    "abandon": false,
+    "timeout": 7.0,
+    "restart_max": 5,
+    "group":"POSTPROCESSING",
+    "description":"Normal Process 1"
+},
+{
+    "host": "laptop",
+    "command": "stitcher_e",
+    "args": [],
+    "kwargs":{},
+    "abandon": false,
+    "timeout": 7.0,
+    "restart_max": 5,
+    "group":"POSTPROCESSING",
+    "description":"Normal Process 1"
+},
+{
+    "host": "laptop",
+    "command": "stitcher_w",
+    "args": [],
+    "kwargs":{},
+    "abandon": false,
+    "timeout": 7.0,
+    "restart_max": 5,
+    "group":"POSTPROCESSING",
+    "description":"Normal Process 1"
+},
+{
+    "host": "laptop",
+    "command": "reconciliation",
+    "args": [],
+    "kwargs":{},
+    "abandon": false,
+    "timeout": 7.0,
+    "restart_max": 5,
+    "group":"POSTPROCESSING",
+    "description":"Normal Process 1"
+},
+{
+    "host": "laptop",
+    "command": "reconciliation_writer",
+    "args": [],
+    "kwargs":{},
+    "abandon": false,
+    "timeout": 7.0,
+    "restart_max": 5,
+    "group":"POSTPROCESSING",
+    "description":"Normal Process 1"
+}
+]

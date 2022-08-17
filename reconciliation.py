@@ -192,23 +192,33 @@ if __name__ == '__main__':
     import json
     import numpy as np
     from bson.objectid import ObjectId
+    import data_feed as df
     # initialize parameters
     with open('config/parameters.json') as f:
         parameters = json.load(f)
 
-    reconciliation_args={}
-    for key in ["lam3_x","lam3_y", "lam2_x", "lam2_y", "lam1_x", "lam1_y"]:
-        reconciliation_args[key] = parameters[key]
+    RES_THRESH_X = parameters["residual_threshold_x"]
+    RES_THRESH_Y = parameters["residual_threshold_y"]
+    CONF_THRESH = parameters["conf_threshold"],
+    REMAIN_THRESH = parameters["remain_threshold"]
+    from data_feed import add_filter
+    
+    # reconciliation_args={}
+    # for key in ["lam3_x","lam3_y", "lam2_x", "lam2_y", "lam1_x", "lam1_y"]:
+    #     reconciliation_args[key] = parameters[key]
+    reconciliation_args = parameters["reconciliation_args"]
     
     # send some fragments to queue
     stitched_q = multiprocessing.Manager().Queue()
     reconciled_queue = multiprocessing.Manager().Queue()
     counter = 0 
     
-    test_dbr = DBClient(**parameters["db_param"], database_name = "trajectories", collection_name = "ostentatious_hippo--RAW_GT1")
+    test_dbr = DBClient(**parameters["db_param"], database_name = "trajectories", collection_name = "sympathetic_cnidarian--RAW_GT1")
     
-    for doc in test_dbr.collection.find({"_id": ObjectId("62f6c97cba08cdedcca3700f")}):
-        stitched_q.put([doc["_id"]])
+    for doc in test_dbr.collection.find({"_id": ObjectId("62fd0958a90e69199f2c0c67")}):
+        doc = add_filter(doc, test_dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
+                       CONF_THRESH, REMAIN_THRESH)
+        stitched_q.put(([doc["_id"]], [doc["filter"]]))
         counter += 1
         print("doc length: ", len(doc["timestamp"]))
         if counter > 15:
@@ -223,8 +233,8 @@ if __name__ == '__main__':
     # reconciliation_pool(parameters, stitched_q)
     
     while not stitched_q.empty():
-        fragment_list = stitched_q.get(block=False)
-        combined_trajectory = combine_fragments(test_dbr.collection, fragment_list)
+        fragment_list, filters = stitched_q.get(block=False)
+        combined_trajectory = combine_fragments(test_dbr.collection, fragment_list, filters)
         reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue)
         # doc["timestamp"] = np.array(doc["timestamp"])
         # doc["x_position"] = np.array(doc["x_position"])
@@ -238,7 +248,9 @@ if __name__ == '__main__':
     #%% plot
     import matplotlib.pyplot as plt
     plt.scatter(doc["timestamp"], doc["x_position"])
-    plt.scatter(r["timestamp"], r["x_position"])
+    filter = np.array(doc["filter"], dtype=bool)
+    plt.scatter(np.array(doc["timestamp"])[~filter],np.array(doc["x_position"])[~filter], c="lightgrey")
+    plt.scatter(r["timestamp"], r["x_position"], s=1)
     print(r["x_score"], r["y_score"])
     
     

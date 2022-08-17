@@ -21,8 +21,9 @@ import numpy as np
 from sklearn import linear_model
 import threading
 
-verbs = ["medicates", "taunts", "sweettalks", "initiates", "harasses", "smacks", "boggles", "negotiates", "castigates", "disputes", "cajoles", "improvises",
-         "surrenders", "escalates", "mumbles", "juxtaposes", "excites", "lionizes", "ruptures", "yawns","administers","flatters","foreshadows","buckles"]
+verbs = ["medicates", "taunts", "sweettalks", "initiates", "harasses", "negotiates", "castigates", "disputes", "cajoles", "improvises",
+         "surrenders", "escalates", "mumbles", "juxtaposes", "excites", "lionizes", "ruptures", "yawns","administers","flatters","foreshadows","buckles",
+         "moans", "gasps", "yells", "praises", "impersonates", "giggles", "roars", "articulates", "capitalizes", "calibrates", "protests", "conforms"]
 max_trials = 10
 
     

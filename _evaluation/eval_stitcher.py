@@ -207,15 +207,15 @@ if __name__ == '__main__':
     with open("config.json") as f:
         config = json.load(f)
 
-    raw_collection = "sympathetic_cnidarian--RAW_GT1" # collection name is the same in both databases
-    rec_collection = "sympathetic_cnidarian--RAW_GT1__juxtaposes"
+    raw_collection = "morose_caribou--RAW_GT1" # collection name is the same in both databases
+    rec_collection = "morose_caribou--RAW_GT1__juxtaposes"
     
     dbc = DBClient(**config)
     raw = dbc.client["trajectories"][raw_collection]
     rec = dbc.client["reconciled"][rec_collection]
     eval = dbc.client["reconciled"]["evaluation"]
     
-    # clean_raw(raw)
+    clean_raw(raw)
     test_fragments(raw, rec, eval)
     
     
@@ -226,6 +226,6 @@ if __name__ == '__main__':
 
     #%% 
     # rec_ids = [ObjectId('62f817ff6b65259ae112b652'), ObjectId('62f817ff6b65259ae112b65f')] # 
-    rec_ids = [ObjectId('62fd09a0407b3b08db2c0df3')]
-    plot_stitched(rec_ids, rec, raw)
+    # rec_ids = [ObjectId('62fd09a0407b3b08db2c0df3')]
+    # plot_stitched(rec_ids, rec, raw)
     

@@ -121,9 +121,15 @@ def resample(car):
     # df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq()
     # df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
     # df = df.interpolate(method='linear')
-
-
     # df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq() # resample to 25Hz snaps to the closest integer
+    
+    # do not extrapolate for more than 1 sec
+    first_valid_time = pd.Series.first_valid_index(df['x_position'])
+    last_valid_time = pd.Series.last_valid_index(df['x_position'])
+    first_time = max(car['timestamp'][0], first_valid_time-1)
+    last_time = min(car['timestamp'][-1], last_valid_time+1)
+    df=df[first_time:last_time]
+    
     car['x_position'] = df['x_position'].values
     car['y_position'] = df['y_position'].values
     car['timestamp'] = df.index.values
@@ -449,6 +455,7 @@ def _blocdiag(X, n):
     
 if __name__ == '__main__': 
     print("not implemented")
+
 
         
     

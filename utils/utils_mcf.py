@@ -5,7 +5,7 @@ from collections import deque
 from utils.utils_stitcher_cost import cost_3
 # from scipy import stats
 from i24_logger.log_writer import catch_critical
-
+import itertools
 
     
 class Fragment():
@@ -56,7 +56,7 @@ class MOTGraphSingle:
     a fragment must be included in the trajectories
     '''
     def __init__(self, attr = "ID", parameters = None):
-        self.parameters = parameters
+        # self.parameters = parameters
         self.G = nx.DiGraph()
         self.G.add_nodes_from(["s","t"])
         self.G.nodes["s"]["subpath"] = []
@@ -66,6 +66,10 @@ class MOTGraphSingle:
         # self.fragment_dict = {}
         self.in_graph_deque = deque() # keep track of fragments that are currently in graph, ordered by last_timestamp
                         
+        self.TIME_WIN = parameters["time_win"]
+        self.VARX = parameters["varx"]
+        self.VARY = parameters["vary"]
+        self.cache = {}
           
     @catch_critical(errors = (Exception))
     def add_node(self, fragment):
@@ -76,20 +80,17 @@ class MOTGraphSingle:
         add all incident edges from i to other possible nodes, mark edges as match = False
         '''
         
-        TIME_WIN = self.parameters["time_win"]
-        VARX = self.parameters["varx"]
-        VARY = self.parameters["vary"]
-        
         # new_id = getattr(fragment, self.attr)
         new_id = fragment[self.attr]
         self.G.add_edge("t", new_id, weight=0, match=True)
         self.G.nodes[new_id]["subpath"] = [new_id] # list of ids
         self.G.nodes[new_id]["last_timestamp"] = fragment["last_timestamp"]
         self.G.nodes[new_id]["filters"] = [fragment["filter"]] # list of lists
+        self.cache[new_id] = fragment
 
         for fgmt in reversed(self.in_graph_deque):
             # TODO: fix args
-            cost = cost_3(fgmt, fragment, TIME_WIN, VARX, VARY)
+            cost = cost_3(fgmt, fragment, self.TIME_WIN, self.VARX, self.VARY)
             # print(fgmt.data["_id"], fragment.data["_id"], cost)
             
             if cost <= 3:  # new edge points from new_id to existing nodes, with postive cost
@@ -101,7 +102,7 @@ class MOTGraphSingle:
         # self.fragment_dict[new_id] = fragment
 
         # check for time-out fragments in deque and compress paths
-        while self.in_graph_deque[0]["last_timestamp"] < fragment["first_timestamp"] - TIME_WIN:
+        while self.in_graph_deque[0]["last_timestamp"] < fragment["first_timestamp"] - self.TIME_WIN:
             fgmt = self.in_graph_deque.popleft()
             fgmt_id = fgmt[self.attr]
             for v,_,data in self.G.in_edges(fgmt_id, data = True):
@@ -113,12 +114,32 @@ class MOTGraphSingle:
                     self.G.remove_node(fgmt_id)
                     break
         
+    @catch_critical(errors = (Exception))
+    def verify_path(self, path):
+        # double check if any pair in path have conflict (large cost)
+        # path is ordered by last_timestamp
         
+        comb = list(itertools.combinations(path, 2))
+        for id1, id2 in comb:
+            f1 = self.cache[id1]
+            f2 = self.cache[id2]
+            cost = cost_3(f1, f2, self.TIME_WIN, self.VARX, self.VARY)
+            # print(cost)
+            if cost > 10:
+                return False # detect high cost
+        return True
+    
+    
+    @catch_critical(errors = (Exception))       
     def clean_graph(self, path):
         '''
         remove all nodes in path from G and in_graph_deque
         '''
         for node in path:
+            try:
+                self.cache.pop(node)
+            except:
+                pass
             try:
                 self.G.remove_node(node)
             except:

@@ -32,7 +32,7 @@
     "buffer_time": 10,
     "min_queue_size": 10000,
     
-    "time_win": 8,
+    "time_win": 20,
     "varx": 2,
     "vary": 0.5,
     "inclusion": 0,
