@@ -297,7 +297,7 @@ if __name__ == '__main__':
     # get parameters for fitting
     RES_THRESH_X = parameters["residual_threshold_x"]
     RES_THRESH_Y = parameters["residual_threshold_y"]
-    CONF_THRESH = 0.01 #parameters["conf_threshold"],
+    CONF_THRESH = parameters["conf_threshold"],
     REMAIN_THRESH = parameters["remain_threshold"]
     from data_feed import add_filter
     

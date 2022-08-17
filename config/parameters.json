@@ -2,7 +2,7 @@
     "mode": "soft_stop",
     "description": "bhattar dist add y variance, conf filter only (no ransac filter), add opt2_l1 adjusting lam2",
     
-    "raw_collection": "ostentatious_hippo--RAW_GT1",
+    "raw_collection": "morose_caribou--RAW_GT1",
     "db_param": {
         "host": "10.2.218.56",
         	"port": 27017,

@@ -55,8 +55,9 @@ def combine_fragments(raw_collection, fragment_ids, filters):
         stacked["coarse_vehicle_class"].append(fragment["coarse_vehicle_class"])
         stacked["fine_vehicle_class"].append(fragment["fine_vehicle_class"])
         stacked["direction"].append(fragment["direction"])
-        
-        stacked["filter"].extend(fragment["filter"])
+    
+    for filter in filters: # len(filter) cannot be 0
+        stacked["filter"].extend([int(item) for item in filter])
         
        
     # first fragment
