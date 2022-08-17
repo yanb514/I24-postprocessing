@@ -179,7 +179,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 # dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
                 m.clean_graph(path)
                 if len(path)>1:
-                    stitcher_logger.info("** stitched {} fragments".format(len(path)),extra = None)
+                    stitcher_logger.debug("** stitched {} fragments".format(len(path)),extra = None)
              
             if counter % 100 == 0:
                 stitcher_logger.debug("Graph nodes : {}, Graph edges: {}".format(m.G.number_of_nodes(), m.G.number_of_edges()),extra = None)

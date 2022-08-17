@@ -114,7 +114,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
             worker_pool.apply_async(reconcile_single_trajectory, (reconciliation_args, combined_trajectory, reconciled_queue, ))
             
             if cntr % 100 == 0:
-                rec_parent_logger.info("Applied reconciliation on {} trajectories".format())
+                rec_parent_logger.info("Applied reconciliation on {} trajectories".format(cntr))
 
         except (KeyboardInterrupt, BrokenPipeError): # handle SIGINT here
             rec_parent_logger.warning("SIGINT detected. Exit pool.")
