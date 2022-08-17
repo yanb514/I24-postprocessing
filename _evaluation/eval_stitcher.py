@@ -76,7 +76,10 @@ def plot_traj(veh_ids, dbr, axs = None):
     
     for f_id in veh_ids: 
         f = dbr.find_one({"_id": f_id})
-        filter = np.array(f["filter"], dtype=bool)
+        try:
+            filter = np.array(f["filter"], dtype=bool)
+        except:
+            filter = np.array([True]*len(f["timestamp"]))
         # print(f_id, "length: ", len(f["timestamp"]), 'gt_ids: ', f["gt_ids"])
         l = str(f_id)[-4:]
         dates = [datetime.utcfromtimestamp(t) for t in f["timestamp"]]   
@@ -208,15 +211,15 @@ if __name__ == '__main__':
         config = json.load(f)
 
     raw_collection = "morose_caribou--RAW_GT1" # collection name is the same in both databases
-    rec_collection = "morose_caribou--RAW_GT1__juxtaposes"
+    rec_collection = "morose_caribou--RAW_GT1__medicates"
     
     dbc = DBClient(**config)
     raw = dbc.client["trajectories"][raw_collection]
     rec = dbc.client["reconciled"][rec_collection]
     eval = dbc.client["reconciled"]["evaluation"]
     
-    clean_raw(raw)
-    test_fragments(raw, rec, eval)
+    # clean_raw(raw)
+    # test_fragments(raw, rec, eval)
     
     
     #%%
@@ -226,6 +229,6 @@ if __name__ == '__main__':
 
     #%% 
     # rec_ids = [ObjectId('62f817ff6b65259ae112b652'), ObjectId('62f817ff6b65259ae112b65f')] # 
-    # rec_ids = [ObjectId('62fd09a0407b3b08db2c0df3')]
-    # plot_stitched(rec_ids, rec, raw)
+    rec_ids = [ObjectId('62fd58de683670562595fb9f')]
+    plot_stitched(rec_ids, rec, raw)
     

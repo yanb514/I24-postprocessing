@@ -49,18 +49,25 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     if t2[0] - t1[-1] > TIME_WIN:
         return 1e6
             
+    gap = t2[0] - t1[-1]    
     if len(t1) >= len(t2):
         anchor = 1
         fitx, fity = track1["fitx"], track1["fity"]
         meast = t2
         measx = x2
         measy = y2
-        n = min(len(meast), 30) # consider n measurements
+        pt = t1[-1]
+        if gap < -2: # if overlap in tiem for more than 2 sec, get all the overlaped range
+            n = 0
+            while meast[n] < pt:
+                n+= 1
+        else:
+            n = min(len(meast), 30) # consider n measurements
         meast = meast[:n]
         measx = measx[:n]
         measy = measy[:n]
         dir = 1
-        pt = t1[-1]
+        
         
     else:
         anchor = 2
@@ -68,16 +75,25 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
         meast = t1
         measx = x1
         measy = y1
-        n = min(len(meast), 30) # consider n measurements
+        pt = t2[0]
+        if gap < -2 or t1[0] > t2[0]: # if overlap in time is more than 2 sec, or t1 completely overlaps with t2, get all the overlaped range
+            i = 0
+            while meast[i] < pt:
+                i += 1
+            n = len(meast)-i
+        else:
+            n = min(len(meast), 30) # consider n measurements
         meast = meast[-n:]
         measx = measx[-n:]
         measy = measy[-n:]
         dir = -1
-        pt = t2[0]
         
         
+    
+    
+    
     # find where to start the cone
-    # gap = t2[0] - t1[-1]
+    # 
     if anchor==2 and t1[0] > t2[0]: # t1 is completely overlap with t2
         pt = t1[-1]
         tdiff = meast * 0 # all zeros
@@ -119,8 +135,8 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     
     nll = np.mean(bd)
     
-    # print("id1: {}, id2: {}, cost:{:.2f}".format(str(track1['_id'])[-4:], str(track2['_id'])[-4:], nll))
-    # print("")
+    print("id1: {}, id2: {}, cost:{:.2f}".format(str(track1['_id'])[-4:], str(track2['_id'])[-4:], nll))
+    print("")
     
     return nll + cost_offset
 

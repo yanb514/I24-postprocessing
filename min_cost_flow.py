@@ -250,8 +250,8 @@ if __name__ == '__main__':
         parameters = json.load(f)
     parameters["raw_trajectory_queue_get_timeout"] = 0.1
 
-    raw_collection = "sympathetic_cnidarian--RAW_GT1" # collection name is the same in both databases
-    rec_collection = "sympathetic_cnidarian--RAW_GT1__juxtaposes"
+    raw_collection = "morose_caribou--RAW_GT1" # collection name is the same in both databases
+    rec_collection = "morose_caribou--RAW_GT1__medicatess"
     
     dbc = DBClient(**parameters["db_param"])
     raw = dbc.client["trajectories"][raw_collection]
@@ -296,6 +296,11 @@ if __name__ == '__main__':
     # f_ids = [ObjectId('62f6c96bba08cdedcca36ff4'), ObjectId('62f6c978ba08cdedcca37009')] #1
     # f_ids = [ObjectId('62f6c943ba08cdedcca36fb6'), ObjectId('62f6c94eba08cdedcca36fc9')] # 1
     # f_ids = [ObjectId('62f6c926ba08cdedcca36f7f'), ObjectId('62f6c933ba08cdedcca36f98'), ObjectId('62f6c939ba08cdedcca36fa0')] # 1
+    
+    # morous caribou medicates
+    # f_ids = [ObjectId('62fd0dea46a150340fcd21e0'), ObjectId('62fd0ded46a150340fcd21e7')] #2
+    # f_ids = [ObjectId('62fd0db946a150340fcd2181'), ObjectId('62fd0dbb46a150340fcd2185')]
+    f_ids = [ObjectId('62fd0daf46a150340fcd2170'), ObjectId('62fd0dc546a150340fcd2198')]
     # get parameters for fitting
     RES_THRESH_X = parameters["residual_threshold_x"]
     RES_THRESH_Y = parameters["residual_threshold_y"]
@@ -308,7 +313,7 @@ if __name__ == '__main__':
         # print(f_id, "fity ", f["fity"])
         f = add_filter(f, raw.collection, RES_THRESH_X, RES_THRESH_Y, 
                        CONF_THRESH, REMAIN_THRESH)
-        print(f["filter"])
+        # print(f["filter"])
         fragment_queue.put(f)
     s1 = fragment_queue.qsize()
 
