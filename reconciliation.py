@@ -49,7 +49,7 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
             # finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)  
             finished_trajectory = opt2_l1(resampled_trajectory, **reconciliation_args)  
             reconciled_queue.put(finished_trajectory)
-            rec_worker_logger.info("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
+            rec_worker_logger.debug("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
     
         except Exception as e:
             rec_worker_logger.info("+++ Flag as {}, skip reconciliation".format(str(e)), extra = None)
@@ -100,17 +100,21 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
         
     signal.signal(signal.SIGUSR1, handler) # ignore SIGUSR1
 
-    
+    cntr = 0
     while True:
         try:
             try:
                 fragment_ids, filters = stitched_trajectory_queue.get(timeout = TIMEOUT) #20sec
+                cntr += 1
             except queue.Empty: 
                 rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters["stitched_trajectory_queue_get_timeout"]))
                 break
         
             combined_trajectory = combine_fragments(raw.collection, fragment_ids, filters)    
             worker_pool.apply_async(reconcile_single_trajectory, (reconciliation_args, combined_trajectory, reconciled_queue, ))
+            
+            if cntr % 100 == 0:
+                rec_parent_logger.info("Applied reconciliation on {} trajectories".format())
 
         except (KeyboardInterrupt, BrokenPipeError): # handle SIGINT here
             rec_parent_logger.warning("SIGINT detected. Exit pool.")

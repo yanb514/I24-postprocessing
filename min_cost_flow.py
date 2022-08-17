@@ -139,6 +139,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 # fgmt = Fragment(raw_fgmt)
                 
             except queue.Empty: # queue is empty
+                stitcher_logger.info("Stitcher queue is empty. Flushing out remaining trajectories in graph.")
                 all_paths = m.get_all_traj()
                 
                 for path in all_paths:
@@ -146,10 +147,10 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                     stitched_trajectory_queue.put((path[::-1], filters[::-1]))
                     
                     # stitcher_logger.info("Flushing out final trajectories in graph")
-                    stitcher_logger.info("** Flushing out {} fragments".format(len(path)),extra = None)
+                    stitcher_logger.debug("** Flushing out {} fragments".format(len(path)),extra = None)
                     # dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
                 
-                stitcher_logger.info("fragment_queue is empty, exit.")
+                # stitcher_logger.info("fragment_queue is empty, exit.")
                 break
             
             # fgmt_id = getattr(fgmt, ATTR_NAME)
@@ -195,10 +196,10 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             break
             
         
-    stitcher_logger.info("Exit stitcher while loop")
+    stitcher_logger.info("Exit stitcher")
     # stitcher_logger.info("Final count in stitched collection {}: {}".format(dbw.collection_name, dbw.count()))
     # del dbw
-    stitcher_logger.info("DBWriter closed. Exit.")
+    # stitcher_logger.info("DBWriter closed. Exit.")
     # sys.exit()
         
     return   

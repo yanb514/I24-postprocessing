@@ -28,7 +28,7 @@
     "stitched_trajectory_queue_put_timeout": 10,
     "stitched_trajectory_queue_get_timeout": 10,
     
-    "range_increment": 1,
+    "range_increment": 10,
     "buffer_time": 10,
     "min_queue_size": 10000,
     
