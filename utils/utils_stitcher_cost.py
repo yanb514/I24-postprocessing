@@ -45,11 +45,12 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     y2 = np.array(track2["y_position"])[filter2]
 
     
-    # if time_gap > tIME_WIN, don't stitch
-    if t2[0] - t1[-1] > TIME_WIN:
+    # if time_gap > TIME_WIN, don't stitch
+    gap = t2[0] - t1[-1] 
+    if gap > TIME_WIN:
         return 1e6
             
-    gap = t2[0] - t1[-1]    
+       
     if len(t1) >= len(t2):
         anchor = 1
         fitx, fity = track1["fitx"], track1["fity"]
@@ -57,12 +58,12 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
         measx = x2
         measy = y2
         pt = t1[-1]
-        if gap < -2: # if overlap in tiem for more than 2 sec, get all the overlaped range
-            n = 0
-            while meast[n] < pt:
-                n+= 1
-        else:
-            n = min(len(meast), 30) # consider n measurements
+        # if gap < -2: # if overlap in tiem for more than 2 sec, get all the overlaped range
+        #     n = 0
+        #     while meast[n] <= pt:
+        #         n+= 1
+        # else:
+        n = min(len(meast), 30) # consider n measurements
         meast = meast[:n]
         measx = measx[:n]
         measy = measy[:n]
@@ -76,13 +77,13 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
         measx = x1
         measy = y1
         pt = t2[0]
-        if gap < -2 or t1[0] > t2[0]: # if overlap in time is more than 2 sec, or t1 completely overlaps with t2, get all the overlaped range
-            i = 0
-            while meast[i] < pt:
-                i += 1
-            n = len(meast)-i
-        else:
-            n = min(len(meast), 30) # consider n measurements
+        # if gap < -2 or t1[0] > t2[0]: # if overlap in time is more than 2 sec, or t1 completely overlaps with t2, get all the overlaped range
+        #     i = 0
+        #     while meast[i] < pt:
+        #         i += 1
+        #     n = len(meast)-i
+        # else:
+        n = min(len(meast), 30) # consider n measurements
         meast = meast[-n:]
         measx = measx[-n:]
         measy = measy[-n:]
@@ -113,11 +114,12 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     
     sigmax = (0.05 + tdiff * 0.01) * fitx[0] #0.1,0.1, sigma in unit ft
     varx = sigmax**2
-    vary_pred = np.var(y1) if anchor == 1 else np.var(y2)
-    # vary_pred = np.var(targety)
-    vary_pred = max(vary_pred, 2) # lower bound at 2
+    # vary_pred = np.var(y1) if anchor == 1 else np.var(y2)
+    sigmay = 1.5 + tdiff* 2 * fity[0]
+    vary_pred = sigmay**2
+    # vary_pred = max(vary_pred, 2) # lower bound
     vary_meas = np.var(measy)
-    vary_meas = max(vary_meas, 2) # lower bound at 2
+    vary_meas = max(vary_meas, 2) # lower bound 
     
     
     
@@ -125,7 +127,7 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     for i, t in enumerate(tdiff):
         mu1 = np.array([targetx[i], targety[i]]) # predicted state
         mu2 = np.array([measx[i], measy[i]]) # measured state
-        cov1 = np.diag([varx[i], vary_pred]) # prediction variance - grows as tdiff
+        cov1 = np.diag([varx[i], vary_pred[i]]) # prediction variance - grows as tdiff
         cov2 = np.diag([varx[0], vary_meas])  # measurement variance - does not grow as tdiff
         # mu1 = np.array([targetx[i]]) # predicted state
         # mu2 = np.array([measx[i]]) # measured state

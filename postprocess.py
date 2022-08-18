@@ -98,10 +98,10 @@ def main(collection_name = None):
                             "stitcher_w": (mcf.min_cost_flow_online_alt_path,
                                             ("west", raw_fragment_queue_w, stitched_trajectory_queue,
                                             mp_param, )),
-                            # "reconciliation": (rec.reconciliation_pool,
-                            #             (mp_param, stitched_trajectory_queue, reconciled_queue,)),
-                            # "reconciliation_writer": (rec.write_reconciled_to_db,
-                            #             (mp_param, reconciled_queue,)),
+                            "reconciliation": (rec.reconciliation_pool,
+                                        (mp_param, stitched_trajectory_queue, reconciled_queue,)),
+                            "reconciliation_writer": (rec.write_reconciled_to_db,
+                                        (mp_param, reconciled_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.

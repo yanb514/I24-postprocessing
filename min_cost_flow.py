@@ -298,9 +298,9 @@ if __name__ == '__main__':
     # f_ids = [ObjectId('62f6c926ba08cdedcca36f7f'), ObjectId('62f6c933ba08cdedcca36f98'), ObjectId('62f6c939ba08cdedcca36fa0')] # 1
     
     # morous caribou medicates
-    # f_ids = [ObjectId('62fd0dea46a150340fcd21e0'), ObjectId('62fd0ded46a150340fcd21e7')] #2
-    # f_ids = [ObjectId('62fd0db946a150340fcd2181'), ObjectId('62fd0dbb46a150340fcd2185')]
-    f_ids = [ObjectId('62fd0daf46a150340fcd2170'), ObjectId('62fd0dc546a150340fcd2198')]
+    f_ids = [ObjectId('62fd0dea46a150340fcd21e0'), ObjectId('62fd0ded46a150340fcd21e7')] #2
+    # f_ids = [ObjectId('62fd0db946a150340fcd2181'), ObjectId('62fd0dbb46a150340fcd2185')] #2
+    # f_ids = [ObjectId('62fd0daf46a150340fcd2170'), ObjectId('62fd0dc546a150340fcd2198')] #1
     # get parameters for fitting
     RES_THRESH_X = parameters["residual_threshold_x"]
     RES_THRESH_Y = parameters["residual_threshold_y"]
