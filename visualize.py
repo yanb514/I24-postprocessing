@@ -352,7 +352,7 @@ def main(rec, gt = "groundtruth_scene_1_130", framerate = 25, x_min=0, x_max=200
         parameters = config["db_param"]
     
     raw = rec.split("__")[0]
-    print("Generating a video for {}. Please hold tight...".format(rec))
+    print("Generating a video for {}...".format(rec))
     p = OverheadCompare(parameters, 
                 collections = [gt, raw, rec],
                 framerate = framerate, x_min = x_min, x_max=x_max, offset = offset, duration=duration)
@@ -361,7 +361,7 @@ def main(rec, gt = "groundtruth_scene_1_130", framerate = 25, x_min=0, x_max=200
     
 if __name__=="__main__":
 
-    main(rec = "morose_caribou--RAW_GT1__medicates", save=False, offset=70)
+    main(rec = "morose_caribou--RAW_GT1__escalates", save=True)
 
 
     

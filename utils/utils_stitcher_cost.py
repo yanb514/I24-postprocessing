@@ -137,8 +137,8 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     
     nll = np.mean(bd)
     
-    print("id1: {}, id2: {}, cost:{:.2f}".format(str(track1['_id'])[-4:], str(track2['_id'])[-4:], nll))
-    print("")
+    # print("id1: {}, id2: {}, cost:{:.2f}".format(str(track1['_id'])[-4:], str(track2['_id'])[-4:], nll))
+    # print("")
     
     return nll + cost_offset
 
