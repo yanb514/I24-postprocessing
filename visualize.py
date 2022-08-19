@@ -388,7 +388,7 @@ def main(rec, gt = "groundtruth_scene_1_130", framerate = 25, x_min=0, x_max=200
     
 if __name__=="__main__":
 
-    main(rec = "sanctimonious_beluga--RAW_GT1__administers", save=False, offset=70)
+    main(rec = "sanctimonious_beluga--RAW_GT1__administers", save=True)
 
 
     
