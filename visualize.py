@@ -126,6 +126,16 @@ class OverheadCompare():
         self.list_dbr =  list_dbr
         self.list_veh = list_veh
         
+        # put flagged vehicles in cache_colors
+        conflicts = set()
+        for doc in self.list_veh[-1].collection.find({}):
+            if 'conflicts' in doc:
+                conflicts.add(doc["_id"])
+        
+        # print(conflicts)
+        self.conflicts = conflicts
+        
+        
 
     
         
@@ -141,7 +151,7 @@ class OverheadCompare():
         # TODO: make size parameters
         cache_vehicle = LRUCache(200*num)
         cache_colors = LRUCache(200*num)
-        
+
         def on_xlims_change(event_ax):
             # print("updated xlims: ", event_ax.get_xlim())
             new_xlim = event_ax.get_xlim()
@@ -215,7 +225,10 @@ class OverheadCompare():
             # Add vehicle ids in cache_colors 
             for doc in docs:   
                 for veh_id in doc['id']:
-                    cache_colors.put(veh_id, np.random.rand(3,)*0.7, update=False)
+                    if veh_id in self.conflicts:
+                        cache_colors.put(veh_id, [1,0,0], update=False)
+                    else:
+                        cache_colors.put(veh_id, np.random.rand(3,)*0.8, update=False)
                 
             # GT
             traj_cursor = self.list_veh[0].collection.find({"_id": {"$in": doc0["id"]} }, 
@@ -250,10 +263,17 @@ class OverheadCompare():
                 # print(len(cache_vehicle.cache))
                 # print(len(cache_colors.cache))
                 car_length, car_width, _ = cache_vehicle.get(doc0["id"][index])
-
-                box = patches.Rectangle((car_x_pos, car_y_pos),
-                                        car_length, car_width, 
-                                        color=[0.8,0.8,0.8])
+                car_y_pos -= 0.5 * car_width
+                if car_y_pos >= 60: # west bound
+                    car_x_pos -= car_length
+                    
+                if doc0["id"][index] in self.conflicts:
+                    fill = False
+                else:
+                    fill = True
+                box = patches.Rectangle(xy = (car_x_pos, car_y_pos),
+                                        width = car_length, height=car_width,
+                                        color=[0.8,0.8,0.8],  fill = fill) # light grey
                 for i in range(num):
                     axs[i].add_patch(copy(box)) 
                     
@@ -267,11 +287,18 @@ class OverheadCompare():
                     # print("** ",cache_vehicle.get(doc["id"][index]))
                     # print(i,doc["id"][index])
                     car_length, car_width, _ = cache_vehicle.get(doc["id"][index])
+                    car_y_pos -= 0.5 * car_width
+                    if car_y_pos >= 60: # west bound
+                        car_x_pos -= car_length
 
-                    box = patches.Rectangle((car_x_pos, car_y_pos),
-                                            car_length, car_width, 
+                    if doc["id"][index] in self.conflicts:
+                        fill = False
+                    else:
+                        fill = True
+                    box = patches.Rectangle(xy=(car_x_pos, car_y_pos),
+                                            width=car_length, height=car_width, 
                                             color=cache_colors.get(doc["id"][index]),
-                                            label=doc["id"][index])
+                                            label=doc["id"][index], fill = fill)
                     axs[i].add_patch(box)   
                     # add annotation
                     annot = axs[i].annotate(doc['_id'], xy=(car_x_pos,car_y_pos))
@@ -361,7 +388,7 @@ def main(rec, gt = "groundtruth_scene_1_130", framerate = 25, x_min=0, x_max=200
     
 if __name__=="__main__":
 
-    main(rec = "sanctimonious_beluga--RAW_GT1__administers", save=True)
+    main(rec = "sanctimonious_beluga--RAW_GT1__administers", save=False, offset=70)
 
 
     
