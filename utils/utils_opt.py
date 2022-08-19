@@ -126,8 +126,8 @@ def resample(car):
     # do not extrapolate for more than 1 sec
     first_valid_time = pd.Series.first_valid_index(df['x_position'])
     last_valid_time = pd.Series.last_valid_index(df['x_position'])
-    first_time = max(car['timestamp'][0], first_valid_time-1)
-    last_time = min(car['timestamp'][-1], last_valid_time+1)
+    first_time = max(min(car['timestamp']), first_valid_time-1)
+    last_time = min(max(car['timestamp']), last_valid_time+1)
     df=df[first_time:last_time]
     
     car['x_position'] = df['x_position'].values

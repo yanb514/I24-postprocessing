@@ -211,7 +211,7 @@ if __name__ == '__main__':
         config = json.load(f)
 
     raw_collection = "morose_caribou--RAW_GT1" # collection name is the same in both databases
-    rec_collection = "morose_caribou--RAW_GT1__medicates"
+    rec_collection = "morose_caribou--RAW_GT1__escalates"
     
     dbc = DBClient(**config)
     raw = dbc.client["trajectories"][raw_collection]
@@ -221,14 +221,13 @@ if __name__ == '__main__':
     # clean_raw(raw)
     # test_fragments(raw, rec, eval)
     
-    
     #%%
-    # visualize understitch
-    # for gt_id, corr_st_ids in islice(fgmt.items(), 4,7):  # use islice(d.items(), 3) 
-    #     plot_stitched(corr_st_ids, rec, raw)
+    # f_ids = [ObjectId('62fd0dc446a150340fcd2195'), ObjectId('62fd0daf46a150340fcd2170'), ObjectId('62fd0dc546a150340fcd2198')]
+    # plot_traj(f_ids, raw)
 
     #%% 
-    # rec_ids = [ObjectId('62f817ff6b65259ae112b652'), ObjectId('62f817ff6b65259ae112b65f')] # 
-    rec_ids = [ObjectId('62fd58de683670562595fb9f')]
+    # rec_ids = [ObjectId('62fd9e4b95f077c66b4d946e'), ObjectId('62fd9e4c95f077c66b4d9471')] # 
+    # rec_ids = [ObjectId('62fd9e4c95f077c66b4d947c')]
+    rec_ids = [ObjectId('62fd9e4b95f077c66b4d9460'), ObjectId('62fd9e4a95f077c66b4d945b')]
     plot_stitched(rec_ids, rec, raw)
     
