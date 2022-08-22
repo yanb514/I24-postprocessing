@@ -5,10 +5,10 @@
     "args": [],
     "kwargs":{},
     "abandon": false,
-    "timeout": 7.0,
+    "timeout": 100.0,
     "restart_max": 5,
     "group":"POSTPROCESSING",
-    "description":"Normal Process 1"
+    "description":"read data from static collection"
 },
 {
     "host": "laptop",
@@ -16,10 +16,10 @@
     "args": [],
     "kwargs":{},
     "abandon": false,
-    "timeout": 7.0,
+    "timeout": 100.0,
     "restart_max": 5,
     "group":"POSTPROCESSING",
-    "description":"Normal Process 1"
+    "description":"stitcher for east bound"
 },
 {
     "host": "laptop",
@@ -27,21 +27,21 @@
     "args": [],
     "kwargs":{},
     "abandon": false,
-    "timeout": 7.0,
+    "timeout": 100.0,
     "restart_max": 5,
     "group":"POSTPROCESSING",
-    "description":"Normal Process 1"
+    "description":"stitcher for west bound"
 },
 {
     "host": "laptop",
     "command": "reconciliation",
     "args": [],
     "kwargs":{},
-    "abandon": false,
-    "timeout": 7.0,
+    "abandon": true,
+    "timeout": 100.0,
     "restart_max": 5,
     "group":"POSTPROCESSING",
-    "description":"Normal Process 1"
+    "description":"reconiliation ppol"
 },
 {
     "host": "laptop",
@@ -49,9 +49,9 @@
     "args": [],
     "kwargs":{},
     "abandon": false,
-    "timeout": 7.0,
+    "timeout": 100.0,
     "restart_max": 5,
     "group":"POSTPROCESSING",
-    "description":"Normal Process 1"
+    "description":"write reconciled results to database"
 }
 ]

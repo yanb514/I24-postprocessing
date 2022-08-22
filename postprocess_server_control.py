@@ -22,7 +22,7 @@ import reconciliation as rec
 
 class ManagedProcess(ServerControl):
     
-    def __init__(self):
+    def __init__(self, filename, num_to_processes):
         # GET PARAMAETERS
         with open("config/parameters.json") as f:
             parameters = json.load(f)
@@ -59,13 +59,13 @@ class ManagedProcess(ServerControl):
         self.stitched_trajectory_queue = mp_manager.Queue(maxsize=parameters["stitched_trajectory_queue_size"]) 
         self.reconciled_queue = mp_manager.Queue(maxsize=parameters["reconciled_trajectory_queue_size"])
         
+        
+        super().__init__(filename, name_to_process)
     
     def get_additional_args(self):
         # CODEWRITER TODO - Implement any shared variables (queues etc. here)
         # each entry is a tuple (args,kwargs) (list,dict)
         # to be added to process args/kwargs and key is process_name
-        
-
         
         
         # key: process_name, val: [args],{kwargs}
@@ -111,7 +111,7 @@ if __name__ == "__main__":
     # CODEWRITER TODO - add your process targets to register_functions
     config_path = os.path.join(os.getcwd(),"config")
     os.environ["USER_CONFIG_DIRECTORY"] = config_path 
-    
+    srv_file_name = "laptop"
     # jobs.jpl
     
     # register_functions = [df.static_data_reader, mcf.min_cost_flow_online_alt_path, rec.reconciliation_pool, rec.write_reconciled_to_db]
@@ -125,7 +125,7 @@ if __name__ == "__main__":
         "reconciliation_writer": rec.write_reconciled_to_db
         }
     
-    s = ManagedProcess(name_to_process) # name to process?
+    s = ManagedProcess(srv_file_name, name_to_process) # name to process?
     
     # start server / process manager
     s.main()
