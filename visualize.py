@@ -344,7 +344,7 @@ class OverheadCompare():
             self.anim.save(file_name, writer='ffmpeg', fps=self.framerate)
             # self.anim.save('{}.gif'.format(file_name), writer='imagemagick', fps=self.framerate)
             print("saved.")
-            url = 'http://10.2.219.208:5991/upload?type=video'
+            url = 'http://viz-dev.isis.vanderbilt.edu:5991/upload?type=video'
             files = {'upload_file': open(file_name,'rb')}
             ret = requests.post(url, files=files)
             if ret.status_code == 200:
@@ -403,14 +403,14 @@ def main(rec, gt = "groundtruth_scene_2_57", framerate = 25, x_min=-100, x_max=2
     
 if __name__=="__main__":
 
-    # main(rec = "delicious_cheetah--RAW_GT2__mumbles", save=True)
+    # main(rec = "feeble_pufferfish--RAW_GT2__capitalizes", save=True)
     
     
     with open("config/parameters.json") as f:
         config = json.load(f)
         parameters = config["db_param"]
     # rec = "sanctimonious_beluga--RAW_GT1__administers"
-    rec = "delicious_cheetah--RAW_GT2__giggles"
+    rec = "feeble_pufferfish--RAW_GT2__capitalizes"
     raw = rec.split("__")[0]
     print("Generating a video for {}...".format(rec))
     
