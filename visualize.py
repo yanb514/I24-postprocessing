@@ -99,11 +99,11 @@ class OverheadCompare():
         
         # get plotting ranges
         t_min = max([dbr.get_min("timestamp") for dbr in list_dbr])
-       
+        t_max = min([dbr.get_max("timestamp") for dbr in list_dbr])
         if offset:
-            t_min += offset
-        if duration: t_max = t_min+duration 
-        else: t_max = min([dbr.get_max("timestamp") for dbr in list_dbr])
+            t_min += offset  
+        if duration: 
+            t_max = min(t_max, t_min + duration)
         
         self.x_start = x_min
         self.x_end = x_max
@@ -171,8 +171,10 @@ class OverheadCompare():
                 val = {"dim": [doc["length"], doc["width"]],
                        "kwargs": {
                            "color": [0.8]*3, # light grey
-                           "fill": True,
-                           "label": "GT"}}
+                           "fill": True
+                           # "label": "GT"}
+                           }
+                       }
 
                 self.veh_cache[0].put(doc["_id"], val, update=False)
                 
@@ -207,17 +209,21 @@ class OverheadCompare():
                 for d in query:
                     if "feasibility" in d and (d["feasibility"]["distance"] < 0.8 or d["feasibility"]["conflict"]<1): # bad flag 
                         kwargs = {
-                            "color": [1,0,0], # red
+                            "color": np.random.rand(3,)*0.5, # red
                             "fill": False,
-                            "linewidth": 2,
-                            "label": "short traj or conflicts"
+                            "linewidth": 1,
+                            # "label": "infeasible (short traj or conflicts)"
+                            "label": d["_id"]
                             }
                     else:
                         kwargs = {
-                            "color": np.random.rand(3,)*0.8,
+                            "color": np.random.rand(3,)*0.5,
                             "fill": True,
                             "linewidth": 0,
-                            "alpha": 0.7}
+                            "alpha": 0.7,
+                            # "label": "feasible",
+                            "label": d["_id"]
+                            }
                     if i == 1:
                         val = {"dim": [d["length"], d["width"]],
                                "kwargs": kwargs,
@@ -280,6 +286,8 @@ class OverheadCompare():
             # plot vehicles
             for i, dbr in enumerate(self.list_dbr[1:]):
                 doc = dbr.find_one("timestamp", curr_time)
+                if doc is None:
+                    continue
                 for index in range(len(doc["position"])):
                     car_x_pos = doc["position"][index][0]
                     car_y_pos = doc["position"][index][1]
@@ -298,19 +306,20 @@ class OverheadCompare():
                 
                     axs[i].add_patch(box)   
                     # add annotation
-                    annot = axs[i].annotate(doc["id"][index], xy=(car_x_pos,car_y_pos))
-                    annot.set_visible(False)
-                    self.annot_queue.put(annot)
+                    # if i == 1:
+                    #     annot = axs[i].annotate(doc["id"][index], xy=(car_x_pos,car_y_pos))
+                    #     annot.set_visible(False)
+                    #     self.annot_queue.put(annot)
                     
             # do not update legend
-            try:
-                handles, labels = plt.gca().get_legend_handles_labels()
-                for i,label in enumerate(labels):
-                    self.by_label.put(label, handles[i], update=True)
-                for i in range(num):
-                    axs[i].legend(self.by_label.cache.values(), self.by_label.cache.keys(), loc='lower right', bbox_to_anchor=(1, 1))
-            except:
-                pass
+            # try:
+            #     handles, labels = plt.gca().get_legend_handles_labels()
+            #     for i,label in enumerate(labels):
+            #         self.by_label.put(label, handles[i], update=True)
+            #     for i in range(num):
+            #         axs[i].legend(self.by_label.cache.values(), self.by_label.cache.keys(), loc='lower right', bbox_to_anchor=(1, 1))
+            # except:
+            #     pass
             
             return axs
         
@@ -379,7 +388,7 @@ class OverheadCompare():
 
     
 
-def main(rec, gt = "groundtruth_scene_1_130", framerate = 25, x_min=0, x_max=2000, offset=0, duration=90, save=False, extra=""):
+def main(rec, gt = "groundtruth_scene_2_57", framerate = 25, x_min=-100, x_max=2200, offset=0, duration=90, save=False, extra=""):
     with open("config/parameters.json") as f:
         config = json.load(f)
         parameters = config["db_param"]
@@ -394,30 +403,30 @@ def main(rec, gt = "groundtruth_scene_1_130", framerate = 25, x_min=0, x_max=200
     
 if __name__=="__main__":
 
-    main(rec = "sanctimonious_beluga--RAW_GT1__administers", save=True)
+    # main(rec = "delicious_cheetah--RAW_GT2__mumbles", save=True)
     
     
-    # with open("config/parameters.json") as f:
-    #     config = json.load(f)
-    #     parameters = config["db_param"]
+    with open("config/parameters.json") as f:
+        config = json.load(f)
+        parameters = config["db_param"]
     # rec = "sanctimonious_beluga--RAW_GT1__administers"
-    # # rec = "admissible_heron--RAW_GT1__sweettalks"
-    # raw = rec.split("__")[0]
-    # print("Generating a video for {}...".format(rec))
+    rec = "delicious_cheetah--RAW_GT2__giggles"
+    raw = rec.split("__")[0]
+    print("Generating a video for {}...".format(rec))
     
-    # framerate = 25
-    # x_min=0
-    # x_max=2000
-    # offset=0
-    # duration=90
-    # save=False
-    # extra=""
-    # gt = "groundtruth_scene_1_130"
+    framerate = 25
+    x_min=-100
+    x_max=2200
+    offset=0
+    duration=60
+    save=False
+    extra=""
+    gt = "groundtruth_scene_2_57"
     
-    # p = OverheadCompare(parameters, 
-    #             collections = [gt, raw, rec],
-    #             framerate = framerate, x_min = x_min, x_max=x_max, offset = offset, duration=duration)
-    # p.animate(save=save, extra=extra)
+    p = OverheadCompare(parameters, 
+                collections = [gt, raw, rec],
+                framerate = framerate, x_min = x_min, x_max=x_max, offset = offset, duration=duration)
+    p.animate(save=save, extra=extra)
 
 
     

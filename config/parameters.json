@@ -1,14 +1,15 @@
 {
     "mode": "soft_stop",
-    "description": "bhattar dist add y variance, conf filter only (no ransac filter), add opt2_l1 adjusting lam2",
+    "description": "tuned down lam3",
     
-    "raw_collection": "morose_caribou--RAW_GT1",
+    "raw_collection": "delicious_cheetah--RAW_GT2",
     "db_param": {
-        "host": "10.2.218.56",
+        	"host": "127.0.0.1",
         	"port": 27017,
-        	"username": "i24-data",
-        	"password": "mongodb@i24"
+        	"username": "mongo-admin",
+        	"password": "i24-data-access"
     },
+
     
 	"raw_database": "trajectories",
 	"stitched_database": "stitched",
@@ -48,10 +49,10 @@
     "reconciliation_args":{
         "lam2_x": 0,
         "lam2_y": 0,
-        "lam3_x": 1.67e-2,
-        "lam3_y": 1.67e-2,
-        "lam1_x": 0.0012,
-        "lam1_y": 0.0012
+        "lam3_x": 1.67e-4,
+        "lam3_y": 1.67e-4,
+        "lam1_x": 0.01,
+        "lam1_y": 0.01
     },
     "ph": 100,
     "ih": 20

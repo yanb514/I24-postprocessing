@@ -213,9 +213,9 @@ if __name__ == '__main__':
     reconciled_queue = multiprocessing.Manager().Queue()
     counter = 0 
     
-    test_dbr = DBClient(**parameters["db_param"], database_name = "trajectories", collection_name = "sympathetic_cnidarian--RAW_GT1")
+    test_dbr = DBClient(**parameters["db_param"], database_name = "trajectories", collection_name = "delicious_cheetah--RAW_GT2")
     
-    for doc in test_dbr.collection.find({"_id": ObjectId("62fd0958a90e69199f2c0c67")}):
+    for doc in test_dbr.collection.find({"_id": ObjectId("6303ea4e7b362bdc0c8b3983")}):
         doc = add_filter(doc, test_dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
                        CONF_THRESH, REMAIN_THRESH)
         stitched_q.put(([doc["_id"]], [doc["filter"]]))

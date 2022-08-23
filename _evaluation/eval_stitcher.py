@@ -210,8 +210,8 @@ if __name__ == '__main__':
     with open("config.json") as f:
         config = json.load(f)
 
-    raw_collection = "morose_caribou--RAW_GT1" # collection name is the same in both databases
-    rec_collection = "morose_caribou--RAW_GT1__escalates"
+    raw_collection = "delicious_cheetah--RAW_GT2" # collection name is the same in both databases
+    rec_collection = "delicious_cheetah--RAW_GT2__mumbles"
     
     dbc = DBClient(**config)
     raw = dbc.client["trajectories"][raw_collection]
@@ -227,7 +227,7 @@ if __name__ == '__main__':
 
     #%% 
     # rec_ids = [ObjectId('62fd9e4b95f077c66b4d946e'), ObjectId('62fd9e4c95f077c66b4d9471')] # 
-    # rec_ids = [ObjectId('62fd9e4c95f077c66b4d947c')]
-    rec_ids = [ObjectId('62fd9e4b95f077c66b4d9460'), ObjectId('62fd9e4a95f077c66b4d945b')]
+    rec_ids = [ObjectId('6303ea629af79e736a8b39f0')]
+    # rec_ids = [ObjectId('62fd9e4b95f077c66b4d9460'), ObjectId('62fd9e4a95f077c66b4d945b')]
     plot_stitched(rec_ids, rec, raw)
     
