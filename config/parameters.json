@@ -6,8 +6,8 @@
     "db_param": {
         	"host": "10.2.218.56",
         	"port": 27017,
-        	"username": "i24-data",
-        	"password": "mongodb@i24"
+        	"username":"i24-data",
+      		"password":"mongodb@i24"
     },
 
     
