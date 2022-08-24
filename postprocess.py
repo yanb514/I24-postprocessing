@@ -15,8 +15,8 @@ import json
 
 # Custom APIs
 # from i24_configparse import parse_cfg
-config_path = os.path.join(os.getcwd(),"config")
-os.environ["USER_CONFIG_DIRECTORY"] = config_path 
+# config_path = os.path.join(os.getcwd(),"config")
+# os.environ["USER_CONFIG_DIRECTORY"] = config_path 
 from i24_logger.log_writer import logger
 
 # Custom modules
@@ -29,13 +29,15 @@ import reconciliation as rec
 
 def main(collection_name = None):
     # GET PARAMAETERS
-    with open("config/parameters.json") as f:
+    with open("parameters.json") as f:
         parameters = json.load(f)
     
     if collection_name is not None:
         parameters["raw_collection"] = collection_name
     
-    
+    with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:
+        db_param = json.load(f)
+        
     # CHANGE NAME OF THE LOGGER
     manager_logger = logger
     manager_logger.set_name("postproc_manager")
@@ -52,7 +54,7 @@ def main(collection_name = None):
     mp_param.update(parameters)
     
     # initialize some db collections
-    df.initialize_db(mp_param)
+    df.initialize_db(mp_param, db_param)
     manager_logger.info("Post-processing manager initialized db collections. Creating shared data structures")
     
     # Raw trajectory fragment queue
@@ -91,7 +93,7 @@ def main(collection_name = None):
                             #                 raw_fragment_queue_e, raw_fragment_queue_w,
                             #                 parameters.buffer_time, True, )), # True if read from a simulated collection
                             "static_data_reader": (df.static_data_reader,
-                                            (mp_param, raw_fragment_queue_e, raw_fragment_queue_w, 1000,)),
+                                            (mp_param, db_param, raw_fragment_queue_e, raw_fragment_queue_w, 1000,)),
                             "stitcher_e": (mcf.min_cost_flow_online_alt_path,
                                             ("east", raw_fragment_queue_e, stitched_trajectory_queue,
                                             mp_param, )),
@@ -99,9 +101,9 @@ def main(collection_name = None):
                                             ("west", raw_fragment_queue_w, stitched_trajectory_queue,
                                             mp_param, )),
                             "reconciliation": (rec.reconciliation_pool,
-                                        (mp_param, stitched_trajectory_queue, reconciled_queue,)),
+                                        (mp_param, db_param, stitched_trajectory_queue, reconciled_queue,)),
                             "reconciliation_writer": (rec.write_reconciled_to_db,
-                                        (mp_param, reconciled_queue,)),
+                                        (mp_param, db_param, reconciled_queue,)),
                           }
 
     # Stores the actual mp.Process objects so they can be controlled directly.

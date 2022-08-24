@@ -1,0 +1,6 @@
+{
+	"host": "10.80.4.91",
+	"port": 27017,
+	"username": "mongo-admin",
+	"password": "i24-data-access"
+}

@@ -2,14 +2,7 @@
     "mode": "soft_stop",
     "description": "tuned down lam3",
     
-    "raw_collection": "feeble_pufferfish--RAW_GT2",
-    "db_param": {
-        	"host": "10.2.218.56",
-        	"port": 27017,
-        	"username": "i24-data",
-        	"password": "mongodb@i24"
-    },
-
+    "raw_collection": "cultured_antelope--RAW_GT2",
     
 	"raw_database": "trajectories",
 	"stitched_database": "stitched",

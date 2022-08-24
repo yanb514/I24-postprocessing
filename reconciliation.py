@@ -60,7 +60,7 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
             # reconciled_queue.put(resampled_trajectory)
 
 
-def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Queue, 
+def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multiprocessing.Queue, 
                         reconciled_queue: multiprocessing.Queue, ) -> None:
     """
     Start a multiprocessing pool, each worker 
@@ -80,7 +80,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
     # wait to get raw collection name
     while parameters["raw_collection"]=="":
         time.sleep(1)
-    raw = DBClient(**parameters["db_param"], database_name = parameters["raw_database"], collection_name = parameters["raw_collection"])
+    raw = DBClient(**db_param, database_name = parameters["raw_database"], collection_name = parameters["raw_collection"])
    
     # Signal handling: 
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -131,7 +131,7 @@ def reconciliation_pool(parameters, stitched_trajectory_queue: multiprocessing.Q
 
 
 
-def write_reconciled_to_db(parameters, reconciled_queue):
+def write_reconciled_to_db(parameters, db_param, reconciled_queue):
     
     
     reconciled_writer = log_writer.logger
@@ -146,13 +146,13 @@ def write_reconciled_to_db(parameters, reconciled_queue):
         signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
         
     signal.signal(signal.SIGUSR1, handler) # ignore SIGUSR1
-    reconciled_schema_path = os.getcwd() + "/config/" + parameters["reconciled_schema_path"]
+    reconciled_schema_path = os.environ["USER_CONFIG_DIRECTORY"] + parameters["reconciled_schema_path"]
 
     # wait to get raw collection name
     while parameters["reconciled_collection"]=="":
         time.sleep(1)
         
-    dbw = DBClient(**parameters["db_param"], database_name = parameters["reconciled_database"], 
+    dbw = DBClient(**db_param, database_name = parameters["reconciled_database"], 
                    collection_name = parameters["reconciled_collection"], schema_file=reconciled_schema_path)
     REC_TIMEOUT = parameters["reconciliation_timeout"]
     # Write to db
@@ -194,8 +194,9 @@ if __name__ == '__main__':
     from bson.objectid import ObjectId
     import data_feed as df
     # initialize parameters
-    with open('config/parameters.json') as f:
+    with open('parameters.json') as f:
         parameters = json.load(f)
+        
 
     RES_THRESH_X = parameters["residual_threshold_x"]
     RES_THRESH_Y = parameters["residual_threshold_y"]

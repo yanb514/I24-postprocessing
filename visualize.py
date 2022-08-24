@@ -22,6 +22,7 @@ import json
 from copy import copy
 import time
 import requests
+import os
 
  
 class LRUCache:
@@ -389,13 +390,12 @@ class OverheadCompare():
     
 
 def main(rec, gt = "groundtruth_scene_2_57", framerate = 25, x_min=-100, x_max=2200, offset=0, duration=90, save=False, extra=""):
-    with open("config/parameters.json") as f:
-        config = json.load(f)
-        parameters = config["db_param"]
+    with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:
+        db_param = json.load(f)
     
     raw = rec.split("__")[0]
     print("Generating a video for {}...".format(rec))
-    p = OverheadCompare(parameters, 
+    p = OverheadCompare(db_param, 
                 collections = [gt, raw, rec],
                 framerate = framerate, x_min = x_min, x_max=x_max, offset = offset, duration=duration)
     p.animate(save=save, extra=extra)
@@ -403,30 +403,30 @@ def main(rec, gt = "groundtruth_scene_2_57", framerate = 25, x_min=-100, x_max=2
     
 if __name__=="__main__":
 
-    # main(rec = "feeble_pufferfish--RAW_GT2__capitalizes", save=True)
+    main(rec = "cultured_antelope--RAW_GT2__disputes", save=True)
     
+        
+    # with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:
+    #     db_param = json.load(f)
+        
+    # # rec = "sanctimonious_beluga--RAW_GT1__administers"
+    # rec = "cultured_antelope--RAW_GT2__disputes"
+    # raw = rec.split("__")[0]
+    # print("Generating a video for {}...".format(rec))
     
-    with open("config/parameters.json") as f:
-        config = json.load(f)
-        parameters = config["db_param"]
-    # rec = "sanctimonious_beluga--RAW_GT1__administers"
-    rec = "feeble_pufferfish--RAW_GT2__capitalizes"
-    raw = rec.split("__")[0]
-    print("Generating a video for {}...".format(rec))
+    # framerate = 25
+    # x_min=-100
+    # x_max=2200
+    # offset=0
+    # duration=60
+    # save=False
+    # extra=""
+    # gt = "groundtruth_scene_2_57"
     
-    framerate = 25
-    x_min=-100
-    x_max=2200
-    offset=0
-    duration=60
-    save=False
-    extra=""
-    gt = "groundtruth_scene_2_57"
-    
-    p = OverheadCompare(parameters, 
-                collections = [gt, raw, rec],
-                framerate = framerate, x_min = x_min, x_max=x_max, offset = offset, duration=duration)
-    p.animate(save=save, extra=extra)
+    # p = OverheadCompare(db_param, 
+    #             collections = [gt, raw, rec],
+    #             framerate = framerate, x_min = x_min, x_max=x_max, offset = offset, duration=duration)
+    # p.animate(save=save, extra=extra)
 
 
     

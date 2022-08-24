@@ -51,7 +51,7 @@ class SignalHandler():
         # logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
         
  
-def initialize_db(parameters):
+def initialize_db(parameters, db_param):
     '''
     initialize the postprocessing pipeline (called by manager)
     1. get the latest raw collection if parameters["raw_collection"] == ""
@@ -60,7 +60,7 @@ def initialize_db(parameters):
     '''
     
     # get the latest collection if raw_collection is empty
-    dbc = DBClient(**parameters["db_param"], database_name = parameters["raw_database"], 
+    dbc = DBClient(**db_param, database_name = parameters["raw_database"], 
                           collection_name = parameters["raw_collection"], latest_collection=True)
     parameters["raw_collection"] = dbc.collection_name # raw_collection should NOT be empty
       
@@ -360,7 +360,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, read_f
     
     
     
-def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1000):
+def static_data_reader(default_param, db_param, east_queue, west_queue, min_queue_size = 1000):
     """
     Read data from a static collection, sort by last_timestamp and write to queues
     :param host: Database connection host name.
@@ -387,7 +387,7 @@ def static_data_reader(default_param, east_queue, west_queue, min_queue_size = 1
     CONF_THRESH = default_param["conf_threshold"],
     REMAIN_THRESH = default_param["remain_threshold"]
     
-    dbr = DBClient(**default_param["db_param"], database_name = default_param["raw_database"], collection_name=default_param["raw_collection"])  
+    dbr = DBClient(**db_param, database_name = default_param["raw_database"], collection_name=default_param["raw_collection"])  
     # default_param["raw_collection"] = dbr.collection_name
     # print("default param raw ", default_param["raw_collection"])
     
