@@ -1,7 +1,7 @@
 {
     "mode": "soft_stop",
     "description": "while loop tuning for lam1,2,3",
-    "raw_collection": "righteous_housecat--RAW_GT2",
+    "raw_collection": "",
     
 	"raw_database": "trajectories",
 	"stitched_database": "stitched",
@@ -49,8 +49,6 @@
     "jx_lim": 3,
     "jy_lim": 1,
     "ph": 100,
-    "ih": 20
-
-    
+    "ih": 20 
 }
 

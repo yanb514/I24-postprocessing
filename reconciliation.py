@@ -139,7 +139,7 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
         signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
         
     signal.signal(signal.SIGUSR1, handler) # ignore SIGUSR1
-    reconciled_schema_path = os.environ["USER_CONFIG_DIRECTORY"] + parameters["reconciled_schema_path"]
+    reconciled_schema_path = os.path.join(os.environ["USER_CONFIG_DIRECTORY"], parameters["reconciled_schema_path"])
 
     # wait to get raw collection name
     while parameters["reconciled_collection"]=="":
@@ -148,6 +148,7 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
     dbw = DBClient(**db_param, database_name = parameters["reconciled_database"], 
                    collection_name = parameters["reconciled_collection"], schema_file=reconciled_schema_path)
     REC_TIMEOUT = parameters["reconciliation_timeout"]
+    cntr = 0
     # Write to db
     while True:
         try:
@@ -158,7 +159,10 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
                 break
         
             dbw.write_one_trajectory(thread = True, **reconciled_traj)
-            
+            cntr += 1
+            if cntr % 100 == 0:
+                reconciled_writer.info("Writing {} trajectories to database".format(cntr))
+                
         except (KeyboardInterrupt, BrokenPipeError): # handle SIGINT here 
             reconciled_writer.warning("SIGINT detected. Exit reconciled writer")
             break
@@ -190,7 +194,7 @@ if __name__ == '__main__':
     with open("config/parameters.json") as f:
         parameters = json.load(f)
         
-    with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:
+    with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)
         
     RES_THRESH_X = parameters["residual_threshold_x"]

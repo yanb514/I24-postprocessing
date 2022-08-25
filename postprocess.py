@@ -35,7 +35,7 @@ def main(collection_name = None):
     if collection_name is not None:
         parameters["raw_collection"] = collection_name
     
-    with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:
+    with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)
         
     # CHANGE NAME OF THE LOGGER
