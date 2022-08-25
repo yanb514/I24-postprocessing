@@ -38,26 +38,19 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     resampled_trajectory = resample(combined_trajectory)
     if "post_flag" in resampled_trajectory:
         # skip reconciliation
-        # resampled_trajectory['x_position'] = list(resampled_trajectory['x_position'])
-        # resampled_trajectory['y_position'] = list(resampled_trajectory['y_position'])
-        # resampled_trajectory['timestamp'] = list(resampled_trajectory['timestamp'])
-        # reconciled_queue.put(resampled_trajectory)
         rec_worker_logger.info("+++ Flag as low conf, skip reconciliation", extra = None)
 
     else:
         try:
             # finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)  
             finished_trajectory = opt2_l1(resampled_trajectory, **reconciliation_args)  
+            # finished_trajectory = opt2(resampled_trajectory, **reconciliation_args)  
             reconciled_queue.put(finished_trajectory)
             rec_worker_logger.debug("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
     
         except Exception as e:
             rec_worker_logger.info("+++ Flag as {}, skip reconciliation".format(str(e)), extra = None)
-            # resampled_trajectory['x_position'] = list(resampled_trajectory['x_position'])
-            # resampled_trajectory['y_position'] = list(resampled_trajectory['y_position'])
-            # resampled_trajectory['timestamp'] = list(resampled_trajectory['timestamp'])
-            # resampled_trajectory["post_flag"] = str(e)
-            # reconciled_queue.put(resampled_trajectory)
+
 
 
 def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multiprocessing.Queue, 
@@ -194,10 +187,12 @@ if __name__ == '__main__':
     from bson.objectid import ObjectId
     import data_feed as df
     # initialize parameters
-    with open('parameters.json') as f:
+    with open("config/parameters.json") as f:
         parameters = json.load(f)
         
-
+    with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:
+        db_param = json.load(f)
+        
     RES_THRESH_X = parameters["residual_threshold_x"]
     RES_THRESH_Y = parameters["residual_threshold_y"]
     CONF_THRESH = parameters["conf_threshold"],
@@ -214,9 +209,9 @@ if __name__ == '__main__':
     reconciled_queue = multiprocessing.Manager().Queue()
     counter = 0 
     
-    test_dbr = DBClient(**parameters["db_param"], database_name = "trajectories", collection_name = "delicious_cheetah--RAW_GT2")
+    test_dbr = DBClient(**db_param, database_name = "trajectories", collection_name = "delicious_cheetah--RAW_GT2")
     
-    for doc in test_dbr.collection.find({"_id": ObjectId("6303ea4e7b362bdc0c8b3983")}):
+    for doc in test_dbr.collection.find({"_id": ObjectId("6303ea4e7b362bdc0c8b3981")}):
         doc = add_filter(doc, test_dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
                        CONF_THRESH, REMAIN_THRESH)
         stitched_q.put(([doc["_id"]], [doc["filter"]]))
@@ -244,7 +239,8 @@ if __name__ == '__main__':
      
     r = reconciled_queue.get()
     print("final queue size: ",reconciled_queue.qsize())
-        
+    print(reconciliation_args)
+    print(r["x_score"], r["y_score"])
     
     #%% plot
     import matplotlib.pyplot as plt
@@ -252,7 +248,7 @@ if __name__ == '__main__':
     filter = np.array(doc["filter"], dtype=bool)
     plt.scatter(np.array(doc["timestamp"])[~filter],np.array(doc["x_position"])[~filter], c="lightgrey")
     plt.scatter(r["timestamp"], r["x_position"], s=1)
-    print(r["x_score"], r["y_score"])
+    
     
     
     

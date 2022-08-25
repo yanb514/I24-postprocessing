@@ -29,7 +29,7 @@ import reconciliation as rec
 
 def main(collection_name = None):
     # GET PARAMAETERS
-    with open("parameters.json") as f:
+    with open("config/parameters.json") as f:
         parameters = json.load(f)
     
     if collection_name is not None:

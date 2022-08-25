@@ -206,14 +206,15 @@ if __name__ == '__main__':
     
     import json
     from bson.objectid import ObjectId
+    import os
      
-    with open("config.json") as f:
-        config = json.load(f)
+    with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:
+        db_param = json.load(f)
 
-    raw_collection = "delicious_cheetah--RAW_GT2" # collection name is the same in both databases
-    rec_collection = "delicious_cheetah--RAW_GT2__mumbles"
+    raw_collection = "zonked_cnidarian--RAW_GT2" # collection name is the same in both databases
+    rec_collection = "zonked_cnidarian--RAW_GT2__articulates"
     
-    dbc = DBClient(**config)
+    dbc = DBClient(**db_param)
     raw = dbc.client["trajectories"][raw_collection]
     rec = dbc.client["reconciled"][rec_collection]
     eval = dbc.client["reconciled"]["evaluation"]
@@ -227,7 +228,7 @@ if __name__ == '__main__':
 
     #%% 
     # rec_ids = [ObjectId('62fd9e4b95f077c66b4d946e'), ObjectId('62fd9e4c95f077c66b4d9471')] # 
-    rec_ids = [ObjectId('6303ea629af79e736a8b39f0')]
+    rec_ids = [ObjectId('6306de96e0c5c896a2a2eec6')]
     # rec_ids = [ObjectId('62fd9e4b95f077c66b4d9460'), ObjectId('62fd9e4a95f077c66b4d945b')]
     plot_stitched(rec_ids, rec, raw)
     

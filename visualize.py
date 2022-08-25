@@ -129,7 +129,7 @@ class OverheadCompare():
 
         
     # @catch_critical(errors = (Exception))
-    def animate(self, save = False, extra=""):
+    def animate(self, save = False, upload = False, extra=""):
         """
         Advance time window by delta second, update left and right pointer, and cache
         """     
@@ -209,8 +209,9 @@ class OverheadCompare():
                                                {"feasibility": 1})
                 for d in query:
                     if "feasibility" in d and (d["feasibility"]["distance"] < 0.8 or d["feasibility"]["conflict"]<1): # bad flag 
+                    # if "x_score" in d and d["x_score"] > 3:
                         kwargs = {
-                            "color": np.random.rand(3,)*0.5, # red
+                            "color": np.random.rand(3,)*0.5, 
                             "fill": False,
                             "linewidth": 1,
                             # "label": "infeasible (short traj or conflicts)"
@@ -345,11 +346,13 @@ class OverheadCompare():
             self.anim.save(file_name, writer='ffmpeg', fps=self.framerate)
             # self.anim.save('{}.gif'.format(file_name), writer='imagemagick', fps=self.framerate)
             print("saved.")
-            url = 'http://viz-dev.isis.vanderbilt.edu:5991/upload?type=video'
-            files = {'upload_file': open(file_name,'rb')}
-            ret = requests.post(url, files=files)
-            if ret.status_code == 200:
-                print('Uploaded!')
+            
+            if upload:
+                url = 'http://viz-dev.isis.vanderbilt.edu:5991/upload?type=video'
+                files = {'upload_file': open(file_name,'rb')}
+                ret = requests.post(url, files=files)
+                if ret.status_code == 200:
+                    print('Uploaded!')
         
         
         else:
@@ -389,7 +392,9 @@ class OverheadCompare():
 
     
 
-def main(rec, gt = "groundtruth_scene_2_57", framerate = 25, x_min=-100, x_max=2200, offset=0, duration=90, save=False, extra=""):
+def main(rec, gt = "groundtruth_scene_2_57", framerate = 25, x_min=-100, x_max=2200, offset=0, duration=90, 
+         save=False, upload=False, extra=""):
+    
     with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:
         db_param = json.load(f)
     
@@ -398,19 +403,19 @@ def main(rec, gt = "groundtruth_scene_2_57", framerate = 25, x_min=-100, x_max=2
     p = OverheadCompare(db_param, 
                 collections = [gt, raw, rec],
                 framerate = framerate, x_min = x_min, x_max=x_max, offset = offset, duration=duration)
-    p.animate(save=save, extra=extra)
+    p.animate(save=save, upload=upload, extra=extra)
     
     
 if __name__=="__main__":
 
-    main(rec = "cultured_antelope--RAW_GT2__disputes", save=True)
+    main(rec = "young_ox--RAW_GT2__calibrates", save=True, upload = True)
     
         
     # with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:
     #     db_param = json.load(f)
         
-    # # rec = "sanctimonious_beluga--RAW_GT1__administers"
-    # rec = "cultured_antelope--RAW_GT2__disputes"
+    # rec = "young_ox--RAW_GT2__calibrates"
+    # # rec = "zonked_cnidarian--RAW_GT2__articulates"
     # raw = rec.split("__")[0]
     # print("Generating a video for {}...".format(rec))
     

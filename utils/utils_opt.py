@@ -246,31 +246,80 @@ def opt2_l1(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     
     # x
     maxax = 99
+    minvx = -1
+    iter = 0
+    max_iter = 10
+    dir = car["direction"]
     
-    while maxax > 10:
+    while minvx < 0 and iter <= max_iter:
+        Q, p, H, G, h, N, M, D2 = _get_qp_opt2_l1(x, lam2_x, lam3_x, lam1_x)
+        sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
+        xhat = sol["x"][:N]
+        D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
+        vx = D1*xhat*dir
+        minvx = min(vx)
+        # print("minvx ", minvx)
+        
+        # ax = D2*xhat
+        # maxax = max(abs(ax))
+        # print("ax: {:.2f}, {:.2f}".format(min(ax), max(ax)))
+        lam3_x += 1e-6
+        iter += 1
+        
+    iter = 0   
+    while maxax > 6 and iter <= max_iter:
         Q, p, H, G, h, N, M, D2 = _get_qp_opt2_l1(x, lam2_x, lam3_x, lam1_x)
         sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
         xhat = sol["x"][:N]
         ax = D2*xhat
         maxax = max(abs(ax))
         # print("ax: {:.2f}, {:.2f}".format(min(ax), max(ax)))
-        lam2_x += 0.001
-    
+        lam2_x += 1e-6
+        iter += 1
+        
+    cx_pre = np.nansum(np.abs(H*matrix(x)-H*xhat))/M + 1
+    cx = cx_pre-1
+    iter = 0
+    while cx - cx_pre < 0 and iter <= max_iter:
+        # print("iter, ", cx)
+        lam1_x += 1e-6
+        Q, p, H, G, h, N, M, D2 = _get_qp_opt2_l1(x, lam2_x, lam3_x, lam1_x)
+        sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
+        xhat = sol["x"][:N]
+        cx_pre = cx
+        cx = np.nansum(np.abs(H*matrix(x)-H*xhat))/M
+        iter += 1
+    if sol["status"]!= "optimal":
+        raise Exception("solver status is not optimal")
+        
+    # print("final")
+    # print(f"lam2_x {lam2_x}, lam2_y {lam2_y}, lam3_x {lam3_x}, lam3_y {lam3_y},lam1_x {lam1_x}, lam1_y {lam1_y}")
+    # print(sol["status"])
     # y
     Q, p, H, G, h, N, M, D2 = _get_qp_opt2_l1(y, lam2_y, lam3_y, lam1_y)
     sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
     yhat = sol["x"][:N]
+    if sol["status"]!= "optimal":
+        raise Exception("solver status is not optimal")
+    # ax = D2*xhat
+    # print("ax: {:.2f}, {:.2f}".format(min(ax), max(ax)))
+    # print("ay: {:.2f}, {:.2f}".format(min(D2*yhat), max(D2*yhat)))
+    # print(sol["status"])
     
     car["timestamp"] = list(car["timestamp"])
     car["x_position"] = list(xhat)
     car["y_position"] = list(yhat)
     
     # calculate residual
-    xhat_re = np.reshape(xhat, -1) # (N,)
-    yhat_re = np.reshape(yhat, -1) # (N,)
+    # xhat_re = np.reshape(xhat, -1) # (N,)
+    # yhat_re = np.reshape(yhat, -1) # (N,)
     # c1 = np.sqrt(np.nansum((x-xhat_re)**2)/M) # RMSE
-    cx = np.nansum(np.abs(x-xhat_re))/M # MAE
-    cy = np.nansum(np.abs(y-yhat_re))/M # MAE
+    # cx = np.nansum(np.abs(x-xhat_re))/M # MAE
+    # cy = np.nansum(np.abs(y-yhat_re))/M # MAE
+    
+    cx = np.nansum(np.abs(H*matrix(x)-H*xhat))/M
+    cy = np.nansum(np.abs(H*matrix(y)-H*yhat))/M
+    
     car["x_score"] = cx
     car["y_score"] = cy
     
