@@ -407,8 +407,8 @@ def main(rec, gt = "groundtruth_scene_2_57", framerate = 25, x_min=-100, x_max=2
     
     
 if __name__=="__main__":
-
-    main(rec = "young_ox--RAW_GT2__calibrates", save=True, upload = True)
+# "young_ox--RAW_GT2__calibrates"
+    main(rec = "righteous_housecat--RAW_GT2__improvises", save=False, upload = True)
     
         
     # with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:

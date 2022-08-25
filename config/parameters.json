@@ -1,7 +1,7 @@
 {
     "mode": "soft_stop",
     "description": "while loop tuning for lam1,2,3",
-    "raw_collection": "zonked_cnidarian--RAW_GT2",
+    "raw_collection": "righteous_housecat--RAW_GT2",
     
 	"raw_database": "trajectories",
 	"stitched_database": "stitched",
@@ -17,15 +17,14 @@
 	"raw_trajectory_queue_size": 10000,
 	"stitched_trajectory_queue_size": 10000,
     "reconciled_trajectory_queue_size": 1000,
-    "raw_trajectory_queue_get_timeout": 2,
     "stitched_trajectory_queue_put_timeout": 10,
-    "stitched_trajectory_queue_get_timeout": 30,
+    "stitched_trajectory_queue_get_timeout": 100,
     
     "range_increment": 10,
     "buffer_time": 10,
     "min_queue_size": 10000,
     
-    "time_win": 20,
+    "time_win": 10,
     "varx": 2,
     "vary": 0.5,
     "inclusion": 0,
@@ -36,8 +35,7 @@
     "conf_threshold": 0.5,
     "remain_threshold": 5,
     
-    "reconciliation_timeout": 20,
-    "reconciliation_pool_size": 20,
+    "reconciliation_timeout": 120,
     "reconciliation_args":{
         "lam2_x": 0,
         "lam2_y": 0,

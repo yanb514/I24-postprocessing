@@ -77,10 +77,10 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
    
     # Signal handling: 
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    worker_pool = Pool(processes=parameters["reconciliation_pool_size"])
+    worker_pool = Pool(processes=multiprocessing.cpu_count())
     signal.signal(signal.SIGINT, original_sigint_handler)
     
-    rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(parameters["reconciliation_pool_size"]), extra = None)
+    rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(multiprocessing.cpu_count()), extra = None)
     TIMEOUT = parameters["stitched_trajectory_queue_get_timeout"]
     
     # Signal handling: 
