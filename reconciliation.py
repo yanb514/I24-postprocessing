@@ -67,7 +67,7 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
     #     reconciliation_args[key] = parameters[key]
     
     rec_parent_logger = log_writer.logger
-    rec_parent_logger.set_name("rec_parent")
+    rec_parent_logger.set_name("reconciliation")
     setattr(rec_parent_logger, "_default_logger_extra",  {})
 
     # wait to get raw collection name
@@ -115,7 +115,7 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
         
     # Finish up
     worker_pool.close()
-    rec_parent_logger.info("Closed the pool, waiting to join...")
+    # rec_parent_logger.info("Closed the pool, waiting to join...")
         
     worker_pool.join()
     rec_parent_logger.info("Joined the pool.")
@@ -128,7 +128,7 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
     
     
     reconciled_writer = log_writer.logger
-    reconciled_writer.set_name("reconciled_writer")
+    reconciled_writer.set_name("reconciliation_writer")
     
     # Signal handling: 
     # SIGINT raises KeyboardInterrupt,  close dbw, terminate pool and exit. # TODO: pool.terminate() or close()?
@@ -155,13 +155,13 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
             try:
                 reconciled_traj = reconciled_queue.get(timeout = REC_TIMEOUT)
             except queue.Empty:
-                reconciled_writer.warning("Getting from reconciled_queue reaches timeout.")
+                reconciled_writer.warning("Getting from reconciled_queue reaches timeout {} sec.".format(REC_TIMEOUT))
                 break
         
             dbw.write_one_trajectory(thread = True, **reconciled_traj)
             cntr += 1
             if cntr % 100 == 0:
-                reconciled_writer.info("Writing {} trajectories to database".format(cntr))
+                reconciled_writer.info("Current count in collection {}: {}".format(dbw.collection_name, dbw.count()))
                 
         except (KeyboardInterrupt, BrokenPipeError): # handle SIGINT here 
             reconciled_writer.warning("SIGINT detected. Exit reconciled writer")

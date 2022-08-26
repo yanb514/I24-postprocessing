@@ -12,6 +12,11 @@ import os
 import signal
 import time
 import json
+
+# Custom APIs
+# from i24_configparse import parse_cfg
+# config_path = os.path.join(os.getcwd(),"config")
+# os.environ["USER_CONFIG_DIRECTORY"] = config_path 
 from i24_logger.log_writer import logger
 
 # Custom modules
@@ -19,7 +24,6 @@ import data_feed as df
 import min_cost_flow as mcf
 import reconciliation as rec
 import merge
-from collections import deque
 
 
 
@@ -115,16 +119,16 @@ def main(collection_name = None):
     # Stores the actual mp.Process objects so they can be controlled directly.
     # PIDs are also tracked for now, but not used for management.
     live_process_objects = {}
-    if parameters["mode"] == "sequence":
-        sequence = deque(["static_data_reader", "stitcher", "stitch", "reconciliation", "writer"])
-        queues = deque([None, raw_fragment_queue_e, raw_fragment_queue_w, stitched_trajectory_queue, reconciled_queue]) # corresponding queue has to be empty for the process to safety die
-
 
     # Start all processes for the first time and put references to those processes in `live_process_objects`
     # manager_logger.info("Post-process manager beginning to spawn processes")
 
     for process_name, (process_function, process_args) in processes_to_spawn.items():
         manager_logger.info("Post-process manager spawning {}".format(process_name))
+        # print("Post-process manager spawning {}".format(process_name))
+        # Start up each process.
+        # Can't make these subsystems daemon processes because they will have their own children; we'll use a
+        # different method of cleaning up child processes on exit.
         subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
         subsys_process.start()
         # Put the process object in the dictionary, keyed by the process name.
@@ -196,8 +200,6 @@ def main(collection_name = None):
         manager_logger.warning("Currently do not support finish-processing. Manually kill live_data_read instead")
         # signal.signal(signal.SIGINT, finish_hdlr)
         
-    elif parameters["mode"] == "sequence":
-        manager_logger.info("In sequence mode")
     else:
         manager_logger.error("Unrecongnized signal")
 
@@ -216,9 +218,9 @@ def main(collection_name = None):
             try:
                 child_process = live_process_objects[pid_name]
             except:
-                continue
-
+                pass
             # print(child_process.name, child_process.is_alive())
+            
             if not child_process.is_alive():
                 # do not restart if in one of the stopping modes
                 if parameters["mode"] in ["hard_stop", "soft_stop", "finish"]:
@@ -228,34 +230,11 @@ def main(collection_name = None):
                     except:
                         pass
                     
-                elif parameters["mode"] == "sequence":
-                    # keep the rest of the sequence live - sequence[0] is the process that will die first
-                    
-                    process_name = child_process.name
-                    try:
-                        if sequence[0] in process_name and (queues[0] is None or queues[0].empty()): # if the death is natural, let it be
-                            sequence.popleft()
-                            queues.popleft()
-                            try:
-                                live_process_objects.pop(process_name)
-                                print("RIP: {} died of natural causes.".format(pid_name))
-                            except:
-                                pass
-                        else: # if unatural death, restart
-                            manager_logger.warning("{} is resurrected by the Lord of Light".format(process_name))
-                            process_function, process_args = processes_to_spawn[process_name]
-                            subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
-                            subsys_process.start()
-                            live_process_objects[pid_name] = subsys_process
-                            pid_tracker[process_name] = subsys_process.pid
-                    except IndexError: # sequence is empty
-                        pass
-                        
                     
                 else:
-                    # Restart the child process
-                    process_name = child_process.name
-
+                    # Process has died. Let's restart it.
+                    # Copy its name out of the existing process object for lookup and restart.
+                    process_name = child_process.name  
                     if process_name in live_process_objects.keys():
                         manager_logger.warning("Restarting process: {}".format(process_name))
                         
@@ -271,11 +250,11 @@ def main(collection_name = None):
             else:
                 # Process is running; do nothing.
                 # if pid_name in live_process_objects:
-                # print("Long live {}! {}".format(pid_name, child_process))
+                #     print("Long live {}! {}".format(pid_name, child_process))
                 pass
         
         
-    manager_logger.info("Postprocessing Mischief Managed.")
+    manager_logger.info("Exit manager")
     manager_logger.info("Final queue sizes, raw east: {}, raw west: {}, stitched: {}, reconciled: {}".format(raw_fragment_queue_e.qsize(), raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize(), reconciled_queue.qsize()))
     
 if __name__ == '__main__':

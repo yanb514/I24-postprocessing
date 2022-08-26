@@ -115,7 +115,7 @@ class MOTGraphSingle:
                     break
         
     @catch_critical(errors = (Exception))
-    def verify_path(self, path):
+    def verify_path(self, path, cost_thresh = 10):
         # double check if any pair in path have conflict (large cost)
         # path is ordered by last_timestamp
         
@@ -125,7 +125,7 @@ class MOTGraphSingle:
             f2 = self.cache[id2]
             cost = cost_3(f1, f2, self.TIME_WIN, self.VARX, self.VARY)
             # print(cost)
-            if cost > 10:
+            if cost > cost_thresh:
                 return False # detect high cost
         return True
     

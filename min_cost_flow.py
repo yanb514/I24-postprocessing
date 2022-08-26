@@ -179,8 +179,8 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             
             for path in all_paths:
                 filters = m.get_filters(path)
-                if not m.verify_path(path[::-1]):
-                    stitcher_logger.info("** stitched result not verified")
+                if not m.verify_path(path[::-1], cost_thresh = 15):
+                    stitcher_logger.info("** stitched result not verified. Proceed anyways.")
                     
                 stitched_trajectory_queue.put((path[::-1], filters[::-1]))
                 # dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])

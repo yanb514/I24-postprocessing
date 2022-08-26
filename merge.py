@@ -16,12 +16,21 @@ import networkx as nx
 import numpy as np
 from utils.utils_stitcher_cost import bhattacharyya_distance
 from collections import deque
+import queue
+
+# from i24_database_api import DBClient
+import i24_logger.log_writer as log_writer
 
 
 def cost_3(track1, track2):
     '''
+    TODO: modify so that it calculates only the time overlapped part
+    resample in here
     use bhattacharyya_distance
     '''
+    # no time overlap, return
+    if track1["last_timestamp"] < track2["first_timestamp"]:
+        return 1e6
     
     cost_offset = 0
 
@@ -40,8 +49,6 @@ def cost_3(track1, track2):
     
     # if time_gap > TIME_WIN, don't stitch
     gap = t2[0] - t1[-1] 
-    if gap > TIME_WIN:
-        return 1e6
             
        
     if len(t1) >= len(t2):
@@ -141,17 +148,34 @@ def cost_3(track1, track2):
 
 
 
-def merge_fragments(fragment_queue, parameters):
+def merge_fragments(direction, fragment_queue, merged_queue, parameters):
     '''
     '''
     THRESH = parameters["merge_thresh"] # bhattar distance distance threshold
     TIMEWIN = parameters["time_win"]
     
+    stitcher_logger = log_writer.logger
+    stitcher_logger.set_name("merger_"+direction)
+    
     G = nx.Graph() # merge graph, two nodes are connected if they can be merged
     deq = deque()
+    cntr = 0
+    
+    # while parameters["stitched_collection"]=="":
+    #     time.sleep(1)
     
     while True:
-        fragment = fragment_queue.get(block=True, timeout = 1) # fragments are ordered in last_timestamp
+        try:
+            fragment = fragment_queue.get(timeout = 1) # fragments are ordered in last_timestamp
+        except queue.Empty:
+            # TODO: final clean up
+            comps = nx.connected_components(G)
+            for comp in comps:
+                stitcher_logger.debug("Merged {} fragments".format(len(comp)))
+                merged_queue.put(list(comp))
+            break
+        
+        cntr += 1
         curr_time = fragment["last_timestamp"]
         deq.append((fragment["_id"], curr_time))
         
@@ -169,12 +193,23 @@ def merge_fragments(fragment_queue, parameters):
             
         # find connected components in G and check for timeout
         # TODO: use better data structure to make the following more efficient
-        while deq:
-            if deq[0][1] < curr_time - TIMEWIN: # 
-                comp = nx.node_connected_component(G, deq[0][0])  # nodes of component that contains node 0
-                # check if all nodes in comp are timeout
-                for v in comp:
-                    if G.nodes[v]["data"]["last_timestamp"]
+        if cntr % 100 == 0:
+            stitcher_logger.info("Graph nodes : {}, Graph edges: {}".format(G.number_of_nodes(), G.number_of_edges()),extra = None)
+            
+            to_remove = set()
+            comps = nx.connected_components(G)
+            for comp in comps:
+                latest_time = max([G.nodes[v]["data"]["last_timestamp"] for v in list(comp)])
+                if latest_time < curr_time - THRESH:
+                    stitcher_logger.debug("Merged {} fragments".format(len(comp)))
+                    merged_queue.put(list(comp))
+                    to_remove = to_remove.union(comp)
+                    
+
+            G.remove_nodes_from(to_remove)
+            
+            
+                    
         
                 
         

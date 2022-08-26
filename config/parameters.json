@@ -1,7 +1,7 @@
 {
-    "mode": "soft_stop",
+    "mode": "sequence",
     "description": "while loop tuning for lam1,2,3",
-    "raw_collection": "",
+    "raw_collection": "righteous_housecat--RAW_GT2",
     
 	"raw_database": "trajectories",
 	"stitched_database": "stitched",
@@ -18,7 +18,7 @@
 	"stitched_trajectory_queue_size": 10000,
     "reconciled_trajectory_queue_size": 1000,
     "stitched_trajectory_queue_put_timeout": 10,
-    "stitched_trajectory_queue_get_timeout": 100,
+    "stitched_trajectory_queue_get_timeout": 10,
     
     "range_increment": 10,
     "buffer_time": 10,
@@ -35,7 +35,7 @@
     "conf_threshold": 0.5,
     "remain_threshold": 5,
     
-    "reconciliation_timeout": 120,
+    "reconciliation_timeout": 10,
     "reconciliation_args":{
         "lam2_x": 0,
         "lam2_y": 0,
