@@ -85,7 +85,7 @@ class MOTGraphSingle:
         self.G.add_edge("t", new_id, weight=0, match=True)
         self.G.nodes[new_id]["subpath"] = [new_id] # list of ids
         self.G.nodes[new_id]["last_timestamp"] = fragment["last_timestamp"]
-        self.G.nodes[new_id]["filters"] = [fragment["filter"]] # list of lists
+        # self.G.nodes[new_id]["filters"] = [fragment["filter"]] # list of lists
         self.cache[new_id] = fragment
 
         for fgmt in reversed(self.in_graph_deque):
@@ -110,7 +110,7 @@ class MOTGraphSingle:
                     # compress fgmt and v -> roll up subpath 
                     # TODO: need to check the order
                     self.G.nodes[v]["subpath"].extend(self.G.nodes[fgmt_id]["subpath"])
-                    self.G.nodes[v]["filters"].extend(self.G.nodes[fgmt_id]["filters"])
+                    # self.G.nodes[v]["filters"].extend(self.G.nodes[fgmt_id]["filters"])
                     self.G.remove_node(fgmt_id)
                     break
         
@@ -294,6 +294,17 @@ class MOTGraphSingle:
             except KeyError:
                 pass
         return filters
+    
+    
+    @catch_critical(errors = (Exception))
+    def get_traj_dicts(self, path):
+        '''
+        get a list of corresponding traj dictionaries of path
+        '''
+        trajs = []
+        for _id in path:
+            trajs.append(self.cache[_id])
+        return trajs
             
        
         

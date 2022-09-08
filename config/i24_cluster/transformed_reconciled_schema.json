@@ -1,0 +1,34 @@
+
+{
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["timestamp, id, position"],
+        "properties": {
+            "timestamp": {
+                "bsonType": "float",
+                "description": "Timestamp that is resampled to 25 hz"
+                },
+            "configuration_id": {
+                "bsonType": "int",
+                "description": "A unique ID that identifies what configuration was run. It links to a metadata document that defines all the settings that were used system-wide to generate this transformed trajectory"
+                },
+            "id": {
+                "bsonType": "array",
+                "items": {
+                    "bsonType": "ObjectId"
+                    },
+                "description": "Array of vehicle _id fields from vehicle-based documents."
+                },
+            "position": {
+                "bsonType": "array",
+                "items": {
+                    "bsonType": "array",
+                    "items": {
+                        "bsonType": "float"
+                        }    
+                    },
+                "description": "Array of [x_position, y_position] coordinates in feet."
+                }
+            }
+        }
+    }

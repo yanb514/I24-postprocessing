@@ -3,27 +3,7 @@
 """
 Created on Mon Jun 20 21:45:29 2022
 @author: yanbing_wang
-Get the statistics of a collection
-- tmin/tmax/xymin/xymax/# trajectories
-Compare raw and reconciled (unsupervised)
-- what fragments are filtered out
-- unmatched fragments
-- (done)y deviation
-- (done)speed distribution
-- (done)starting / ending x distribution
-- (done)collision 
-- length, width, height distribution
-- density? flow?
-- (done)lane distribution
-Examine problematic stitching
-- plot a list of fragments
-- plot the reconciled trajectories
-Statics output write to
-- DB (?)
-- file
-- log.info(extra={})
-TODO
-1. make traj_eval faster using MongoDB projection instead of python
+
 """
 
 from i24_database_api import DBClient
@@ -35,7 +15,7 @@ import numpy as np
 from collections import defaultdict
 from multiprocessing.pool import ThreadPool
 import time
-import torch
+
 
 # =================== CALCULATE DYNAMICS ====================    
 def _get_duration(traj):
@@ -126,7 +106,7 @@ def _get_lane_changes(traj, lanes = [i*12 for i in range(-1,12)]):
 
 
 # =================== GET OTHER INFO ====================    
-def _calc_feasibility(traj, start_time, end_time, buffer=1, xmin=0, xmax=2000):
+def _calc_feasibility(traj, xmin=0, xmax=2000):
     '''
     for each of the following, assign traj a score between 0-1. 1 is good, 0 is bad
     distance: % x covered
@@ -137,15 +117,19 @@ def _calc_feasibility(traj, start_time, end_time, buffer=1, xmin=0, xmax=2000):
     acceleration: % of time where abs(accel) > 10ft/s2
     conflicts: % of time traj conflicts with others
     '''
-    # x distance traveled
-    end = end_time if traj["last_timestamp"] >= end_time-buffer else traj["last_timestamp"]  
-    if traj['direction'] == 1:
-        start = xmin if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
-        end = xmax if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
-    else:
-        # xmax, xmin = xmin, xmax
-        start = xmax if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
-        end = xmin if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
+    # x distance traveled (with forgiveness on boundaries)
+    # end = end_time if traj["last_timestamp"] >= end_time-buffer else traj["last_timestamp"]  
+    # if traj['direction'] == 1:
+    #     start = xmin if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
+    #     end = xmax if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
+    # else:
+    #     # xmax, xmin = xmin, xmax
+    #     start = xmax if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
+    #     end = xmin if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
+        
+    # x distance traveled (no forgiveness)
+    start = traj["starting_x"]
+    end = traj["ending_x"]
     dist = min(1, abs(end-start)/(xmax-xmin))
     
     # backward occurances
@@ -179,17 +163,6 @@ def _get_residual(traj):
     except: # field is not available
         return 0
 
-
-# def _get_post_flags(traj, flag_dict):
-#     '''
-#     flag_dict is a shared dictionary amongst threads
-#     key: "flag_name", val: num_of_occurances
-#     '''
-#     try:
-#         for flag in traj["post_flag"]:
-#             flag_dict[flag] += 1
-#     except KeyError: # no post_flag
-#         pass
     
 
     
@@ -215,47 +188,7 @@ def calc_space_gap(pts1, pts2):
         return max(pts2[0] - pts1[2], pts1[0] - pts2[2])
     else:
         return None
-  
-def _get_min_spacing(time_doc, lanes = [i*12 for i in range(-1,12)]):
-    '''
-    get the minimum x-difference at all lanes for a given timestamp
-    TODO: consider vehicle dimension for space gap
-    '''
-    # get the lane assignments
-    veh_ids = np.array(time_doc['id'])
-    x_pos = np.array([pos[0] for pos in time_doc["position"]])
-    y_pos = np.array([pos[1] for pos in time_doc["position"]])
-    lane_asg = np.digitize(y_pos, lanes) # lane_id < 6: east
-
-    # for each lane, sort by x - This is not the best way to calculate!
-    lane_dict = defaultdict(list) # key: lane_id, val: x_pos
-    for lane_id in np.unique(lane_asg):
-        in_lane_idx = np.where(lane_asg==lane_id)[0] # idx of vehs that are in lane_id
-        in_lane_ids = veh_ids[in_lane_idx]
-        in_lane_xs = x_pos[in_lane_idx]
-        sorted_idx = np.argsort(in_lane_xs)
-        sorted_xs = in_lane_xs[sorted_idx]
-        sorted_ids = in_lane_ids[sorted_idx] # apply the same sequence to ids
-        lane_dict[lane_id] = [sorted_xs, sorted_ids]
-    
-    # get x diff for each lane
-    # pprint.pprint(lane_dict)
-    min_spacing = 10e6
-    for lane_id, vals in lane_dict.items():
-        try:
-            sorted_xs, sorted_ids = vals
-            delta_x = np.diff(sorted_xs)
-            min_idx = np.argmin(delta_x)
-            min_spacing_temp = delta_x[min_idx]
-            if min_spacing_temp < min_spacing:
-                min_spacing = min_spacing_temp
-                min_pair = (sorted_ids[min_idx], sorted_ids[min_idx+1])
-                
-        except ValueError:
-            pass
-        
-    return min_spacing 
-
+ 
 def _get_distance_score(traj):
     return traj["feasibility"]["distance"]
 def _get_backward_score(traj):
@@ -511,7 +444,7 @@ class UnsupervisedEvaluator():
 
                     
         # start thread_pool for each timestamp
-        functions = [_get_min_spacing, _get_overlaps]
+        functions = [_get_overlaps]
         # functions = [_get_min_spacing]
         for fcn in functions:
             time_cursor = self.dbr_t.collection.find({})
@@ -557,7 +490,7 @@ class UnsupervisedEvaluator():
                 self.res[attr_name]["raw"] = res
         
         # write to database
-        self.update_db()
+        # self.update_db()
         
         return
     
@@ -631,9 +564,6 @@ class UnsupervisedEvaluator():
         
         print("Updated feasibility for {}".format(self.collection_name))
 
-        
-            
- 
     
 def plot_histogram(data, title="", ):
     bins = min(int(len(data)/10), 300)
@@ -664,15 +594,16 @@ def conflict_graph(collection):
     '''
     import networkx as nx
     G = nx.DiGraph()
-    # queries = collection.find({"conflicts":{"$exists": True}})
-    queries = collection.find({"$or": [{"feasibility.distance":{"$lte":0.7}},
-                                      {"conflicts":{"$exists":True}}]})
+    queries = collection.find({"conflicts":{"$exists": True}})
+    # queries = collection.find({"$or": [{"feasibility.distance":{"$lte":0.7}},
+    #                                   {"conflicts":{"$exists":True}}]})
     
     for traj in queries:
-        if traj["feasibility"]["distance"] < 0.7:
-            color = "red"
-        else:
-            color = "#210070"
+        # if traj["feasibility"]["distance"] < 0.7:
+        # if len(traj["merged_ids"]) > len(traj["fragment_ids"]):
+        #     color = "red"
+        # else:
+        color = "#210070"
         G.add_node(traj["_id"], weight=len(traj["timestamp"]), color=color)
         try:
             edges = traj["conflicts"]
@@ -752,11 +683,13 @@ def conflict_graph(collection):
     plt.axis("off")
     plt.show()
     
+    
+    
 if __name__ == '__main__':
     # with open('config.json') as f:
     #     config = json.load(f)
       
-    collection = "young_ox--RAW_GT2__calibrates"
+    collection = "organic_forengi--RAW_GT2__giggles"
     # collection = "sanctimonious_beluga--RAW_GT1__administers"
     if "__" in collection:
         database_name = "reconciled"
@@ -764,19 +697,13 @@ if __name__ == '__main__':
         database_name = "trajectories"
     db_param= {
         "host": "127.0.0.1",
+        # "host": "10.80.4.91",
         "port": 27017,
         "username": "mongo-admin",
         "password": "i24-data-access",
         "database_name": database_name
     }    
-    # db_param = {
-    #   "host": "10.2.218.56",
-    #   "port": 27017,
-    #   "username": "i24-data",
-    #   "password": "mongodb@i24",
-    #   "database_name": database_name # db that the collection to evaluate is in
-    # }
-    
+   
 
     # res = call(db_param, collection)
     # ue = UnsupervisedEvaluator(db_param, collection_name=collection, num_threads=200)

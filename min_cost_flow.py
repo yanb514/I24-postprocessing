@@ -14,6 +14,7 @@ from bson.objectid import ObjectId
 from i24_database_api import DBClient
 import i24_logger.log_writer as log_writer
 from utils.utils_mcf import MOTGraphSingle
+from utils.misc import calc_fit
 
 
 # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
@@ -118,6 +119,8 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     # Get parameters
     ATTR_NAME = parameters["fragment_attr_name"]
     TIME_WIN = parameters["time_win"]
+    RES_THRESH_X = parameters["residual_threshold_x"]
+    RES_THRESH_Y = parameters["residual_threshold_y"]
     
     # Initialize tracking graph
     m = MOTGraphSingle(ATTR_NAME, parameters)
@@ -130,7 +133,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     # dbw = DBClient(**parameters["db_param"], database_name = parameters["stitched_database"],
     #                collection_name = parameters["stitched_collection"])
     
-    GET_TIMEOUT = parameters["raw_trajectory_queue_get_timeout"]
+    GET_TIMEOUT = parameters["stitcher_timeout"]
     while sig_hdlr.run:
         try:
             try:
@@ -139,12 +142,14 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 # fgmt = Fragment(raw_fgmt)
                 
             except queue.Empty: # queue is empty
-                stitcher_logger.info("Stitcher queue is empty. Flushing out remaining trajectories in graph.")
+                stitcher_logger.info("Stitcher timed out after {} sec.".format(GET_TIMEOUT))
                 all_paths = m.get_all_traj()
                 
                 for path in all_paths:
-                    filters = m.get_filters(path)
-                    stitched_trajectory_queue.put((path[::-1], filters[::-1]))
+                    # filters = m.get_filters(path)
+                    trajs = m.get_traj_dicts(path)
+                    # stitched_trajectory_queue.put(path[::-1])
+                    stitched_trajectory_queue.put(trajs[::-1])
                     
                     # stitcher_logger.info("Flushing out final trajectories in graph")
                     stitcher_logger.debug("** Flushing out {} fragments".format(len(path)),extra = None)
@@ -155,14 +160,16 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             
             # fgmt_id = getattr(fgmt, ATTR_NAME)
             fgmt_id = fgmt[ATTR_NAME]
+            fgmt = calc_fit(fgmt, RES_THRESH_X, RES_THRESH_Y)
+            
             # RANSAC fit to determine the fit coef if it's a good track, otherwise reject
-            try:
-                if len(fgmt["filter"]) == 0:
-                    # stitched_trajectory_queue.put(([fgmt_id], []))
-                    stitcher_logger.info("* skip {} - LOW CONF".format(fgmt_id))
-                    continue # skip this fgmt
-            except:
-                pass
+            # try:
+            #     if len(fgmt["filter"]) == 0:
+            #         # stitched_trajectory_queue.put(([fgmt_id], []))
+            #         stitcher_logger.info("* skip {} - LOW CONF".format(fgmt_id))
+            #         continue # skip this fgmt
+            # except:
+            #     pass
                 
             m.add_node(fgmt)
             
@@ -178,14 +185,18 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             
             
             for path in all_paths:
-                filters = m.get_filters(path)
+                # filters = m.get_filters(path)
                 if not m.verify_path(path[::-1], cost_thresh = 15):
-                    stitcher_logger.info("** stitched result not verified. Proceed anyways.")
-                    
-                stitched_trajectory_queue.put((path[::-1], filters[::-1]))
+                    stitcher_logger.info("** Stitched result not verified. Proceed anyways.")
+                   
+                trajs = m.get_traj_dicts(path)
+                # stitched_trajectory_queue.put(path[::-1])
+                stitched_trajectory_queue.put(trajs[::-1])
+                
+                
                 # dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
                 m.clean_graph(path)
-                stitcher_logger.debug("** stitched {} fragments".format(len(path)),extra = None)
+                stitcher_logger.debug("** Stitched {} fragments".format(len(path)),extra = None)
              
             if counter % 100 == 0:
                 stitcher_logger.info("Graph nodes : {}, Graph edges: {}, Cache: {}".format(m.G.number_of_nodes(), m.G.number_of_edges(), len(m.cache)),extra = None)
@@ -196,7 +207,8 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
         
         except Exception as e: 
             if sig_hdlr.run:
-                stitcher_logger.error("Unexpected exception: {}".format(e))
+                raise e
+                # stitcher_logger.error("Unexpected exception: {}".format(e))
             else:
                 stitcher_logger.warning("SIGINT detected. Exception:{}".format(e))
             break
@@ -209,51 +221,66 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     # sys.exit()
         
     return   
-
-
-
-
-def test_fragments(gt_ids, paths):
+    
+    
+def dummy_stitcher(direction, fragment_queue, stitched_trajectory_queue, parameters):
     '''
-    Count the number of fragments (under-stitch) from the output of the stitcher
-    '''   
-    base = 100000     
-    gt_id_st_fgm_ids = defaultdict(set) # key: (int) gt_id, val: (set) corresponding stitcher fragment_ids
-    IDS = 0
+    incrementally fixing the matching
+    '''
+ 
+    # Initiate a logger
+    stitcher_logger = log_writer.logger
+    stitcher_logger.set_name("stitcher_"+direction)
+    stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
+    setattr(stitcher_logger, "_default_logger_extra",  {})
 
-    for i,path in enumerate(paths):
-        corr_gt_ids = set()
-        for node in path:
-            node = float(node)
-            corr_gt_ids.add(node//base)
-            gt_id_st_fgm_ids[node//base].add(i)
+    sig_hdlr = SignalHandler()
+
+    GET_TIMEOUT = parameters["stitcher_timeout"]
+    while sig_hdlr.run:
+        try:
+            try:
+                fgmt = fragment_queue.get(timeout = GET_TIMEOUT)
+                # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
+                # fgmt = Fragment(raw_fgmt)
+                stitched_trajectory_queue.put([fgmt])
+                
+            except queue.Empty: # queue is empty
+                stitcher_logger.info("Stitcher timed out after {} sec.".format(GET_TIMEOUT))
+ 
             
-        if len(corr_gt_ids) > 1:
-            print("ID switches: ", corr_gt_ids)
-            IDS += len(corr_gt_ids) - 1
-    
-    FGMT = 0
-    for key,val in gt_id_st_fgm_ids.items():
-        if len(val) > 1:
-            print("fragments: ", [paths[i] for i in val])
-            FGMT += len(val)-1             
-
-    return FGMT, IDS
-    
-
+            
+                    
+        
+        except Exception as e: 
+            if sig_hdlr.run:
+                raise e
+                # stitcher_logger.error("Unexpected exception: {}".format(e))
+            else:
+                stitcher_logger.warning("SIGINT detected. Exception:{}".format(e))
+            break
+            
+        
+    stitcher_logger.info("Exit stitcher")
+        
+    return   
+ 
 
 if __name__ == '__main__':
 
     
     import json
+    import os
     with open("config/parameters.json") as f:
         parameters = json.load(f)
     parameters["raw_trajectory_queue_get_timeout"] = 0.1
-
-    raw_collection = "morose_caribou--RAW_GT1" # collection name is the same in both databases
+    with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
+        db_param = json.load(f)  
+    # raw_collection = "morose_caribou--RAW_GT1" # collection name is the same in both databases
     rec_collection = "morose_caribou--RAW_GT1__escalates"
+    raw_collection = "direful_borg--RAW_GT2" 
     
-    dbc = DBClient(**parameters["db_param"])
+    dbc = DBClient(**db_param)
     raw = dbc.client["trajectories"][raw_collection]
     rec = dbc.client["reconciled"][rec_collection]
     # gt = DBClient(**parameters["db_param"], database_name = trajectory_database, collection_name="groundtruth_scene_1")
@@ -303,7 +330,8 @@ if __name__ == '__main__':
     # f_ids = [ObjectId('62fd0daf46a150340fcd2170'), ObjectId('62fd0dc546a150340fcd2198')] #1
     
     #morose caribou escalates
-    f_ids = [ObjectId('62fd0dc446a150340fcd2195'), ObjectId('62fd0daf46a150340fcd2170'), ObjectId('62fd0dc546a150340fcd2198')]
+    # f_ids = [ObjectId('62fd0dc446a150340fcd2195'), ObjectId('62fd0daf46a150340fcd2170'), ObjectId('62fd0dc546a150340fcd2198')]
+    f_ids = [ObjectId('63068a36d570dd5169753829'), ObjectId('63068a38d570dd516975382a')]
     # get parameters for fitting
     RES_THRESH_X = parameters["residual_threshold_x"]
     RES_THRESH_Y = parameters["residual_threshold_y"]

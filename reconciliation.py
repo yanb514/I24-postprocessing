@@ -22,7 +22,7 @@ import i24_logger.log_writer as log_writer
 from i24_database_api import DBClient
 
 # from utils.utils_reconciliation import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments, rectify_2d
-from utils.utils_opt import combine_fragments, resample, opt1, opt2, opt1_l1, opt2_l1
+from utils.utils_opt import combine_fragments, resample, opt1, opt2, opt1_l1, opt2_l1, opt2_l1_constr
 
 def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue) -> None:
     """
@@ -43,7 +43,7 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     else:
         try:
             # finished_trajectory = rectify_2d(resampled_trajectory, reg = "l1", **reconciliation_args)  
-            finished_trajectory = opt2_l1(resampled_trajectory, **reconciliation_args)  
+            finished_trajectory = opt2_l1_constr(resampled_trajectory, **reconciliation_args)  
             # finished_trajectory = opt2(resampled_trajectory, **reconciliation_args)  
             reconciled_queue.put(finished_trajectory)
             rec_worker_logger.debug("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
@@ -81,7 +81,7 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
     signal.signal(signal.SIGINT, original_sigint_handler)
     
     rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(multiprocessing.cpu_count()), extra = None)
-    TIMEOUT = parameters["stitched_trajectory_queue_get_timeout"]
+    TIMEOUT = parameters["reconciliation_pool_timeout"]
     
     # Signal handling: 
     # SIGINT raises KeyboardInterrupt,  close dbw, close pool and exit.
@@ -97,17 +97,17 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
     while True:
         try:
             try:
-                fragment_ids, filters = stitched_trajectory_queue.get(timeout = TIMEOUT) #20sec
+                traj_docs = stitched_trajectory_queue.get(timeout = TIMEOUT) #20sec
                 cntr += 1
             except queue.Empty: 
-                rec_parent_logger.warning("Getting from stitched trajectories queue is timed out after {}s. Close the reconciliation pool.".format(parameters["stitched_trajectory_queue_get_timeout"]))
+                rec_parent_logger.warning("Reconciliation pool is timed out after {}s. Close the reconciliation pool.".format(TIMEOUT))
                 break
         
-            combined_trajectory = combine_fragments(raw.collection, fragment_ids, filters)    
+            combined_trajectory = combine_fragments(traj_docs)    
             worker_pool.apply_async(reconcile_single_trajectory, (reconciliation_args, combined_trajectory, reconciled_queue, ))
             
             if cntr % 100 == 0:
-                rec_parent_logger.info("Applied reconciliation on {} trajectories".format(cntr))
+                rec_parent_logger.info("reconciled_queue size: {}".format(reconciled_queue.qsize()))
 
         except (KeyboardInterrupt, BrokenPipeError): # handle SIGINT here
             rec_parent_logger.warning("SIGINT detected. Exit pool.")
@@ -147,15 +147,15 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
         
     dbw = DBClient(**db_param, database_name = parameters["reconciled_database"], 
                    collection_name = parameters["reconciled_collection"], schema_file=reconciled_schema_path)
-    REC_TIMEOUT = parameters["reconciliation_timeout"]
+    TIMEOUT = parameters["reconciliation_writer_timeout"]
     cntr = 0
     # Write to db
     while True:
         try:
             try:
-                reconciled_traj = reconciled_queue.get(timeout = REC_TIMEOUT)
+                reconciled_traj = reconciled_queue.get(timeout = TIMEOUT)
             except queue.Empty:
-                reconciled_writer.warning("Getting from reconciled_queue reaches timeout {} sec.".format(REC_TIMEOUT))
+                reconciled_writer.warning("Getting from reconciled_queue reaches timeout {} sec.".format(TIMEOUT))
                 break
         
             dbw.write_one_trajectory(thread = True, **reconciled_traj)
@@ -168,7 +168,7 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
             break
     
     
-    reconciled_writer.info("Final count in reconciled collection {}: {}".format(dbw.collection_name, dbw.count()))
+    reconciled_writer.info("Count in reconciled collection {}: {}".format(dbw.collection_name, dbw.count()))
     
     
     # Safely close the mongodb client connection
@@ -201,7 +201,6 @@ if __name__ == '__main__':
     RES_THRESH_Y = parameters["residual_threshold_y"]
     CONF_THRESH = parameters["conf_threshold"],
     REMAIN_THRESH = parameters["remain_threshold"]
-    from data_feed import add_filter
     
     # reconciliation_args={}
     # for key in ["lam3_x","lam3_y", "lam2_x", "lam2_y", "lam1_x", "lam1_y"]:
@@ -216,9 +215,9 @@ if __name__ == '__main__':
     test_dbr = DBClient(**db_param, database_name = "trajectories", collection_name = "delicious_cheetah--RAW_GT2")
     
     for doc in test_dbr.collection.find({"_id": ObjectId("6303ea4e7b362bdc0c8b3981")}):
-        doc = add_filter(doc, test_dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
-                       CONF_THRESH, REMAIN_THRESH)
-        stitched_q.put(([doc["_id"]], [doc["filter"]]))
+        # doc = add_filter(doc, test_dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
+        #                CONF_THRESH, REMAIN_THRESH)
+        stitched_q.put([doc])
         counter += 1
         print("doc length: ", len(doc["timestamp"]))
         if counter > 15:
@@ -233,8 +232,8 @@ if __name__ == '__main__':
     # reconciliation_pool(parameters, stitched_q)
     
     while not stitched_q.empty():
-        fragment_list, filters = stitched_q.get(block=False)
-        combined_trajectory = combine_fragments(test_dbr.collection, fragment_list, filters)
+        fragment_list = stitched_q.get(block=False)
+        combined_trajectory = combine_fragments(fragment_list)
         reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue)
         # doc["timestamp"] = np.array(doc["timestamp"])
         # doc["x_position"] = np.array(doc["x_position"])
@@ -248,10 +247,15 @@ if __name__ == '__main__':
     
     #%% plot
     import matplotlib.pyplot as plt
-    plt.scatter(doc["timestamp"], doc["x_position"])
-    filter = np.array(doc["filter"], dtype=bool)
-    plt.scatter(np.array(doc["timestamp"])[~filter],np.array(doc["x_position"])[~filter], c="lightgrey")
-    plt.scatter(r["timestamp"], r["x_position"], s=1)
+    fig, ax = plt.subplots(1,2)
+    ax[0].scatter(doc["timestamp"], doc["x_position"])
+    # filter = np.array(doc["filter"], dtype=bool)
+    ax[0].scatter(np.array(doc["timestamp"]),np.array(doc["x_position"]), c="lightgrey")
+    ax[0].scatter(r["timestamp"], r["x_position"], s=1)
+    ax[1].scatter(doc["timestamp"], doc["y_position"])
+    # filter = np.array(doc["filter"], dtype=bool)
+    ax[1].scatter(np.array(doc["timestamp"]),np.array(doc["y_position"]), c="lightgrey")
+    ax[1].scatter(r["timestamp"], r["y_position"], s=1)
     
     
     

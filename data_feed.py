@@ -10,16 +10,14 @@ two seperate live_data_feed processes will mess up the change stream
 """
 from i24_database_api import DBClient
 import i24_logger.log_writer as log_writer
-from i24_logger.log_writer import catch_critical
+
 import time
 import signal
 import sys
 import os
 import heapq
 import random
-import numpy as np
-from sklearn import linear_model
-import threading
+import utils.misc as misc
 
 verbs = ["medicates", "taunts", "sweettalks", "initiates", "harasses", "negotiates", "castigates", "disputes", "cajoles", "improvises",
          "surrenders", "escalates", "mumbles", "juxtaposes", "excites", "lionizes", "ruptures", "yawns","administers","flatters","foreshadows","buckles",
@@ -92,91 +90,7 @@ def thread_update_one(raw, _id, filter, fitx, fity):
                                             "fity": list(fity)}}, upsert = True)
 
 
-    
-@catch_critical(errors = (Exception))
-def add_filter(traj, raw, residual_threshold_x, residual_threshold_y, 
-               conf_threshold, remain_threshold):
-    '''
-    add a filter to trajectories based on
-    - RANSAC fit on x and
-    - bad detection confidence
-    get total mask (both lowconf and outlier)
-    apply ransac again on y-axis
-    save fitx, fity and tot_mask
-    and save filter field to raw collection
-    '''
-    filter = True
-    try:
-        filter.pop("filter")
-    except:
-        pass
-    t = np.array(traj["timestamp"])
-    x = np.array(traj["x_position"])
-    y = np.array(traj["y_position"])
-    conf = np.array(traj["detection_confidence"])
-        
-    # length = len(t)
-    
-    # get confidence mask
-    lowconf_mask = np.array(conf < conf_threshold)
-    highconf_mask = np.logical_not(lowconf_mask)
-    num_highconf = np.count_nonzero(highconf_mask)
-    if num_highconf < 4:
-        traj["filter"] = []
-    
-    else:
-        # fit x only on highconf
-        ransacx = linear_model.RANSACRegressor(residual_threshold=residual_threshold_x)
-        X = t.reshape(1, -1).T
-        ransacx.fit(X[highconf_mask], x[highconf_mask])
-        fitx = [ransacx.estimator_.coef_[0], ransacx.estimator_.intercept_]
-        
-        # --- with ransac outlier mask
-        # inlier_mask = ransacx.inlier_mask_ # True if inlier
-        # outlier_mask = np.logical_not(inlier_mask) # True if outlier
-        # total mask (filtered by both outlier and by low confidence)
-        # mask1 = np.arange(length)[lowconf_mask] # all the bad indices
-        # mask2 = np.arange(length)[highconf_mask][outlier_mask]
-        
-        # bad_idx = np.concatenate((mask1, mask2))
-        # remain = length-len(bad_idx)
-        
-        # # print("bad rate: {}".format(bad_ratio))
-        # if remain < remain_threshold:
-        #     filter = []
-      
-        # # fit y only on mask
-        # ransacy = linear_model.RANSACRegressor(residual_threshold=residual_threshold_y)
-        # ransacy.fit(X[highconf_mask][inlier_mask], y[highconf_mask][inlier_mask])
-        # fity = [ransacy.estimator_.coef_[0], ransacy.estimator_.intercept_]
-        
-        # # save to raw collection
-        # if filter:
-        #     filter = length*[1]
-        #     for i in bad_idx:         
-        #         filter[i]=0
-    
-        
-        # ----- no ransac outlier masks
-        ransacy = linear_model.RANSACRegressor(residual_threshold=residual_threshold_y)
-        ransacy.fit(X[highconf_mask], y[highconf_mask])
-        fity = [ransacy.estimator_.coef_[0], ransacy.estimator_.intercept_]
-        filter = 1*highconf_mask
-
-        # save filter to database- non-blocking
-        # _id = traj["_id"]
-        # thread = threading.Thread(target=thread_update_one, args=(raw, _id, filter, fitx, fity,))
-        # thread.start()
-    
-        # update traj document
-        traj["filter"] = list(filter)
-        traj["fitx"] = list(fitx)
-        traj["fity"] = list(fity)
-    
-    return traj
-
-
-        
+   
 def change_stream_simulator(default_param, insert_rate):
     '''
     When no live-streaming data, simulate one by reading from a collection (default_param.raw_collection), and insert to a new collection (write_to_collection)
@@ -382,10 +296,9 @@ def static_data_reader(default_param, db_param, east_queue, west_queue, min_queu
         time.sleep(1)
      
     # get parameters for fitting
-    RES_THRESH_X = default_param["residual_threshold_x"]
-    RES_THRESH_Y = default_param["residual_threshold_y"]
-    CONF_THRESH = default_param["conf_threshold"],
-    REMAIN_THRESH = default_param["remain_threshold"]
+    
+    # CONF_THRESH = default_param["conf_threshold"],
+    # REMAIN_THRESH = default_param["remain_threshold"]
     
     dbr = DBClient(**db_param, database_name = default_param["raw_database"], collection_name=default_param["raw_collection"])  
     # default_param["raw_collection"] = dbr.collection_name
@@ -415,12 +328,12 @@ def static_data_reader(default_param, db_param, east_queue, west_queue, min_queu
     
                 for doc in next_batch:
                     if len(doc["timestamp"]) > 3: 
-                        doc = add_filter(doc, dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
-                                       CONF_THRESH, REMAIN_THRESH)
+                        # doc = misc.add_filter(doc, dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
+                        #                CONF_THRESH, REMAIN_THRESH)
                         
                         if doc["direction"] == 1:
                             # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
-                            east_queue.put(doc)
+                            east_queue.put(doc)          
                         else:
                             west_queue.put(doc)
                     else:

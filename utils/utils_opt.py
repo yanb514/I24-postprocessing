@@ -14,7 +14,7 @@ dt = 1/30
 
 
 @catch_critical(errors = (Exception))
-def combine_fragments(raw_collection, fragment_ids, filters):
+def combine_fragments(all_fragment):
     '''
     stack fragments from stitched_doc to a single document
     fragment_ids should be sorted by last_timestamp (see PathCache data structures for details)
@@ -38,8 +38,8 @@ def combine_fragments(raw_collection, fragment_ids, filters):
     # logger.info("fragment_ids type: {}, {}".format(type(fragment_ids), fragment_ids))
     # logger.debug("first doc {}".format(raw_collection.find_one(fragment_ids[0]))) # this returns none
     
-    stacked["fragment_ids"] = fragment_ids
-    all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
+    # stacked["fragment_ids"] = []
+    # all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
 
     for fragment in all_fragment:
         # logger.debug("fragment keys: {}".format(fragment.keys()))
@@ -48,30 +48,44 @@ def combine_fragments(raw_collection, fragment_ids, filters):
         stacked["y_position"].extend(fragment["y_position"])
         stacked["road_segment_ids"].extend(fragment["road_segment_ids"])
         stacked["flags"].extend(fragment["flags"])
-        stacked["length"].extend(fragment["length"])
-        stacked["width"].extend(fragment["width"])
-        stacked["height"].extend(fragment["height"])
+        try:
+            stacked["length"].extend(fragment["length"])
+            stacked["width"].extend(fragment["width"])
+            stacked["height"].extend(fragment["height"])
+        except:
+            stacked["length"].append(fragment["length"])
+            stacked["width"].append(fragment["width"])
+            stacked["height"].append(fragment["height"])
+        try:
+            stacked["merged_ids"].append(fragment["merged_ids"]) # should be nested lists
+        except KeyError:
+            pass
+        
         # stacked["detection_confidence"].extend(fragment["detection_confidence"])
+        stacked["fragment_ids"].append(fragment["_id"])
         stacked["coarse_vehicle_class"].append(fragment["coarse_vehicle_class"])
         stacked["fine_vehicle_class"].append(fragment["fine_vehicle_class"])
         stacked["direction"].append(fragment["direction"])
     
-    for filter in filters: # len(filter) cannot be 0
-        stacked["filter"].extend([int(item) for item in filter])
+    # for filter in filters: # len(filter) cannot be 0
+    #     stacked["filter"].extend([int(item) for item in filter])
         
        
     # first fragment
-    first_id = fragment_ids[0]
+    # first_id = fragment_ids[0]
     # logger.debug("** first_id: {}, type: {}".format(first_id, type(first_id)), extra = None)
     # logger.debug("** timestamp: {}, collection size: {}".format(stacked["timestamp"], raw_collection.count_documents({})), extra = None)
     
-    first_fragment = raw_collection.find_one({"_id": first_id})
+    # first_fragment = raw_collection.find_one({"_id": first_id})
+    first_fragment = all_fragment[0]
     stacked["starting_x"] = first_fragment["starting_x"]
     stacked["first_timestamp"] = first_fragment["first_timestamp"]
+    stacked["_id"] = first_fragment["_id"]
     
     # last fragment
-    last_id = fragment_ids[-1]
-    last_fragment = raw_collection.find_one({"_id": last_id})
+    # last_id = fragment_ids[-1]
+    # last_fragment = raw_collection.find_one({"_id": last_id})
+    last_fragment = all_fragment[-1]
     stacked["ending_x"] = last_fragment["ending_x"]
     stacked["last_timestamp"] = last_fragment["last_timestamp"]
     
@@ -86,11 +100,11 @@ def combine_fragments(raw_collection, fragment_ids, filters):
     stacked["direction"] = max(set(stacked["direction"]), key = stacked["direction"].count)
     
     # Apply filter
-    if len(stacked["filter"]) == 0: # no good measurements
-        stacked["post_flag"] = "low conf fragment"
-    else:
-        stacked["x_position"] = [stacked["x_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
-        stacked["y_position"] = [stacked["y_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
+    # if len(stacked["filter"]) == 0: # no good measurements
+    #     stacked["post_flag"] = "low conf fragment"
+    # else:
+    #     stacked["x_position"] = [stacked["x_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
+    #     stacked["y_position"] = [stacked["y_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
     return stacked
 
 
@@ -240,6 +254,13 @@ def opt2(car, lam2_x, lam2_y, lam3_x, lam3_y):
 def opt2_l1(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     '''
     1/M||z-Hx||_2^2 + \lam2/N ||D2x||_2^2 + \lam3/N ||D3x||_2^2 + \lam1/M ||e||_1
+    "reconciliation_args":{
+        "lam2_x": 0,
+        "lam2_y": 0,
+        "lam3_x": 1e-7,
+        "lam3_y": 1e-7,
+        "lam1_x": 0,
+        "lam1_y": 0
     '''
     x = car["x_position"]
     y = car["y_position"]
@@ -258,11 +279,11 @@ def opt2_l1(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
         D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
         vx = D1*xhat*dir
         minvx = min(vx)
-        # print("minvx ", minvx)
+        print("minvx ", minvx)
         
-        # ax = D2*xhat
-        # maxax = max(abs(ax))
-        # print("ax: {:.2f}, {:.2f}".format(min(ax), max(ax)))
+        ax = D2*xhat
+        maxax = max(abs(ax))
+        print("ax: {:.2f}, {:.2f}".format(min(ax), max(ax)))
         lam3_x += 1e-6
         iter += 1
         
@@ -273,7 +294,7 @@ def opt2_l1(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
         xhat = sol["x"][:N]
         ax = D2*xhat
         maxax = max(abs(ax))
-        # print("ax: {:.2f}, {:.2f}".format(min(ax), max(ax)))
+        print("ax: {:.2f}, {:.2f}".format(min(ax), max(ax)))
         lam2_x += 1e-6
         iter += 1
         
@@ -281,7 +302,7 @@ def opt2_l1(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     cx = cx_pre-1
     iter = 0
     while cx - cx_pre < 0 and iter <= max_iter:
-        # print("iter, ", cx)
+        print("iter, ", cx)
         lam1_x += 1e-6
         Q, p, H, G, h, N, M, D2 = _get_qp_opt2_l1(x, lam2_x, lam3_x, lam1_x)
         sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
@@ -324,6 +345,73 @@ def opt2_l1(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     car["y_score"] = cy
     
     return car 
+
+
+
+def opt2_l1_constr(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
+    '''
+    1/M||z-Hx||_2^2 + \lam2/N ||D2x||_2^2 + \lam3/N ||D3x||_2^2 + \lam1/M ||e||_1
+    s.t. D1x >=0, -10<=D2x<=10, -3 <=D3x<=3
+    '''
+    x = car["x_position"]
+    y = car["y_position"]
+    
+    # x
+    max_iter = 10
+    dir = car["direction"]
+    
+    cx_pre = 999
+    cx = cx_pre-1
+    iter = 0
+    while cx - cx_pre < 0 and iter <= max_iter:
+        # print("iter, ", cx)
+        lam1_x += 1e-3
+        Q, p, H, G, h, N, M, D1,D2,D3 = _get_qp_opt2_l1_constr(x, dir, lam2_x, lam3_x, lam1_x)
+        sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
+        xhat = sol["x"][:N]
+        cx_pre = cx
+        cx = np.nansum(np.abs(H*matrix(x)-H*xhat))/M
+        iter += 1
+    
+    # vmin = min(abs(D1*xhat))
+    # amax = max(abs(D2*xhat))
+    # jmax = max(abs(D3*xhat))
+    # print("vmin: ", vmin, "amax: ", amax, "jamx: ",jmax)
+    if sol["status"]!= "optimal":
+        raise Exception("solver status is not optimal")
+        
+    # print("final")
+    # print(f"lam2_x {lam2_x}, lam2_y {lam2_y}, lam3_x {lam3_x}, lam3_y {lam3_y},lam1_x {lam1_x}, lam1_y {lam1_y}")
+    # print(sol["status"])
+    # y
+    Q, p, H, G, h, N, M, D2 = _get_qp_opt2_l1(y, lam2_y, lam3_y, lam1_y)
+    sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
+    yhat = sol["x"][:N]
+    if sol["status"]!= "optimal":
+        raise Exception("solver status is not optimal")
+
+    
+    car["timestamp"] = list(car["timestamp"])
+    car["x_position"] = list(xhat)
+    car["y_position"] = list(yhat)
+    
+    # calculate residual
+    # xhat_re = np.reshape(xhat, -1) # (N,)
+    # yhat_re = np.reshape(yhat, -1) # (N,)
+    # c1 = np.sqrt(np.nansum((x-xhat_re)**2)/M) # RMSE
+    # cx = np.nansum(np.abs(x-xhat_re))/M # MAE
+    # cy = np.nansum(np.abs(y-yhat_re))/M # MAE
+    
+    cx = np.nansum(np.abs(H*matrix(x)-H*xhat))/M
+    cy = np.nansum(np.abs(H*matrix(y)-H*yhat))/M
+    
+    car["x_score"] = cx
+    car["y_score"] = cy
+    
+    return car 
+
+
+
 
 
 def _get_qp_opt1(x, lam3):
@@ -475,6 +563,56 @@ def _get_qp_opt2_l1(x, lam2, lam3, lam1):
     h = spmatrix([], [], [], (2*M,1))
     
     return Q, p, H, G, h, N, M, D2
+
+
+
+
+def _get_qp_opt2_l1_constr(x, dir, lam2, lam3, lam1):
+    '''
+    rewrite opt2_l1_constr to QP form:
+    min 1/2 z^T Q x + p^T z + r
+    s.t. Gz <= h
+    '''
+    # get data
+    N = len(x)
+    
+    # non-missing entries
+    idx = [i.item() for i in np.argwhere(~np.isnan(x)).flatten()]
+    x = x[idx]
+    M = len(x)
+    
+    if M == 0 or N-3 <= 0:
+        raise ZeroDivisionError
+        
+    # differentiation operator
+    D1 = _blocdiag(matrix([-1,1],(1,2), tc="d"), N) * (1/dt)
+    D2 = _blocdiag(matrix([1,-2,1],(1,3), tc="d"), N) * (1/dt**2)
+    D3 = _blocdiag(matrix([-1,3,-3,1],(1,4), tc="d"), N) * (1/dt**3)
+    DD2 = lam2 * D2.trans() * D2
+    DD3 = lam3 * D3.trans() * D3
+    
+    # define matices
+    I = spmatrix(1.0, range(N), range(N))
+    IM = spmatrix(1.0, range(M), range(M))
+    O = spmatrix([], [], [], (N,N))
+    OM = spmatrix([], [], [], (M,M))
+    H = I[idx,:]
+    HH = H.trans()*H
+
+    Q = 2*sparse([[HH/M+DD2/(N-2)+DD3/(N-3),H/M,-H/M], # first column of Q
+                [H.trans()/M,IM/M, -H*H.trans()/M], 
+                [-H.trans()/M,-H*H.trans()/M,IM/M]]) 
+    
+    p = 1/M * sparse([-2*H.trans()*matrix(x), -2*matrix(x)+lam1, 2*matrix(x)+lam1])
+    B = spmatrix([], [], [], (5*N-11,M))
+    G = sparse([[H*O,H*O,-dir*D1,D2,-D2,D3,-D3],[-IM,OM,B],[OM,-IM, B]])
+    h1 = spmatrix([], [], [], (2*M+N-1,1))
+    h2 = matrix(1.0, (2*N-4,1)) * 10 # acceleration constraint
+    h3 = matrix(1.0, (2*N-6,1)) * 10 # jerk constraint
+    h = sparse([h1,h2,h3])
+    
+    return Q, p, H, G, h, N, M, D1,D2,D3
+
 
 
 def _blocdiag(X, n):

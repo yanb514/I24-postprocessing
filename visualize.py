@@ -23,6 +23,7 @@ from copy import copy
 import time
 import requests
 import os
+from bson.objectid import ObjectId
 
  
 class LRUCache:
@@ -61,7 +62,7 @@ class OverheadCompare():
     """
     
     def __init__(self, config, collections = None,
-                 framerate = 25, x_min = 0, x_max = 1500, offset = None ,duration = 60):
+                 framerate = 25, x_min = 0, x_max = 1500, offset = None ,duration = 60, transform = False):
         """
         Initializes a Plotter object
         
@@ -90,7 +91,7 @@ class OverheadCompare():
             list_dbr.append(dbr)
             list_veh.append(veh)
             
-            if collection not in transformed_collections:
+            if collection not in transformed_collections or transform == True:
                 # print("Transform ", collection)
                 veh.transform()
             
@@ -128,7 +129,7 @@ class OverheadCompare():
     
 
         
-    # @catch_critical(errors = (Exception))
+    @catch_critical(errors = (Exception))
     def animate(self, save = False, upload = False, extra=""):
         """
         Advance time window by delta second, update left and right pointer, and cache
@@ -171,7 +172,8 @@ class OverheadCompare():
             for doc in gt_query:
                 val = {"dim": [doc["length"], doc["width"]],
                        "kwargs": {
-                           "color": [0.8]*3, # light grey
+                            "color": [0.8]*3, # light grey
+                           # "color": np.random.rand(3,)*0.5,
                            "fill": True
                            # "label": "GT"}
                            }
@@ -203,27 +205,31 @@ class OverheadCompare():
                     doc = {"id": [], "position":[], "dimensions":[]}
                 if i == 1: # do not query for width and length, cause they are arrays
                     query = self.list_veh[i+1].collection.find({"_id": {"$in": doc["id"]} }, 
-                                               {"width":1, "length":1, "feasibility": 1})
+                                               {"width":1, "length":1, "feasibility": 1, "fragment_ids": 1, "merged_ids": 1})
                 else:
                     query = self.list_veh[i+1].collection.find({"_id": {"$in": doc["id"]} }, 
-                                               {"feasibility": 1})
+                                               {"feasibility": 1, "fragment_ids": 1, "merged_ids": 1})
                 for d in query:
-                    if "feasibility" in d and (d["feasibility"]["distance"] < 0.8 or d["feasibility"]["conflict"]<1): # bad flag 
+                    if "feasibility" in d and d["feasibility"]["conflict"]<1: # bad flag 
                     # if "x_score" in d and d["x_score"] > 3:
+                    # if d["_id"] in [ObjectId('6307d649f0b73edfc22af01f'), ObjectId('6307d647f0b73edfc22af01d'), ObjectId('6307d65bf0b73edfc22af052'), ObjectId('6307d658f0b73edfc22af04a'),
+                    #                 ObjectId('6307d655f0b73edfc22af03d'), ObjectId('6307d658f0b73edfc22af046'), ObjectId('6307d673f0b73edfc22af0a5'), ObjectId('6307d671f0b73edfc22af098'),
+                    #                 ObjectId('6307d6adf0b73edfc22af187'), ObjectId('6307d6adf0b73edfc22af18c'), ObjectId('6307d6adf0b73edfc22af195'), ObjectId('6307d6adf0b73edfc22af17d')]:
+                    # if "fragment_ids" in d and len(d["fragment_ids"]) > 1: # more merged than stitched
                         kwargs = {
-                            "color": np.random.rand(3,)*0.5, 
+                            "color": [0,1,0], # green
                             "fill": False,
-                            "linewidth": 1,
-                            # "label": "infeasible (short traj or conflicts)"
+                            "linewidth": 2,
+                            # "label": "conflicts",
                             "label": d["_id"]
                             }
                     else:
                         kwargs = {
-                            "color": np.random.rand(3,)*0.5,
+                            "color": np.random.rand(3,)*0.7,
                             "fill": True,
                             "linewidth": 0,
                             "alpha": 0.7,
-                            # "label": "feasible",
+                            # "label": "stitched",
                             "label": d["_id"]
                             }
                     if i == 1:
@@ -294,10 +300,11 @@ class OverheadCompare():
                     car_x_pos = doc["position"][index][0]
                     car_y_pos = doc["position"][index][1]
                     d = self.veh_cache[i+1].get(doc["id"][index])
-                    if i == 1:
+                    try: # i==1
                         car_length, car_width = d["dim"]
-                    else: #i = 0
+                    except: #i = 0
                         car_length, car_width = doc['dimensions'][index][:2]
+
                     car_y_pos -= 0.5 * car_width
                     if car_y_pos >= 60: # west bound
                         car_x_pos -= car_length
@@ -393,22 +400,22 @@ class OverheadCompare():
     
 
 def main(rec, gt = "groundtruth_scene_2_57", framerate = 25, x_min=-100, x_max=2200, offset=0, duration=90, 
-         save=False, upload=False, extra=""):
+         save=False, upload=False, extra="", transform=False):
     
-    with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:
+    with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)
     
     raw = rec.split("__")[0]
     print("Generating a video for {}...".format(rec))
     p = OverheadCompare(db_param, 
                 collections = [gt, raw, rec],
-                framerate = framerate, x_min = x_min, x_max=x_max, offset = offset, duration=duration)
+                framerate = framerate, x_min = x_min, x_max=x_max, offset = offset, duration=duration, transform=transform)
     p.animate(save=save, upload=upload, extra=extra)
     
     
 if __name__=="__main__":
 # "young_ox--RAW_GT2__calibrates"
-    main(rec = "righteous_housecat--RAW_GT2__improvises", save=False, upload = True)
+    main(rec = "modern_beluga--RAW_GT2__giggles", save=False, upload = True, offset = 0, transform=False, extra="")
     
         
     # with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:

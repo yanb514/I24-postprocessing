@@ -32,17 +32,17 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     
     cost_offset = 0
 
-    filter1 = np.array(track1["filter"], dtype=bool) # convert fomr [1,0] to [True, False]
-    filter2 = np.array(track2["filter"], dtype=bool)
+    # filter1 = np.array(track1["filter"], dtype=bool) # convert fomr [1,0] to [True, False]
+    # filter2 = np.array(track2["filter"], dtype=bool)
     
-    t1 = np.array(track1["timestamp"])[filter1]
-    t2 = np.array(track2["timestamp"])[filter2]
+    t1 = np.array(track1["timestamp"])#[filter1]
+    t2 = np.array(track2["timestamp"])#[filter2]
     
-    x1 = np.array(track1["x_position"])[filter1]
-    x2 = np.array(track2["x_position"])[filter2]
+    x1 = np.array(track1["x_position"])#[filter1]
+    x2 = np.array(track2["x_position"])#[filter2]
     
-    y1 = np.array(track1["y_position"])[filter1]
-    y2 = np.array(track2["y_position"])[filter2]
+    y1 = np.array(track1["y_position"])#[filter1]
+    y2 = np.array(track2["y_position"])#[filter2]
 
     
     # if time_gap > TIME_WIN, don't stitch
@@ -89,9 +89,6 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
         measy = measy[-n:]
         dir = -1
         
-        
-    
-    
     
     # find where to start the cone
     # 
@@ -120,7 +117,6 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     # vary_pred = max(vary_pred, 2) # lower bound
     vary_meas = np.var(measy)
     vary_meas = max(vary_meas, 2) # lower bound 
-    
     
     
     bd = []
