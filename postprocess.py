@@ -58,7 +58,7 @@ def main(collection_name = None):
     
     # DELETE ME LATER
     # if parameters["eval"]:
-    ev.eval_raw(mp_param, db_param)
+    # ev.eval_raw(mp_param, db_param)
     
     # Raw trajectory fragment queue
     # -- populated by database connector that listens for updates
@@ -330,7 +330,7 @@ def main(collection_name = None):
     # start evaluation
     
 if __name__ == '__main__':
-    main(collection_name = "modern_beluga--RAW_GT2")
+    main()
     
     
     

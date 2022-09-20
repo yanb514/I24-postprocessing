@@ -106,7 +106,7 @@ def _get_lane_changes(traj, lanes = [i*12 for i in range(-1,12)]):
 
 
 # =================== GET OTHER INFO ====================    
-def _calc_feasibility(traj, xmin=0, xmax=2000):
+def _calc_feasibility(traj, start_time, end_time, xmin=0, xmax=2000, buffer=1):
     '''
     for each of the following, assign traj a score between 0-1. 1 is good, 0 is bad
     distance: % x covered
@@ -118,14 +118,14 @@ def _calc_feasibility(traj, xmin=0, xmax=2000):
     conflicts: % of time traj conflicts with others
     '''
     # x distance traveled (with forgiveness on boundaries)
-    # end = end_time if traj["last_timestamp"] >= end_time-buffer else traj["last_timestamp"]  
-    # if traj['direction'] == 1:
-    #     start = xmin if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
-    #     end = xmax if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
-    # else:
-    #     # xmax, xmin = xmin, xmax
-    #     start = xmax if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
-    #     end = xmin if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
+    end = end_time if traj["last_timestamp"] >= end_time-buffer else traj["last_timestamp"]  
+    if traj['direction'] == 1:
+        start = xmin if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
+        end = xmax if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
+    else:
+        # xmax, xmin = xmin, xmax
+        start = xmax if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
+        end = xmin if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
         
     # x distance traveled (no forgiveness)
     start = traj["starting_x"]
@@ -490,7 +490,7 @@ class UnsupervisedEvaluator():
                 self.res[attr_name]["raw"] = res
         
         # write to database
-        # self.update_db()
+        self.update_db()
         
         return
     
@@ -689,7 +689,7 @@ if __name__ == '__main__':
     # with open('config.json') as f:
     #     config = json.load(f)
       
-    collection = "organic_forengi--RAW_GT2__giggles"
+    collection = "funny_squirrel--RAW_GT2__giggles"
     # collection = "sanctimonious_beluga--RAW_GT1__administers"
     if "__" in collection:
         database_name = "reconciled"
@@ -705,7 +705,7 @@ if __name__ == '__main__':
     }    
    
 
-    # res = call(db_param, collection)
+    res = call(db_param, collection)
     # ue = UnsupervisedEvaluator(db_param, collection_name=collection, num_threads=200)
     # ue.time_evaluate(step = 1)
     # ue.traj_evaluate()

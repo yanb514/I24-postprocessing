@@ -117,11 +117,52 @@ def calc_fit(traj, residual_threshold_x, residual_threshold_y):
     # update traj document
     traj["fitx"] = list(fitx)
     traj["fity"] = list(fity)
-    
 
     return traj
 
+def calc_fit_select(t,x,y,residual_threshold_x, residual_threshold_y):
+    '''
+    same as calc_fit, but only on given t,x,y
+    '''
+    ransacx = linear_model.RANSACRegressor(residual_threshold=residual_threshold_x)
+    X = t.reshape(1, -1).T
+    ransacx.fit(X, x)
+    fitx = [ransacx.estimator_.coef_[0], ransacx.estimator_.intercept_]
+      
+    ransacy = linear_model.RANSACRegressor(residual_threshold=residual_threshold_y)
+    ransacy.fit(X, y)
+    fity = [ransacy.estimator_.coef_[0], ransacy.estimator_.intercept_]
+    
+    return fitx, fity
 
+
+def find_overlap_idx(x, y):
+    '''
+    x,y are timestamp arrays
+    y ends before x
+    find the intervals for x and y overlap, i.e.,
+    x[s1: e1] overlaps with y[s2, e2]
+    '''
+    s1,s2=0,0
+    # find starting pointers
+    while s1 < len(x) and s2 < len(y):
+        if abs(x[s1] - y[s2]) < 1e-3:
+            break
+        elif x[s1] < y[s2]:
+            s1 += 1
+        else:
+            s2 += 1
+    # find ending poitners
+    e1, e2 = len(x)-1, len(y)-1
+    while e1 >0 and e2 >0:
+        if abs(x[e1] - y[e2]) < 1e-3:
+            break
+        if x[e1] < y[e2]:
+            e2 -= 1
+        else:
+            e1 -= 1
+            
+    return s1, e1, s2, e2
 
 
 class Node:

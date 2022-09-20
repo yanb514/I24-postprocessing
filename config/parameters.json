@@ -1,7 +1,7 @@
 {
     "mode": "sequence",
-    "description": "add constraints for opt2_l1",
-    "raw_collection": "",
+    "description": "add merge back with merge cost",
+    "raw_collection": "funny_squirrel--RAW_GT2",
     
 	"raw_database": "trajectories",
 	"stitched_database": "stitched",
@@ -31,7 +31,7 @@
     
     "merge_thresh": 3,
     
-    "time_win": 5,
+    "time_win": 25,
     "varx": 2,
     "vary": 0.5,
     "inclusion": 0,

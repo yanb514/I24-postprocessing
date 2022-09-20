@@ -271,8 +271,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, read_f
     logger.info("DBReader closed. Exiting live_data_reader while loop.")
     sys.exit() # for linux
     
-    
-    
+ 
     
 def static_data_reader(default_param, db_param, east_queue, west_queue, min_queue_size = 1000):
     """
@@ -327,6 +326,7 @@ def static_data_reader(default_param, db_param, east_queue, west_queue, min_queu
                 next_batch = next(rri)  
     
                 for doc in next_batch:
+                    
                     if len(doc["timestamp"]) > 3: 
                         # doc = misc.add_filter(doc, dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
                         #                CONF_THRESH, REMAIN_THRESH)

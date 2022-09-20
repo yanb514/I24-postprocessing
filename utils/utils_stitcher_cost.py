@@ -8,6 +8,7 @@ import numpy as np
 # import torch
 # from scipy import stats
 from i24_logger.log_writer import catch_critical
+from utils.misc import calc_fit_select
 
 
 def bhattacharyya_distance(mu1, mu2, cov1, cov2):
@@ -58,11 +59,7 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
         measx = x2
         measy = y2
         pt = t1[-1]
-        # if gap < -2: # if overlap in tiem for more than 2 sec, get all the overlaped range
-        #     n = 0
-        #     while meast[n] <= pt:
-        #         n+= 1
-        # else:
+
         n = min(len(meast), 30) # consider n measurements
         meast = meast[:n]
         measx = measx[:n]
@@ -77,12 +74,7 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
         measx = x1
         measy = y1
         pt = t2[0]
-        # if gap < -2 or t1[0] > t2[0]: # if overlap in time is more than 2 sec, or t1 completely overlaps with t2, get all the overlaped range
-        #     i = 0
-        #     while meast[i] < pt:
-        #         i += 1
-        #     n = len(meast)-i
-        # else:
+
         n = min(len(meast), 30) # consider n measurements
         meast = meast[-n:]
         measx = measx[-n:]
@@ -133,13 +125,125 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
     
     nll = np.mean(bd)
     
-    # print("id1: {}, id2: {}, cost:{:.2f}".format(str(track1['_id'])[-4:], str(track2['_id'])[-4:], nll))
+    print("id1: {}, id2: {}, cost:{:.2f}".format(str(track1['_id'])[-4:], str(track2['_id'])[-4:], nll))
     # print("")
     
     return nll + cost_offset
 
     
+
     
+    
+    
+@catch_critical(errors = (Exception))
+def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshold_y):
+    '''
+    use bhattacharyya_distance
+    vectorize bhattacharyya_distance
+    '''
+    
+    cost_offset = 0
+
+    # filter1 = np.array(track1["filter"], dtype=bool) # convert fomr [1,0] to [True, False]
+    # filter2 = np.array(track2["filter"], dtype=bool)
+    
+    # t1 = np.array(track1["timestamp"])#[filter1]
+    # t2 = np.array(track2["timestamp"])#[filter2]
+    t1 = track1["timestamp"] #[filter1]
+    t2 = track2["timestamp"] #[filter2]
+    
+    gap = t2[0] - t1[-1] 
+    if gap < 0 or gap > TIME_WIN:
+        return 1e6
+
+    # x1 = np.array(track1["x_position"])#[filter1]
+    # x2 = np.array(track2["x_position"])#[filter2]
+    
+    # y1 = np.array(track1["y_position"])#[filter1]
+    # y2 = np.array(track2["y_position"])#[filter2]
+    
+    x1 = track1["x_position"]#[filter1]
+    x2 = track2["x_position"]#[filter2]
+    
+    y1 = track1["y_position"]#[filter1]
+    y2 = track2["y_position"]#[filter2]
+
+    n1 = min(len(t1), 30) # for track1
+    n2 = min(len(t2), 30) # for track2
+
+    # ONLY DEAL WITH NO-TIME-OVERLAPPED TRACKS!!!
+    if len(t1) >= len(t2):
+        # anchor = 1
+        
+        # find the new fit for anchor1 based on the last ~1 sec of data
+        t1 = t1[-n1:]
+        x1 = x1[-n1:]
+        y1 = y1[-n1:] # TODO: could run into the danger that the ends of a track has bad speed estimate
+        fitx, fity = calc_fit_select(t1,x1,y1,residual_threshold_x, residual_threshold_y)
+            
+        # get the first chunk of track2
+        meast = t2[:n2]
+        measx = x2[:n2]
+        measy = y2[:n2]
+        pt = t1[-1] # cone starts at the end of t1
+
+        dir = 1 # cone should open to the +1 direction in time (predict track1 to future)
+        
+        
+    else:
+        # anchor = 2
+        
+        # find the new fit for anchor2 based on the first ~1 sec of track2
+        t2 = t2[:n2]
+        x2 = x2[:n2]
+        y2 = y2[:n2]
+        fitx, fity = calc_fit_select(t2,x2,y2,residual_threshold_x, residual_threshold_y)
+        
+        pt = t2[0]
+        # get teh last chunk of tarck1
+        meast = t1[-n1:]
+        measx = x1[-n1:]
+        measy = y1[-n1:]
+        dir = -1 # use the fit of track2 to "predict" back in time
+    
+    # find where to start the cone
+    tdiff = (meast - pt) * dir # tdiff should be positive
+
+    slope, intercept = fitx
+    targetx = slope * meast + intercept
+    slope, intercept = fity
+    targety = slope * meast + intercept
+    
+    sigmax = (0.1 + tdiff * 0.01) * fitx[0] #0.1,0.1, sigma in unit ft
+    varx = sigmax**2
+    # vary_pred = np.var(y1) if anchor == 1 else np.var(y2)
+    sigmay = 1.5 + tdiff* 2 * fity[0]
+    vary_pred = sigmay**2
+    # vary_pred = max(vary_pred, 2) # lower bound
+    vary_meas = np.var(measy)
+    vary_meas = max(vary_meas, 2) # lower bound 
+    
+    
+    bd = []
+    for i, t in enumerate(tdiff):
+        mu1 = np.array([targetx[i], targety[i]]) # predicted state
+        mu2 = np.array([measx[i], measy[i]]) # measured state
+        cov1 = np.diag([varx[i], vary_pred[i]]) # prediction variance - grows as tdiff
+        cov2 = np.diag([varx[0], vary_meas])  # measurement variance - does not grow as tdiff
+        # mu1 = np.array([targetx[i]]) # predicted state
+        # mu2 = np.array([measx[i]]) # measured state
+        # cov1 = np.diag([varx[i]]) # prediction variance - grows as tdiff
+        # cov2 = np.diag([varx[0]])  # measurement variance - does not grow as tdiff
+        bd.append(bhattacharyya_distance(mu1, mu2, cov1, cov2))
+    
+    nll = np.mean(bd)
+    
+    # time_cost = 0.01* (np.exp(gap) - 1)
+    time_cost = 0.1 * gap
+    # print("id1: {}, id2: {}, cost:{:.2f}".format(str(track1['_id'])[-4:], str(track2['_id'])[-4:], nll+time_cost))
+    # print("")
+    
+    return nll + time_cost 
 
 
 

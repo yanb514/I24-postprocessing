@@ -6,3 +6,5 @@ conda install pandas
 conda install -c anaconda networkx
 conda install scikit-learn
 conda install -c conda-forge cvxopt
+conda install -c conda-forge cvxpy
+conda install -c conda-forge pyscipopt=3.5.0

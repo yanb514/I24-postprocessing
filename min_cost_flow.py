@@ -14,7 +14,7 @@ from bson.objectid import ObjectId
 from i24_database_api import DBClient
 import i24_logger.log_writer as log_writer
 from utils.utils_mcf import MOTGraphSingle
-from utils.misc import calc_fit
+from utils.misc import calc_fit, find_overlap_idx
 
 
 # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
@@ -125,19 +125,13 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     # Initialize tracking graph
     m = MOTGraphSingle(ATTR_NAME, parameters)
     counter = 0 # iterations for log
-    
-    # wait to get stitched collection name
-    # while parameters["stitched_collection"]=="":
-    #     time.sleep(1)
-        
-    # dbw = DBClient(**parameters["db_param"], database_name = parameters["stitched_database"],
-    #                collection_name = parameters["stitched_collection"])
+
     
     GET_TIMEOUT = parameters["stitcher_timeout"]
     while sig_hdlr.run:
         try:
             try:
-                fgmt = fragment_queue.get(timeout = GET_TIMEOUT)
+                fgmt = fragment_queue.get(timeout = GET_TIMEOUT) # a merged dictionary
                 # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
                 # fgmt = Fragment(raw_fgmt)
                 
@@ -160,7 +154,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             
             # fgmt_id = getattr(fgmt, ATTR_NAME)
             fgmt_id = fgmt[ATTR_NAME]
-            fgmt = calc_fit(fgmt, RES_THRESH_X, RES_THRESH_Y)
+            # fgmt = calc_fit(fgmt, RES_THRESH_X, RES_THRESH_Y)
             
             # RANSAC fit to determine the fit coef if it's a good track, otherwise reject
             # try:
@@ -186,8 +180,8 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             
             for path in all_paths:
                 # filters = m.get_filters(path)
-                if not m.verify_path(path[::-1], cost_thresh = 15):
-                    stitcher_logger.info("** Stitched result not verified. Proceed anyways.")
+                # if not m.verify_path(path[::-1], cost_thresh = 15):
+                #     stitcher_logger.info("** Stitched result not verified. Proceed anyways.")
                    
                 trajs = m.get_traj_dicts(path)
                 # stitched_trajectory_queue.put(path[::-1])
@@ -248,10 +242,7 @@ def dummy_stitcher(direction, fragment_queue, stitched_trajectory_queue, paramet
             except queue.Empty: # queue is empty
                 stitcher_logger.info("Stitcher timed out after {} sec.".format(GET_TIMEOUT))
  
-            
-            
-                    
-        
+
         except Exception as e: 
             if sig_hdlr.run:
                 raise e
@@ -271,14 +262,17 @@ if __name__ == '__main__':
     
     import json
     import os
+    from multi_opt import plot_track
+    from merge import merge_fragments
+    
     with open("config/parameters.json") as f:
         parameters = json.load(f)
     parameters["raw_trajectory_queue_get_timeout"] = 0.1
     with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)  
     # raw_collection = "morose_caribou--RAW_GT1" # collection name is the same in both databases
-    rec_collection = "morose_caribou--RAW_GT1__escalates"
-    raw_collection = "direful_borg--RAW_GT2" 
+    rec_collection = "funny_squirrel--RAW_GT2__giggles"
+    raw_collection = "funny_squirrel--RAW_GT2" 
     
     dbc = DBClient(**db_param)
     raw = dbc.client["trajectories"][raw_collection]
@@ -287,80 +281,60 @@ if __name__ == '__main__':
     
 
     fragment_queue = queue.Queue()
-    # morose panda
-    # f_ids = [ObjectId('62e018c427b64c6330545fa6'),ObjectId('62e0190427b64c6330545fe6'),ObjectId('62e0190427b64c6330545fe7')]
+    merged_queue = queue.Queue() 
     
-    # f_ids = [ObjectId('62e403fe1b6a12ef2b2ae146'),ObjectId('62e404381b6a12ef2b2ae168'),ObjectId('62e404741b6a12ef2b2ae192'),ObjectId('62e4048c1b6a12ef2b2ae1a2')] # stitch to 1
-    # f_ids = [ObjectId('62e4032b1b6a12ef2b2ae0cc'), ObjectId('62e4039f1b6a12ef2b2ae108')] # to 1
-    # f_ids = [ ObjectId('62e403c41b6a12ef2b2ae126'), ObjectId('62e403e51b6a12ef2b2ae13c'), ObjectId('62e404251b6a12ef2b2ae15c'),  ObjectId('62e404461b6a12ef2b2ae173')] # to 1
-    # f_ids = [ObjectId('62e403fa1b6a12ef2b2ae143'), ObjectId('62e404221b6a12ef2b2ae15b'), 
-    #           ObjectId('62e4045d1b6a12ef2b2ae185'),ObjectId('62e4047b1b6a12ef2b2ae197'), 
-    #           ObjectId('62e404951b6a12ef2b2ae1a6'), ObjectId('62e404ae1b6a12ef2b2ae1b9')]
-    # f_ids = [ObjectId('62e403041b6a12ef2b2ae0bd'), ObjectId('62e4031f1b6a12ef2b2ae0c8'), ObjectId('62e403221b6a12ef2b2ae0c9')] # stitch to 2
-    # f_ids = [ObjectId('62e403e61b6a12ef2b2ae13d'), ObjectId('62e4041b1b6a12ef2b2ae158'), ObjectId('62e4042f1b6a12ef2b2ae162'),
-    #          ObjectId('62e404501b6a12ef2b2ae179'), ObjectId('62e4046e1b6a12ef2b2ae18e')] # to 1
-
-
-    # initiates
-    # f_ids = [ObjectId('62e402d51b6a12ef2b2ae0a0'), ObjectId('62e402df1b6a12ef2b2ae0a5')] # to2
-    # f_ids = [ObjectId('62e402ce1b6a12ef2b2ae09a'), ObjectId('62e402e11b6a12ef2b2ae0a6'), ObjectId('62e402f11b6a12ef2b2ae0b0')] # to3
-    # f_ids = [ObjectId('62e402251b6a12ef2b2ae036'), ObjectId('62e402631b6a12ef2b2ae058'), ObjectId('62e4026c1b6a12ef2b2ae062'), ObjectId('62e402731b6a12ef2b2ae066'), ObjectId('62e402881b6a12ef2b2ae076')] # to2
-    # f_ids = [ObjectId('62e403041b6a12ef2b2ae0bd'), ObjectId('62e4031f1b6a12ef2b2ae0c8'), ObjectId('62e403221b6a12ef2b2ae0c9')]
+    #funny_squirrel--RAW_GT2
+    # f_ids = [ObjectId('6320f56babd7d7253149373c'), ObjectId('6320f587abd7d725314937c7')]
+    # f_ids = [ObjectId('6320f576abd7d72531493774'), ObjectId('6320f579abd7d7253149378a')]
+    # f_ids = [ObjectId('6320f578abd7d72531493781'), ObjectId('6320f592abd7d725314937fe')]
+    # f_ids = [ObjectId('6320f575abd7d72531493772'), ObjectId('6320f56fabd7d7253149375a')]
     
-    # juxtaposes
-    # f_ids = [ObjectId('62e4037d1b6a12ef2b2ae0f3'), ObjectId('62e403891b6a12ef2b2ae0fa'), ObjectId('62e403961b6a12ef2b2ae102')]#3
-    # f_ids = [ObjectId('62e402ef1b6a12ef2b2ae0ae'), ObjectId('62e403041b6a12ef2b2ae0bd'), ObjectId('62e4031f1b6a12ef2b2ae0c8')] # 2
-    # f_ids = [ObjectId('62e403011b6a12ef2b2ae0bb'), ObjectId('62e403061b6a12ef2b2ae0c0')] # 2
-    # f_ids = [ObjectId('62e402211b6a12ef2b2ae02f'), ObjectId('62e402631b6a12ef2b2ae05a'), ObjectId('62e4026c1b6a12ef2b2ae060')] #2
-    # f_ids = [ObjectId('62e4021d1b6a12ef2b2ae02d'), ObjectId('62e402221b6a12ef2b2ae031')] # 2
-    # f_ids = [ObjectId('62e4029a1b6a12ef2b2ae080'), ObjectId('62e402d41b6a12ef2b2ae09f')] # 2
+    # giggles
+    f_ids = [ObjectId('6320f56cabd7d72531493747'), ObjectId('6320f5a3abd7d7253149383e'),
+             ObjectId('6320f56babd7d72531493741'), ObjectId('6320f5a1abd7d72531493836'),
+             ObjectId('6320f56fabd7d7253149375b'), ObjectId('6320f577abd7d72531493780'),
+             ObjectId('6320f573abd7d72531493769'), ObjectId('6320f5a4abd7d72531493844'),
+             ObjectId('6320f57aabd7d7253149378d'), ObjectId('6320f5aaabd7d72531493863'),
+             ObjectId('6320f579abd7d72531493789'), ObjectId('6320f5a0abd7d72531493833')]  
     
-    # ostentatious_hippo--RAW_GT1__disputes
-    # f_ids = [ObjectId('62f6c95fba08cdedcca36fdd'), ObjectId('62f6c969ba08cdedcca36fef')] # 1
-    # sweettalks
-    # f_ids = [ObjectId('62f6c99cba08cdedcca3704a'), ObjectId('62f6c99dba08cdedcca3704b')] #2
-    # f_ids = [ObjectId('62f6c97cba08cdedcca3700f'), ObjectId('62f6c97bba08cdedcca3700e')] # 1
-    # f_ids = [ObjectId('62f6c96bba08cdedcca36ff4'), ObjectId('62f6c978ba08cdedcca37009')] #1
-    # f_ids = [ObjectId('62f6c943ba08cdedcca36fb6'), ObjectId('62f6c94eba08cdedcca36fc9')] # 1
-    # f_ids = [ObjectId('62f6c926ba08cdedcca36f7f'), ObjectId('62f6c933ba08cdedcca36f98'), ObjectId('62f6c939ba08cdedcca36fa0')] # 1
-    
-    # morous caribou medicates
-    # f_ids = [ObjectId('62fd0dea46a150340fcd21e0'), ObjectId('62fd0ded46a150340fcd21e7')] #2
-    # f_ids = [ObjectId('62fd0db946a150340fcd2181'), ObjectId('62fd0dbb46a150340fcd2185')] #2
-    # f_ids = [ObjectId('62fd0daf46a150340fcd2170'), ObjectId('62fd0dc546a150340fcd2198')] #1
-    
-    #morose caribou escalates
-    # f_ids = [ObjectId('62fd0dc446a150340fcd2195'), ObjectId('62fd0daf46a150340fcd2170'), ObjectId('62fd0dc546a150340fcd2198')]
-    f_ids = [ObjectId('63068a36d570dd5169753829'), ObjectId('63068a38d570dd516975382a')]
     # get parameters for fitting
     RES_THRESH_X = parameters["residual_threshold_x"]
     RES_THRESH_Y = parameters["residual_threshold_y"]
     CONF_THRESH = parameters["conf_threshold"],
     REMAIN_THRESH = parameters["remain_threshold"]
-    from data_feed import add_filter
+    # from data_feed import add_filter
     
-    for f_id in f_ids:
-        f = raw.find_one({"_id": f_id})
-        # print(f_id, "fity ", f["fity"])
-        f = add_filter(f, raw.collection, RES_THRESH_X, RES_THRESH_Y, 
-                       CONF_THRESH, REMAIN_THRESH)
-        # print(f["filter"])
-        fragment_queue.put(f)
+    docs = []
+    for traj in raw.find({"_id": {"$in": f_ids}}).sort( "last_timestamp", 1 ):
+        # print(traj["fragment_ids"])
+        fragment_queue.put(traj)
+        docs.append(traj)
     s1 = fragment_queue.qsize()
-
+    # plot_track(docs)
     
 
     # --------- start online stitching --------- 
+    parameters["stitcher_timeout"] = 0.1
+    parameters["merger_timeout"] = 0.01
+    
+    merge_fragments("west", fragment_queue, merged_queue, parameters)
+    
     # fragment_queue,actual_gt_ids,_ = read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
     stitched_trajectory_queue = queue.Queue()
     t1 = time.time()
-    min_cost_flow_online_alt_path("west", fragment_queue, stitched_trajectory_queue, parameters)
+    min_cost_flow_online_alt_path("west", merged_queue, stitched_trajectory_queue, parameters)
     online = list(stitched_trajectory_queue.queue)
     s2 = stitched_trajectory_queue.qsize()
     t2 = time.time()
     print("{} fragment stitched to {} trajectories, taking {:.2f} sec".format(s1, s2, t2-t1))
     
-
+    # # plot
+    # 
+    # docs = []
+    # while not stitched_trajectory_queue.empty():
+    #     d = stitched_trajectory_queue.get()[0]
+    #     docs.append(d)
+    # plot_track(docs)
     
     
     

@@ -269,26 +269,26 @@ class OverheadCompare():
                 self.annot_queue.get(block=False).remove()
              
             # plot GT
-            for index in range(len(doc0["position"])):
-                car_x_pos = doc0["position"][index][0]
-                car_y_pos = doc0["position"][index][1]
+            # for index in range(len(doc0["position"])):
+            #     car_x_pos = doc0["position"][index][0]
+            #     car_y_pos = doc0["position"][index][1]
 
-                # print("** ",cache_vehicle.get(doc0["id"][index]))
-                # print("*** ", len(self.veh_cache[0].cache))
-                # print(len(cache_colors.cache))
-                # print(doc0["id"][index])
-                # print(doc0["id"][index] in self.veh_cache[0].cache.keys())
-                gt_d = self.veh_cache[0].get(doc0["id"][index])
-                car_length, car_width = gt_d["dim"]
-                car_y_pos -= 0.5 * car_width
-                if car_y_pos >= 60: # west bound
-                    car_x_pos -= car_length
+            #     # print("** ",cache_vehicle.get(doc0["id"][index]))
+            #     # print("*** ", len(self.veh_cache[0].cache))
+            #     # print(len(cache_colors.cache))
+            #     # print(doc0["id"][index])
+            #     # print(doc0["id"][index] in self.veh_cache[0].cache.keys())
+            #     gt_d = self.veh_cache[0].get(doc0["id"][index])
+            #     car_length, car_width = gt_d["dim"]
+            #     car_y_pos -= 0.5 * car_width
+            #     if car_y_pos >= 60: # west bound
+            #         car_x_pos -= car_length
                     
-                box = patches.Rectangle(xy = (car_x_pos, car_y_pos),
-                                        width = car_length, height=car_width,
-                                        **gt_d["kwargs"]) # light grey
-                for i in range(num):
-                    axs[i].add_patch(copy(box)) 
+            #     box = patches.Rectangle(xy = (car_x_pos, car_y_pos),
+            #                             width = car_length, height=car_width,
+            #                             **gt_d["kwargs"]) # light grey
+            #     for i in range(num):
+            #         axs[i].add_patch(copy(box)) 
                     
                     
             # plot vehicles
@@ -415,7 +415,7 @@ def main(rec, gt = "groundtruth_scene_2_57", framerate = 25, x_min=-100, x_max=2
     
 if __name__=="__main__":
 # "young_ox--RAW_GT2__calibrates"
-    main(rec = "modern_beluga--RAW_GT2__giggles", save=False, upload = True, offset = 0, transform=False, extra="")
+    main(rec = "funny_squirrel--RAW_GT2__escalates", save=False, upload = True, offset = 6, transform=False, extra="")
     
         
     # with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:

@@ -79,9 +79,9 @@ def eval_raw(parameters, db_param):
     read_dbc = DBClient(**db_param, database_name = parameters["raw_database"], collection_name = parameters["raw_collection"])
     write_dbc = DBClient(**db_param, database_name = parameters["eval_database"], collection_name = parameters["raw_collection"]) # evaluation collection
          
-    if parameters["raw_collection"] in write_dbc.list_collection_names():
-        print(parameters["raw_collection"] ," is already evaluated.")    
-        return   
+    # if parameters["raw_collection"] in write_dbc.list_collection_names():
+    #     print(parameters["raw_collection"] ," is already evaluated.")    
+    #     return   
                        
     # res has conflicts 
 
@@ -614,8 +614,8 @@ if __name__ == "__main__":
     with open("../config/parameters.json") as f:
         parameters = json.load(f)
     
-    parameters["raw_collection"] = "organic_forengi--RAW_GT2"
-    parameters["reconciled_collection"] = "organic_forengi--RAW_GT2__protests"
+    parameters["raw_collection"] = "modern_beluga--RAW_GT2"
+    parameters["reconciled_collection"] = "modern_beluga--RAW_GT2__conforms"
     
     with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)
@@ -625,13 +625,14 @@ if __name__ == "__main__":
     raw_eval = DBClient(**db_param, database_name = "evaluation", collection_name=parameters["raw_collection"] )
     rec_eval = DBClient(**db_param, database_name = "evaluation", collection_name=parameters["reconciled_collection"] )
     
-    rec.transform()
+    # eval_raw(parameters, db_param)
+    # rec.transform()
     eval_reconcile(parameters, db_param)
     # plot_stage_hist(parameters["reconciled_collection"], db_param)
-    G = conflict_graph(rec.collection)
-    viz_graph(G, parameters["reconciled_collection"])
-    G, to_remove = delete_conflict(rec.collection, rec_eval.collection)
-    viz_graph(G, parameters["reconciled_collection"])
+    # G = conflict_graph(rec.collection)
+    # viz_graph(G, parameters["reconciled_collection"])
+    # G, to_remove = delete_conflict(rec.collection, rec_eval.collection)
+    # viz_graph(G, parameters["reconciled_collection"])
     
     report(raw_eval.collection, rec_eval.collection)
     

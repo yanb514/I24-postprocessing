@@ -302,7 +302,7 @@ def opt2_l1(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     cx = cx_pre-1
     iter = 0
     while cx - cx_pre < 0 and iter <= max_iter:
-        print("iter, ", cx)
+        # print("iter, ", cx)
         lam1_x += 1e-6
         Q, p, H, G, h, N, M, D2 = _get_qp_opt2_l1(x, lam2_x, lam3_x, lam1_x)
         sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
@@ -394,6 +394,8 @@ def opt2_l1_constr(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     car["timestamp"] = list(car["timestamp"])
     car["x_position"] = list(xhat)
     car["y_position"] = list(yhat)
+    car["starting_x"] = car["x_position"][0]
+    car["ending_x"] = car["x_position"][-1]
     
     # calculate residual
     # xhat_re = np.reshape(xhat, -1) # (N,)

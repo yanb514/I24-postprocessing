@@ -212,9 +212,9 @@ if __name__ == '__main__':
     reconciled_queue = multiprocessing.Manager().Queue()
     counter = 0 
     
-    test_dbr = DBClient(**db_param, database_name = "trajectories", collection_name = "delicious_cheetah--RAW_GT2")
+    test_dbr = DBClient(**db_param, database_name = "trajectories", collection_name = "sanctimonious_beluga--RAW_GT1")
     
-    for doc in test_dbr.collection.find({"_id": ObjectId("6303ea4e7b362bdc0c8b3981")}):
+    for doc in test_dbr.collection.find({"_id": ObjectId("62fd2a29b463d2b0792821c1")}):
         # doc = add_filter(doc, test_dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
         #                CONF_THRESH, REMAIN_THRESH)
         stitched_q.put([doc])
@@ -246,17 +246,19 @@ if __name__ == '__main__':
     print(r["x_score"], r["y_score"])
     
     #%% plot
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(1,2)
-    ax[0].scatter(doc["timestamp"], doc["x_position"])
-    # filter = np.array(doc["filter"], dtype=bool)
-    ax[0].scatter(np.array(doc["timestamp"]),np.array(doc["x_position"]), c="lightgrey")
-    ax[0].scatter(r["timestamp"], r["x_position"], s=1)
-    ax[1].scatter(doc["timestamp"], doc["y_position"])
-    # filter = np.array(doc["filter"], dtype=bool)
-    ax[1].scatter(np.array(doc["timestamp"]),np.array(doc["y_position"]), c="lightgrey")
-    ax[1].scatter(r["timestamp"], r["y_position"], s=1)
+    # import matplotlib.pyplot as plt
+    # fig, ax = plt.subplots(1,2)
+    # ax[0].scatter(doc["timestamp"], doc["x_position"])
+    # # filter = np.array(doc["filter"], dtype=bool)
+    # ax[0].scatter(np.array(doc["timestamp"]),np.array(doc["x_position"]), c="lightgrey")
+    # ax[0].scatter(r["timestamp"], r["x_position"], s=1)
+    # ax[1].scatter(doc["timestamp"], doc["y_position"])
+    # # filter = np.array(doc["filter"], dtype=bool)
+    # ax[1].scatter(np.array(doc["timestamp"]),np.array(doc["y_position"]), c="lightgrey")
+    # ax[1].scatter(r["timestamp"], r["y_position"], s=1)
     
+    from multi_opt import plot_track
+    plot_track([doc, r])
     
     
     

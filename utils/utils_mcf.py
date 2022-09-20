@@ -2,7 +2,7 @@ import numpy as np
 import networkx as nx
 import queue
 from collections import deque
-from utils.utils_stitcher_cost import cost_3
+from utils.utils_stitcher_cost import cost_3, stitch_cost
 # from scipy import stats
 from i24_logger.log_writer import catch_critical
 import itertools
@@ -69,6 +69,8 @@ class MOTGraphSingle:
         self.TIME_WIN = parameters["time_win"]
         self.VARX = parameters["varx"]
         self.VARY = parameters["vary"]
+        self.residual_threshold_x = parameters["residual_threshold_x"]
+        self.residual_threshold_y = parameters["residual_threshold_y"]
         self.cache = {}
           
     @catch_critical(errors = (Exception))
@@ -90,7 +92,8 @@ class MOTGraphSingle:
 
         for fgmt in reversed(self.in_graph_deque):
             # TODO: fix args
-            cost = cost_3(fgmt, fragment, self.TIME_WIN, self.VARX, self.VARY)
+            # cost = cost_3(fgmt, fragment, self.TIME_WIN, self.VARX, self.VARY)
+            cost = stitch_cost(fgmt, fragment, self.TIME_WIN, self.residual_threshold_x, self.residual_threshold_y)
             # print(fgmt.data["_id"], fragment.data["_id"], cost)
             
             if cost <= 3:  # new edge points from new_id to existing nodes, with postive cost
