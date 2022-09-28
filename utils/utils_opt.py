@@ -28,19 +28,6 @@ def combine_fragments(all_fragment):
     
     stacked = defaultdict(list)
 
-    # if isinstance(stitched_doc, list):
-    #     fragment_ids = stitched_doc
-    # else:
-    #     fragment_ids = stitched_doc["fragment_ids"]
-    # if isinstance(fragment_ids[0], str):
-    #     fragment_ids = [ObjectId(_id) for _id in fragment_ids]
-
-    # logger.info("fragment_ids type: {}, {}".format(type(fragment_ids), fragment_ids))
-    # logger.debug("first doc {}".format(raw_collection.find_one(fragment_ids[0]))) # this returns none
-    
-    # stacked["fragment_ids"] = []
-    # all_fragment = raw_collection.find({"_id": {"$in": fragment_ids}}) # returns a cursor
-
     for fragment in all_fragment:
         # logger.debug("fragment keys: {}".format(fragment.keys()))
         stacked["timestamp"].extend(fragment["timestamp"])
@@ -67,20 +54,13 @@ def combine_fragments(all_fragment):
         stacked["fine_vehicle_class"].append(fragment["fine_vehicle_class"])
         stacked["direction"].append(fragment["direction"])
     
-    # for filter in filters: # len(filter) cannot be 0
-    #     stacked["filter"].extend([int(item) for item in filter])
-        
-       
-    # first fragment
-    # first_id = fragment_ids[0]
-    # logger.debug("** first_id: {}, type: {}".format(first_id, type(first_id)), extra = None)
-    # logger.debug("** timestamp: {}, collection size: {}".format(stacked["timestamp"], raw_collection.count_documents({})), extra = None)
-    
+
     # first_fragment = raw_collection.find_one({"_id": first_id})
     first_fragment = all_fragment[0]
     stacked["starting_x"] = first_fragment["starting_x"]
     stacked["first_timestamp"] = first_fragment["first_timestamp"]
     stacked["_id"] = first_fragment["_id"]
+    stacked["configuration_id"] = first_fragment["configuration_id"]
     
     # last fragment
     # last_id = fragment_ids[-1]
@@ -99,12 +79,6 @@ def combine_fragments(all_fragment):
     stacked["fine_vehicle_class"] = max(set(stacked["fine_vehicle_class"]), key = stacked["fine_vehicle_class"].count)
     stacked["direction"] = max(set(stacked["direction"]), key = stacked["direction"].count)
     
-    # Apply filter
-    # if len(stacked["filter"]) == 0: # no good measurements
-    #     stacked["post_flag"] = "low conf fragment"
-    # else:
-    #     stacked["x_position"] = [stacked["x_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
-    #     stacked["y_position"] = [stacked["y_position"][i] if stacked["filter"][i] == 1 else np.nan for i in range(len(stacked["filter"])) ]
     return stacked
 
 

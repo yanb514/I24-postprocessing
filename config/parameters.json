@@ -1,12 +1,12 @@
 {
     "mode": "sequence",
-    "description": "add merge back with merge cost",
-    "raw_collection": "funny_squirrel--RAW_GT2",
+    "description": "test conflict resolution in the pipeline",
+    "raw_collection": "sanctimonious_beluga--RAW_GT1",
     
 	"raw_database": "trajectories",
 	"stitched_database": "stitched",
 	"reconciled_database": "reconciled",
-	"reconciled_collection": "",
+	"reconciled_collection": "sanctimonious_beluga--RAW_GT1__test",
 	"eval_database": "evaluation",
 	"meta_database": "meta",
 	"server_id": 1,
@@ -53,7 +53,7 @@
     "ay_lim": 5,
     "jx_lim": 3,
     "jy_lim": 1,
-    "ph": 100,
-    "ih": 20 
+    "ph": 5,
+    "ih": 1
 }
 

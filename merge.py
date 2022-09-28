@@ -340,7 +340,7 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters):
         # find connected components in G and check for timeout
         # TODO: use better data structure to make the following more efficient
         if cntr % 10 == 0:
-            merge_logger.info("Graph nodes : {}, Graph edges: {}, cache: {}".format(G.number_of_nodes(), G.number_of_edges(), sdll.count()),extra = None)
+            merge_logger.debug("Graph nodes : {}, Graph edges: {}, cache: {}".format(G.number_of_nodes(), G.number_of_edges(), sdll.count()),extra = None)
             merge_logger.debug("Time elapsed for adding edge: {:.2f}".format(t2-t1))
             # t3 = time.time()
         to_remove = set()

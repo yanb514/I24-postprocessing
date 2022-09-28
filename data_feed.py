@@ -64,24 +64,30 @@ def initialize_db(parameters, db_param):
       
     rec_db = dbc.client[parameters["reconciled_database"]]
     existing_cols = rec_db.list_collection_names()
+    
+    if not parameters["reconciled_collection"]:
+        connected = False
+        while not connected:
+            verb = random.choice(verbs)
+            reconciled_name = parameters["raw_collection"]+"__"+verb
+            
+            if reconciled_name not in existing_cols:
+                parameters["stitched_collection"] = reconciled_name
+                parameters["reconciled_collection"] = reconciled_name
+                print("** initialized reconcield name, ", reconciled_name)
+                connected = True
 
-    connected = False
-    while not connected:
-        verb = random.choice(verbs)
-        reconciled_name = parameters["raw_collection"]+"__"+verb
-        
-        if reconciled_name not in existing_cols:
-            parameters["stitched_collection"] = reconciled_name
-            parameters["reconciled_collection"] = reconciled_name
-            print("** initialized reconcield name, ", reconciled_name)
-            connected = True
-
+    else:
+        reconciled_name = parameters["reconciled_collection"]
+        print("reconciled_collection name is already provided: ", parameters["reconciled_collection"])
     # save metadata
     dbc.client[parameters["meta_database"]]["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters._getvalue()},
                                   bypass_document_validation=True)
     
     del dbc
     return
+
+
     
 def thread_update_one(raw, _id, filter, fitx, fity):
     filter = [1 if i else 0 for i in filter]
