@@ -9,7 +9,7 @@ import json
 import numpy as np
 from bson.objectid import ObjectId
 import os
-import matplotlib.pyplot as plt
+
 from i24_database_api import DBClient
 import cvxpy as cp
 # from cvxopt import matrix, solvers, sparse,spdiag,spmatrix
@@ -17,9 +17,6 @@ import time
 from scipy.sparse import identity, coo_matrix, hstack, csr_matrix,lil_matrix
 from utils.utils_opt import resample
 import pandas as pd
-import matplotlib.animation as animation
-import matplotlib.patches as patches
-from matplotlib.collections import PatchCollection
 
 from itertools import combinations
 from collections import defaultdict, OrderedDict
@@ -28,29 +25,11 @@ from datetime import datetime
 from multiprocessing.pool import ThreadPool
 from utils.utils_opt import combine_fragments
 import i24_logger.log_writer as log_writer
+from pymongo import UpdateOne
 
+dt = 0.04
 
-def plot_track(tracks):
-    fig,ax = plt.subplots(1,2,figsize=(9,4))
     
-    for track in tracks:
-        try:
-            length = np.nanmedian(track["length"])
-            width = np.nanmedian(track["width"])
-        except TypeError:
-            length = track["length"]
-            width = track["width"]
-        x = np.array(track["x_position"])
-        t = track["timestamp"]
-        y = np.array(track["y_position"])
-
-        ax[0].fill_between(t, x, x +track["direction"]*length, alpha=0.5, label=track["_id"], interpolate=True)
-        ax[1].fill_between(t, y + 0.5*width, y- 0.5*width, alpha=0.5,interpolate=True)
-    ax[0].legend(loc="lower right")
-    plt.show()
-    return
-
-
 def _blocdiag_scipy(X, n):
     """
     makes diagonal blocs of X, for indices in [sub1,sub2]
@@ -66,71 +45,7 @@ def _blocdiag_scipy(X, n):
         for i in range(n-b+1):
             mat[i, i:i+b] = X
         return mat
-    
-def animate_tracks(snapshots, offset = 0, save=False, name="before"):
-    '''
-    resample tracks, make to the dataframe, join the dataframe to get the overlapped time
-    make an animation
-    '''
-
-    # animate it!
-    fig, ax = plt.subplots(1,1, figsize=(25,5))
-
-    ax.set(ylim=[0,120])
-    ax.set(xlim=[0,2000])
-    ax.set_aspect('equal', 'box')
-    
-    start_time = min(snapshots.keys())
-    frames = sorted([key for key in snapshots.keys() if key > start_time+offset]) # sort time index
-    dt = frames[1]-frames[0]
-    print("dt: ",dt)
-    
-
-    def animate(i):
-        # plot the ith row in df3
-        # remove all car_boxes 
-        if i > start_time + offset:
-        
-            time_text = datetime.utcfromtimestamp(int(i)).strftime('%m/%d/%Y, %H:%M:%S')
-            plt.suptitle(time_text, fontsize = 20)
-            
-            for pc in ax._children:
-                pc.remove()
-            
-            snapshot = snapshots[i]
-            # pos = [centerx, centery, l, w, dir]
-            boxes = [patches.Rectangle(xy=(pos[0]-pos[4]*0.5*pos[2], pos[1]-0.5*pos[3]), width=pos[2], height=pos[3]) for _, pos in snapshot.items()]
-            pc = PatchCollection(boxes, alpha=1,
-                             edgecolor="blue")
-            ax.add_collection(pc)
-            return ax,
-        
-    # Init only required for blitting to give a clean slate.
-    def init():
-        print("init")
-        return ax,
-
-    anim = animation.FuncAnimation(fig, func=animate,
-                                        init_func= init,
-                                        frames=frames,
-                                        repeat=False,
-                                        interval=dt*1000*0.5, # in ms
-                                        blit=False,
-                                        cache_frame_data = False,
-                                        save_count = 1)
-    if save:
-        
-        file_name = name+ ".mp4"
-        anim.save(file_name, writer='ffmpeg', fps=25)
-        # self.anim.save('{}.gif'.format(file_name), writer='imagemagick', fps=self.framerate)
-        print("saved.")
-        
-    # fig.tight_layout()
-    # plt.show()
-        
-    return anim
-
-    
+   
 def solve_single(track, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     '''
     solve for smoothing (opt2_l1) in cvxpy
@@ -228,82 +143,7 @@ def find_overlap_idx(x, y):
             
     return s1, e1, s2, e2
   
-    
-def plot_configuration(tracks):
-    '''
-    tracks are after resampling
-    make tracks into a matrix X = [xi,
-                                   xj,
-                                   yi,
-                                   yj]
-    AX + b < 0 is the conflict constraint (at least 1 should be satisifed)
-    compute AX + b
-    '''
-    zxi = np.array(tracks[0]["x_position"])
-    zxj = np.array(tracks[1]["x_position"])
-    zyi = np.array(tracks[0]["y_position"])
-    zyj = np.array(tracks[1]["y_position"])
-
-    ti = tracks[0]["timestamp"]
-    tj = tracks[1]["timestamp"]
-    li = np.nanmedian(tracks[0]["length"])
-    lj = np.nanmedian(tracks[1]["length"])
-    wi = np.nanmedian(tracks[0]["width"])
-    wj = np.nanmedian(tracks[1]["width"])
-
-    s1, e1, s2, e2 = find_overlap_idx(ti, tj)
-    K = e1-s1+1
-    Oi = hstack([csr_matrix((K, s1)), identity(K), csr_matrix((K, len(ti)-e1-1))])
-    Oj = hstack([csr_matrix((K, s2)), identity(K), csr_matrix((K, len(tj)-e2-1))])
-    
-    X = np.vstack([Oi@ zxi, Oj@zxj, Oi@zyi, Oj@zyj])
-    A = np.array([[-1, 1, 0, 0],
-                  [1, -1, 0, 0],
-                  [0, 0, 1, -1],
-                  [0, 0, -1, +1]])
-    padx, pady = 5, 1
-    b = np.array([lj + padx, li + padx, 0.5*(wi+wj) + pady, 0.5*(wi+wj) + pady])
-    
-    conf = A @ X + np.tile(b, (K,1)).T # 4 x K
-    # confb = conf < 0 # binary matrix
-    
-    # plot
-    fig,ax = plt.subplots(1,2,figsize=(9,4))
-    pos0 = ax[0].imshow(conf < 0, cmap="RdYlGn", aspect="auto", interpolation='none')
-    ax[0].set_xlabel("timestamp")
-    ax[0].set_title("configuration before conflict resolution")
-    ax[0].set_yticklabels(["", "i is in front of j", "", "i is behind j","", "i is right of j", "","i is left of j",""])
-    
-    
-    # fillnan with interpolation
-    fcn = lambda z: z.nonzero()[0]
-    nans = np.isnan(conf[1,:])
-    for i in range(conf.shape[0]):
-        conf[i,nans]= np.interp(fcn(nans), fcn(~nans), conf[i,~nans])
-    
-    # resolve conflict by pushing to the "best" direction
-    # take the min of each column
-    mincol = np.argmin(conf, axis=0)
-    confb = conf < 0 # binary matrix
-
-    
-    # resolve conflict
-    conf_time = np.where(~np.any(confb, axis=0))[0] # select time where all are false (conflicts occur)
-    confb[mincol[conf_time], conf_time] = True # flip those to True -> indicating the flipped bisection is the direction to pull apart
-    
-    # plot the rest
-    pos1 = ax[1].imshow(confb, cmap="RdYlGn", aspect="auto", interpolation='none')
-    fig.colorbar(pos0, ax=ax[0])
-    
-    fig.colorbar(pos1, ax=ax[1])
-    ax[1].set_yticklabels(["", "i is in front of j", "", "i is behind j","", "i is right of j", "","i is left of j",""])
-    
-    ax[1].set_xlabel("timestamp")
-    ax[1].set_title("configuration after conflict resolution")
-    
-    return conf, confb
-    
-  
+ 
 def configuration(p1, p2):
     '''
     p1, p2: [centerx, cnetery, l, w]
@@ -329,7 +169,8 @@ def separatum(snapshots):
     beta is non-overlap configuration for all overalpped timestamps
     beta = { # this schema is easier to build constraints
         (i,j): { "overlap_t": [t1,t2,...],
-                "configuration": [[T,T,F,F], [F,F,T,T],...]
+                "configuration": [[T,T,F,F], [F,F,T,T],...],
+                "vector": [[xi-xj, yi-yj], [], [],...]
                 }
         }
     is possible that beta may not contain all the combinations of all ids in snapshots, because overlap is only evaluated if two cars appear in the same time
@@ -384,6 +225,107 @@ def separatum(snapshots):
 
     return snapshots, beta_transform, moved, min_moved_t
             
+
+def smooth(data, kernel_size = 10, kernel=None):
+    if kernel is None:
+        kernel = np.ones(kernel_size) / kernel_size
+    data_convolved = np.convolve(data, kernel, mode='same')
+    
+    return data_convolved
+
+
+from math import pi, sqrt, exp
+def gauss_kernel_smooth(data, sigma=10):
+    '''
+    larger sigma -> smoother
+    kernel_size does not seem to matter at all
+    '''
+    kernel_size = len(data)
+    # r = range(-int(kernel_size/2),int(kernel_size/2)+1) # kernel size does not really matter here
+    r = np.linspace(-int(kernel_size/2)+0.5,int(kernel_size/2)-0.5, kernel_size) 
+    kernel =[1 / (sigma * sqrt(2*pi)) * exp(-float(x)**2/(2*sigma**2)) for x in r]
+    return smooth(data, kernel_size, kernel)
+
+
+def clamp(n, minn, maxn):
+    return max(min(maxn, n), minn)
+
+def separatum_smooth(snapshots):
+    '''
+    https://mikekling.com/comparing-algorithms-for-dispersing-overlapping-rectangles/
+    snpashot = {
+        i:[centerx, centery, l, w],
+        j:[...],
+        ...
+        }
+    movement = { # this schema is easier to build constraints
+        (i,j): {"overlap_t": [t1,t2,...],
+                "configuration": [[T,T,F,F], [F,F,T,T],...],
+                "vector": [[xi-xj, yi-yj], [], [],...] # vector=[0,0] if i,j do not overlap
+                }
+        }
+    is possible that beta may not contain all the combinations of all ids in snapshots, because overlap is only evaluated if two cars appear in the same time
+    '''
+
+    movement = defaultdict(dict) # 
+    hasOverlap = True
+    maxiter = 3
+    iter = 0
+    
+    while hasOverlap and iter < maxiter:
+        iter += 1
+        hasOverlap = False # reset
+        for t, snapshot in snapshots.items():
+
+            # vec = {}
+            # for key,val in snapshot.items():
+            #     vec[key] = np.array([0,0])
+            #     snapshot[key] = np.array(val)
+                
+            for i,j in combinations(snapshot.keys(), 2):
+                    
+                conf = configuration(snapshot[i], snapshot[j])
+                if not any(conf): # hasOverlap
+                    hasOverlap = True
+                    vector = np.array(snapshot[i][:2]) - np.array(snapshot[j][:2])
+                    l2 = np.linalg.norm(vector,2)
+                    nvector = vector/l2 # normalized
+                    # l2 = clamp(np.linalg.norm(vector,2), 1e-2, 1e2)
+                    move_vec = list(-np.log(0.01*l2) * nvector) # 4/l2 division by zero move_vec = -log(0.01 * l2) # l2:[1e-2, 100]
+                    # move_vec = list(4/l2 * vector)
+                    # print(l2, move_vec)
+                else:
+                    move_vec = [0,0]
+                    
+                try:
+                    movement[(i,j)]["t"].append(t)
+                    movement[(i,j)]["configuration"].append(conf)
+                    movement[(i,j)]["vector"].append(move_vec)
+                    
+                except: # initialize the list
+                    movement[(i,j)]["t"] = [t]
+                    movement[(i,j)]["configuration"] = [conf] # at this point should have no conflicts
+                    movement[(i,j)]["vector"] = [move_vec]
+                    
+        # smooth the movement vectors over time
+        for i,j in movement: # TODO: can be vectorized
+            smoothed_vec_x = gauss_kernel_smooth(np.array(movement[(i,j)]["vector"]).T[0]) # time series
+            # if any(smoothed_vec_x!=0):
+            #     print("here")
+            smoothed_vec_y = gauss_kernel_smooth(np.array(movement[(i,j)]["vector"]).T[1]) # time series
+            smoothed_vec = np.array([smoothed_vec_x, smoothed_vec_y])
+            # move them! 
+            # for t, v in enumerate(smoothed_vec): # TODO: can be vectorized
+            for ii, t in enumerate(movement[(i,j)]["t"]):
+                snapshots[t][i][:2] += smoothed_vec[:,ii]
+                snapshots[t][j][:2] -= smoothed_vec[:,ii]
+                    
+           
+
+    return snapshots
+
+
+
 
 def time_transform(tracks, dt=0.04):
     '''
@@ -504,7 +446,6 @@ def snapshots_2_tracks(snapshots):
     lru = OrderedDict()
     tracks = []
     timestamps = sorted(snapshots.keys())
-    dt = timestamps[1] - timestamps[0] # assume uniform sample
     for t in timestamps:
         for _id, pos in snapshots[t].items():
             x,y,l,w,dir = pos
@@ -617,7 +558,7 @@ def _build_obj_fcn_constr(tracks, beta, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, 
 
   
 
-def _build_obj_fcn(tracks, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
+def _build_obj_fcn(tracks, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y, D1=None, D2=None, D3=None):
     '''
     No constraints! just obj fcn!
     '''
@@ -628,21 +569,24 @@ def _build_obj_fcn(tracks, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     EY = []
     OBJX = []
     OBJY = []
-
+    constraints = []
+    
     for i,track in enumerate(tracks):
         n = len(track["t"])
         # dt = track["t"][1]-track["t"][0]
-
+        dir = track["dir"]
         zx = track["x"]
         zy = track["y"]
         x = cp.Variable(n)
         y = cp.Variable(n)
         ex = cp.Variable(n)
         ey = cp.Variable(n)
-
-        # D1 = _blocdiag_scipy(coo_matrix([-1,1]), n) * (1/dt)
-        D2 = _blocdiag_scipy(coo_matrix([1,-2,1]), n) * (1/dt)
-        D3 = _blocdiag_scipy(coo_matrix([-1,3,-3,1]), n) * (1/dt)
+            
+        if D2 is None or D2.shape[1] != n: # recalcualte matrices
+            D1 = _blocdiag_scipy(coo_matrix([-1,1]), n) * (1/dt)
+            D2 = _blocdiag_scipy(coo_matrix([1,-2,1]), n) * (1/dt)
+            D3 = _blocdiag_scipy(coo_matrix([-1,3,-3,1]), n) * (1/dt)
+    
         objx = 1/n * cp.sum_squares(zx-x-ex) + lam2_x/(n-2) * cp.sum_squares(D2@x) + lam3_x/(n-3) * cp.sum_squares(D3@x) + lam1_x/n * cp.norm(ex,1)
         objy = 1/n * cp.sum_squares(zy-y-ey) + lam2_y/(n-2) * cp.sum_squares(D2@y) + lam3_y/(n-3) * cp.sum_squares(D3@y) + lam1_y/n * cp.norm(ey,1)
     
@@ -654,9 +598,18 @@ def _build_obj_fcn(tracks, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
         OBJX.append(objx)
         OBJY.append(objy)
         
+        constraints.extend([
+            -dir*D1@x <= 0,
+            # D2@x <= 20,
+            # -D2@x <= 20,
+            # D3@x <= 100,
+            # -D3@x <= 100
+        ])
+        
            
-    # all decision variables, all obj functions and all constraints
-    return X,Y,EX,EY,OBJX,OBJY
+    # return all decision variables, all obj functions and all constraints
+    
+    return X,Y,EX,EY,OBJX,OBJY,constraints
 
 
 
@@ -688,7 +641,7 @@ def solve_collision_avoidance3(tracks, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, l
     
     return tracks
 
-dt = 0.04
+
 def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
     '''
     stitched_queue is ordered by last_timestamp
@@ -702,16 +655,22 @@ def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
     {
          {
             "_id":
-            "timetamp": t1
-            "traj1_id": [centerx, centery, l, w],
-            "traj2_id": [...],
-            ...
+            "timetamp": t1,
+            "eb": {
+                "traj1_id": [centerx, centery, l, w],
+                "traj2_id": [...],
+                ...
+                },
+            "wb": {
+                "traj3_id": [centerx, centery, l, w],
+                "traj4_id": [...],
+                ...
+                },
             },
         {
            "_id":
-           "timetamp": t2
-           "traj1_id": [centerx, centery, l, w],
-           "traj2_id": [...],
+           "timetamp": t2,
+           ...,
            ...
            },
     }   
@@ -751,13 +710,13 @@ def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
         except:
             l,w = traj["length"], traj["width"]
             
+        # resample to 1/dt hz
         data = {key:traj[key] for key in time_series_field}
         df = pd.DataFrame(data, columns=data.keys()) 
         index = pd.to_timedelta(df["timestamp"], unit='s')
         df = df.set_index(index)
         df = df.drop(columns = "timestamp")
         
-        # resample to 1/dt hz
         df=df.groupby(df.index.floor(str(dt)+"S")).mean().resample(str(dt)+"S").asfreq()
         df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
         df = df.interpolate(method='linear')
@@ -807,16 +766,18 @@ def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
             last_poped_t = t
             stale.pop(t)
             # change d to value.objectid: array, so that it does not reset the value field, but only update it
-            d={"value."+key: val for key,val in d.items()}
+            d={direction+"."+key: val for key,val in d.items()}
             pool.apply_async(thread_update_one, (temp.collection, {"timestamp": round(t,2)},{"$set": d},))
+            parameters[direction+"_last"] = t # let rolling solver know when to query
             
             
     # write the rest of lru to database
     logger.info("Flush out the rest in LRU")
     while len(lru) > 0:
         t, d = lru.popitem(last=False) # pop first
-        d={"value."+key: val for key,val in d.items()}
+        d={direction+"."+key: val for key,val in d.items()}
         pool.apply_async(thread_update_one, (temp.collection, {"timestamp": round(t,2)},{"$set": d},))
+        parameters[direction+"_last"] = t
         
         
     pool.close()
@@ -828,12 +789,12 @@ def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
 
 
 
-def solve_collision_avoidance_rolling(direction, parameters, db_param):
+def solve_collision_avoidance_rolling(direction, res_queue, parameters, db_param):
     '''
+    direction: "eb" or "wb"
     a rolling window approach to solve reconciliation problem
     for each window, iterate between separation and smoothing until no move conflicts
     and move on to the next window
-    TODO: query direction
     rec_transformed.collection.find_one({}, sort=[("timestamp",1)])["timestamp"]
     '''
     logger = log_writer.logger
@@ -842,47 +803,67 @@ def solve_collision_avoidance_rolling(direction, parameters, db_param):
     
     # listen to the transformed collection in temp db
     raw_transformed = DBClient(**db_param, database_name = "temp", collection_name = parameters["raw_collection"])
-    rec_transformed = DBClient(**db_param, database_name = "temp", collection_name = parameters["reconciled_collection"])
-    rec_transformed.create_index("timestamp")
-    pool = ThreadPool(processes=200) # for insert
+    # rec_transformed = DBClient(**db_param, database_name = "temp", collection_name = parameters["reconciled_collection"])
+    # rec_transformed.create_index("timestamp")
+    # pool = ThreadPool(processes=200) # for insert
     
     PH = parameters["ph"]
     IH = parameters["ih"]
-    continuity_steps = 3
+    continuity_steps = 4
     reconciliation_args = parameters["reconciliation_args"]
     
     constr_rhs = {} # continuity constraints are initialized to none (first window)
-    maxiter = 1
-    timeout = 5
+    maxiter = 0
+    timeout = 10
     
-    # wait for the first timestamp in raw_transformed
-    while raw_transformed.collection.count_documents({}) == 0:
-        time.sleep(2)
+    # wait for the first timestamp in raw_transformed, this direction
+    # while raw_transformed.collection.count_documents({}) == 0:
+    while not raw_transformed.collection.find_one({direction: {"$exists":True}}):
+        time.sleep(3)
         logger.info("Waiting for the start of the first window")
-    start = raw_transformed.get_min("timestamp")
+        
+    # start = raw_transformed.get_min("timestamp")
+    start = raw_transformed.collection.find_one({direction: {"$exists":True}}, sort=[("timestamp",1)])["timestamp"] # min timestamp met the query condition
     end = start + PH
     last = False # indicate if it is the last rolling window for stop condition
+    
+    # precompute some matrices
+    n = int(PH/dt)
+    D1 = _blocdiag_scipy(coo_matrix([-1,1]), n) * (1/dt)
+    D2 = _blocdiag_scipy(coo_matrix([1,-2,1]), n) * (1/dt)
+    D3 = _blocdiag_scipy(coo_matrix([-1,3,-3,1]), n) * (1/dt)
+    
+    dir = -1 if "w" in direction else 1
+    
+    # get the latested transformed timestamp from preprocess
+    while direction+"_last" not in parameters:
+        time.sleep(2)
     
     while not last: # for each distinct rolling window
         
         # wait for end to show up in database
         t1 = time.time()
-        while raw_transformed.get_max("timestamp") < end:
+        # while raw_transformed.get_max("timestamp") < end:
+        # while raw_transformed.collection.find_one({}, sort=[("timestamp",-1)])["timestamp"] < end: # max timestamp that meets the query condition
+        while parameters[direction+"_last"] < end + 1:  
             time.sleep(2)
             logger.info("Waiting for temp_raw to accumulate enough time-based data")
             t2 = time.time()
             if t2-t1 > timeout:
                 # set end pointer as the last timestamp in this database
-                end = raw_transformed.get_max("timestamp") + 0.1
+                # end = raw_transformed.collection.find_one({}, sort=[("timestamp",-1)])["timestamp"] + 0.1
+                end = parameters[direction+"_last"]
                 last = True
                 logger.info("Enter the last rolling window")
                 break
             
             
-        query = raw_transformed.get_range("timestamp", start, end)
-        snapshots = {time_doc["timestamp"]: time_doc["value"] for time_doc in query}
-        snapshots, _, hasconflicts, min_moved_t = separatum(snapshots)
-        logger.info("Conflict before smoothing: {}".format(hasconflicts))
+        query = raw_transformed.get_range("timestamp", start, end) # ASC sorted by timestamp [start, end)
+        
+        snapshots = {time_doc["timestamp"]: time_doc[direction] for time_doc in query}
+        # snapshots, _, hasconflicts, min_moved_t = separatum(snapshots)
+        snapshots = separatum_smooth(snapshots) # still cannot guarantee no conflicts
+        # logger.info("Conflict before smoothing: {}".format(hasconflicts))
         
         tracks_s = snapshots_2_tracks(snapshots) # tracks_s are de-conflicted, but not smoothed
         tracks_s = [track for track in tracks_s if len(track["t"]) > 3]# possible that tracks in tracks_s have len < 3
@@ -899,11 +880,10 @@ def solve_collision_avoidance_rolling(direction, parameters, db_param):
             
             # get decision vars and objective functions
             # X,Y,EX,EY,OBJX,OBJY,constraints = _build_obj_fcn_constr(tracks_s, beta, **reconciliation_args)
-            X,Y,EX,EY,OBJX,OBJY = _build_obj_fcn(tracks_s, **reconciliation_args)
+            X,Y,EX,EY,OBJX,OBJY,constr = _build_obj_fcn(tracks_s, **reconciliation_args, D1=D1, D2=D2, D3=D3)
             
             # add continuity constraints: the first <continuity_steps> is set as equality constraints. RHS values should be fixed in the inner while loop
             constraints = []
-            # constr_rhs = {} # TODO: delete me debug only
             if constr_rhs:
                 for i, track in enumerate(tracks_s):
                     try:
@@ -916,13 +896,17 @@ def solve_collision_avoidance_rolling(direction, parameters, db_param):
                         pass
             
             if len(constraints) > 0:
-                logger.info("{} tracks have {} continuity constraints".format(len(tracks_s), len(constraints)/2))
+                logger.info("{} of {} tracks have continuity constraints".format(int(len(constraints)/2), len(tracks_s)))
+            
             
             # combine to a problem
+            constraints.extend(constr) # combine continuity constraints with dynamics constraints
             obj = cp.sum(OBJX) + cp.sum(OBJY) # may need to scale y
             prob = cp.Problem(cp.Minimize(obj), constraints)
             prob.solve(verbose=False) #solver="ECOS_BB" runs forever, solver="SCIP" takes forever, qcp=True if problem is DQCP
-            logger.info("Status: {}".format(prob.status))
+            status= prob.status
+            if status != "optimal":
+                logger.warning("Solver status: {}".format(status))
 
             # modify tracks
             # check if smoothing re-introduced conflicts
@@ -931,61 +915,64 @@ def solve_collision_avoidance_rolling(direction, parameters, db_param):
                     tracks_s[i]["x"][j] = X[i].value[j]
                     tracks_s[i]["y"][j] = Y[i].value[j]
                     
-            snapshots_post = tracks_2_snapshots(tracks_s)
-            snapshots_post, _, hasconflicts,min_moved_t = separatum(snapshots_post)
-            logger.info("Conflict after smoothing: {}".format(hasconflicts))
+            # snapshots_post = tracks_2_snapshots(tracks_s)
+            # snapshots_post, _, hasconflicts,min_moved_t = separatum(snapshots_post)
+            # logger.info("Conflict after smoothing: {}".format(hasconflicts))
 
-            if min_moved_t < start + continuity_steps*dt:
-                print("min_moved_T within continuity step")
+            # if min_moved_t < start + continuity_steps*dt:
+            #     print("min_moved_T within continuity step")
                 
             # hasconflicts = False
-            if hasconflicts and iter < maxiter:
-                tracks_s = snapshots_2_tracks(snapshots_post) # re-separate tracks to iterate next loop
-                iter += 1
-                logger.info("iter {}: re-solve for this window".format(iter))
+            # if hasconflicts and iter < maxiter:
+            #     tracks_s = snapshots_2_tracks(snapshots_post) # re-separate tracks to iterate next loop
+            #     iter += 1
+            #     logger.info("iter {}: re-solve for this window".format(iter))
 
             # only write result and move to the next window if no more conflicts in this window
-            else:
-                if hasconflicts:
-                    logger.info("*** STILL has conflicts!!!")
-                constr_rhs = {} # reset constraints
-                hasconflicts = False
-                # update to the next window
-                start += IH
-                end = start+PH
-    
-                # write result of [curr: curr+IH] to database temp->reconciled_collection
-                upper = start + continuity_steps * dt
-                for i, track in enumerate(tracks_s):
-                    val_id = "value." + str(track["_id"])
-                    xx,yy = [],[]
-                    for j,t in enumerate(track["t"]):
-                        # update constr_rhs
-                        if t >= start and t < upper: # TODO check open and close range
+            # else:
+            # if hasconflicts:
+            #     logger.info("*** STILL has conflicts!!!")
+            constr_rhs = {} # reset constraints
+            hasconflicts = False
+            # update to the next window
+            start += IH
+            end = start+PH
+
+            # write result of [curr: curr+IH] to database temp->reconciled_collection
+            upper = start + continuity_steps * dt
+            for i, track in enumerate(tracks_s):
+                # val_id = direction + "." + str(track["_id"])
+                xx,yy = [],[]
+                for j,t in enumerate(track["t"]):
+                    
+                    if not last:
+                        if t < start:
+                            res_queue.put([round(t,2), track["_id"], X[i].value[j],Y[i].value[j],
+                                                        np.median(tracks_s[i]["l"]),
+                                                        np.median(tracks_s[i]["w"]),dir])
+                        elif t < upper:
                             xx.append(track["x"][j])
                             yy.append(track["y"][j])
-                        
-                        if not last and t > start + continuity_steps: # curr is already updated to the end of this rolling window
-                            break # should break the inner for loop
-                         
-                        filter = {"timestamp": round(t,2)}
-                        update = {"$set": {val_id: [X[i].value[j],Y[i].value[j],
-                                                    np.median(tracks_s[i]["l"]),
-                                                    np.median(tracks_s[i]["w"]),
-                                                    tracks_s[i]["dir"]]
-                                  }}
-                        pool.apply_async(thread_update_one, (rec_transformed.collection, filter, update, ))# none-blocking!
-                    
-                    # update constr_rhs here
-                    ns = len(xx)
-                    if ns > 0:
-                        constr_rhs[track["_id"]] = [xx,yy]
 
+                        else: # t>= upper
+                            break 
+                    else: # last window
+                        res_queue.put([round(t,2), track["_id"], X[i].value[j],Y[i].value[j],
+                                                    np.median(tracks_s[i]["l"]),
+                                                    np.median(tracks_s[i]["w"]),dir])
+
+                
+                # update constr_rhs here
+                ns = len(xx)
+                if ns > 0:
+                    constr_rhs[track["_id"]] = [xx,yy]
+                  
+            logger.info("res_queue size: {}".format(res_queue.qsize())) 
+
+            
+            
     logger.info("Exit rolling solver.") 
-    pool.close()
-    pool.join()
     del raw_transformed
-    del rec_transformed
     return
 
 
@@ -1005,113 +992,102 @@ def thread_insert_one(collection, doc):
  
     
  
-def postprocess_reconcile(direction, parameters, db_param):
+def postprocess_reconcile(res_queue, parameters, db_param):
     '''
-    direction: "eb" or "wb"
-    read from the temporary database with snapshots (time-based documents), transform to trajectory-based documents
+    res_queue has item in [t, str_obj_id, x,y,l,w,dir], is somewhat ordered by time
+    transform time-indexed documents to trajectory-based documents
     update t,x,y to the reconciled trajectory database, which was originally created during combine_trajectories right after stitch
-    if temp is delete after processing, this process can be restarted without data loss
+    used $push $each for time series so that no data loss when this process restarts
     '''
     logger = log_writer.logger
-    logger.set_name("postprocess_reconcile_"+direction)
+    logger.set_name("postprocess_reconcile")
     setattr(logger, "_default_logger_extra",  {})
-    
-    temp = DBClient(**db_param, database_name = "temp", collection_name = parameters["reconciled_collection"])
+
     rec = DBClient(**db_param, database_name = "reconciled", collection_name = parameters["reconciled_collection"])
-    pool = ThreadPool(processes = 100)
-    timeout = 5 # in sec. if no new documents in 30 from temp, timeout this process
+
+    q_timeout = 5 # in sec. if no new documents in 30 from temp, timeout this process
+    lru_timeout = parameters["ih"] + 0.1
+    lru_e = OrderedDict() # key:str(id), val={"t":[], "x":[], "y":[]}, EB, dir=1
+    lru_w = OrderedDict() # dir=-1
     
     # wait for the first document to show up
-    while temp.count() == 0:
+    while res_queue.qsize() == 0:
         time.sleep(2)
-    start = temp.get_min("timestamp")
-    
-    # make sure that end > start
-    while temp.get_max("timestamp") <= start:
-        time.sleep(2)
-    end = temp.get_max("timestamp") # end may increase as more data comes in
-    
-    # back to traj based documents
-    lru = OrderedDict() # key:str(id), val={"t":[], "x":[], "y":[]}
-    last = False # indicate the last batch operation
-    
-    while not last:
-        logger.info("Query temp_rec from {:.2f} - {:.2f}".format(start, end))
-        query = temp.get_range("timestamp", start, end) # [start, end)
-        for snapshot in query:
-            curr_time = snapshot["timestamp"]
-            for _id, pos in snapshot["value"].items():
-                x,y,l,w,dir = pos
-                try:
-                    lru[ObjectId(_id)]["t"].append(curr_time)
-                    lru[ObjectId(_id)]["x"].append(x-0.5*dir*l) # make centerx to backcenter x
-                    lru[ObjectId(_id)]["y"].append(y)
-                    # lru[ObjectId(_id)]["l"] = l
-                    # lru[ObjectId(_id)]["w"] = w
-                    
-                except KeyError: #initialize
-                    lru[ObjectId(_id)] = {
-                        "t":[curr_time],
-                        "x":[x],
-                        "y":[y],
-                        "l":l,
-                        "w":w,
-                        # "dir":dir
-                        }
-                lru.move_to_end(ObjectId(_id))
-                
-             
-            temp.collection.delete_one({"_id": snapshot["_id"]})
         
-            # if a traj is ready, update to rec_collection
-            while lru[next(iter(lru))]["t"][-1] < curr_time - 0.5:
-                _id, lru_traj = lru.popitem(last=False) #FIFO
-                # do not "$set", otherwise if timeout is premature, it will reset the previous records
-                pool.apply_async(thread_update_one, (rec.collection,{"_id":_id}, 
-                                                     {"$push": {
-                                                         "timestamp": {"$each": lru_traj["t"]},
-                                                         "x_position": {"$each": lru_traj["x"]},
-                                                         "y_position": {"$each": lru_traj["y"]}
-                                                         },
-                                                      "$set": {
-                                                          "length":lru_traj["l"],
-                                                          "width":lru_traj["w"]
-                                                          }
-                                                      }))
-
-        # see if query (window) can be expanded
-        start = end
-        newend = end
-        t1 = time.time()
-        while temp.count() > 0 and not newend > temp.get_max("timestamp"): # should keep expending
-            time.sleep(2)
-            end = temp.get_max("timestamp") # expand window
-            t2 = time.time()
-            if t2-t1 > timeout:
-                last = True
-                logger.info("timeout for postprocess_reconcile ")
-                break
+    bulk_write_cmd = []
+    while True:
+        try:
+            t, _id, x, y, l, w, dir = res_queue.get(timeout = q_timeout)
+        
+        except queue.Empty:
+            logger.warning("res_queue reaches timeout.")
+            break
+    
+        lru = lru_e if dir==1 else lru_w # a temporary address
+        try: # if _id already exists in lru
+            lru[_id]["t"].append(t)
+            lru[_id]["x"].append(x-0.5*dir*l) # make centerx to backcenter x
+            lru[_id]["y"].append(y)
+            
+        except KeyError: #initialize
+            lru[_id] = {
+                "t":[t],
+                "x":[x-0.5*dir*l],
+                "y":[y],
+                "l":l,
+                "w":w,
+                # "dir":dir
+                }
+        lru.move_to_end(_id)
+        
+        # if a traj is ready, update to rec_collection
+        while lru[next(iter(lru))]["t"][-1] < t - lru_timeout: # healthy timeout, trajs are complete
+            _id, lru_traj = lru.popitem(last=False) #FIFO
+            query = {"_id":ObjectId(_id)}
+            update = {
+                        "$push": {
+                            "timestamp": {"$each": lru_traj["t"]},
+                            "x_position": {"$each": lru_traj["x"]},
+                            "y_position": {"$each": lru_traj["y"]}
+                            },
+                        "$set": {
+                            "length":lru_traj["l"],
+                            "width":lru_traj["w"]
+                            }
+                    }
+            bulk_write_cmd.append(UpdateOne(filter=query, update=update, upsert=True))
+            
+        
+        # bulk write all the complete documents to db
+        if len(bulk_write_cmd) > 20:
+            logger.info("bulk_write_cmd size: {}".format(len(bulk_write_cmd)))
+            rec.collection.bulk_write(bulk_write_cmd, ordered=False)
+            bulk_write_cmd = []
 
 
     # pop the rest in lru
-    logger.info("Update the rest in LRU, size: {}".format(len(lru)))
-    while lru:
-        _id, lru_traj = lru.popitem(last=False) #FIFO
-        pool.apply_async(thread_update_one, (rec.collection,{"_id":_id}, 
-                                             {"$push": {
-                                                 "timestamp": {"$each": lru_traj["t"]},
-                                                 "x_position": {"$each": lru_traj["x"]},
-                                                 "y_position": {"$each": lru_traj["y"]}
-                                                 },
-                                              "$set": {
-                                                  "length":lru_traj["l"],
-                                                  "width":lru_traj["w"]
-                                                  }
-                                              }))
+    logger.info("Update the rest in LRU_E: {}, LRU_W: {}, bulk_write_cmd: {}".format(len(lru_e),len(lru_w), len(bulk_write_cmd)))
+    for lru in [lru_e, lru_w]:
+        while lru:
+            _id, lru_traj = lru.popitem(last=False) #FIFO
+            query = {"_id":ObjectId(_id)}
+            update = {
+                        "$push": {
+                            "timestamp": {"$each": lru_traj["t"]},
+                            "x_position": {"$each": lru_traj["x"]},
+                            "y_position": {"$each": lru_traj["y"]}
+                            },
+                        "$set": {
+                            "length":lru_traj["l"],
+                            "width":lru_traj["w"]
+                            }
+                    }
+            bulk_write_cmd.append(UpdateOne(filter=query, update=update, upsert=True))
     
-    pool.close()
-    pool.join()
-    del temp
+    logger.info("Final bulk_write_cmd size: {}".format(len(bulk_write_cmd)))
+    if len(bulk_write_cmd) > 0:
+        rec.collection.bulk_write(bulk_write_cmd, ordered=False)
+
     del rec
     return
     
@@ -1143,8 +1119,9 @@ if __name__ == '__main__':
     }
     raw_collection = "sanctimonious_beluga--RAW_GT1"
     rec_collection = "sanctimonious_beluga--RAW_GT1__test"
-    raw = DBClient(**db_param, database_name = "trajectories", collection_name = raw_collection)
-    rec = DBClient(**db_param, database_name = "reconciled", collection_name = rec_collection)
+    dbc = DBClient(**db_param)
+    raw = dbc.client["trajectories"][raw_collection]
+    rec = dbc.client["reconciled"][rec_collection]
     
     ids = [
             ObjectId('62fd2a29b463d2b0792821c1'), # semi
@@ -1152,26 +1129,28 @@ if __name__ == '__main__':
             ObjectId('62fd2a2eb463d2b0792821c9'),# small on top and behind semi
             ObjectId('62fd2a2ab463d2b0792821c3'), # small in front of c6
             ObjectId('62fd2a24b463d2b0792821b7'), # these two are double detection
-            # ObjectId('62fd2a14b463d2b079282195') # 
+            ObjectId('62fd2a14b463d2b079282195') # 
+            # ObjectId('62fd29b5b463d2b07928210c')
            ] # raw
 
     
     # test_dbr = DBClient(**db_param, database_name = "reconciled", collection_name = "sanctimonious_beluga--RAW_GT1__administers")
     # ids = [ObjectId('62fd2a7dd913d95fd3282359'), ObjectId('62fd2a7dd913d95fd328235d')] # rec
     
-    # docs = []
-    # stitched_queue = mp_manager.Queue()
+    docs = []
+    stitched_queue = mp_manager.Queue()
+    res_queue = mp_manager.Queue()
     
-    # # for doc in raw.collection.find({"_id": {"$in": ids}}).sort("last_timestamp1",1):
-    # start = raw.get_min("first_timestamp") + 35
-    # end = start + 25
-    # for doc in raw.collection.find({"direction": 1}).sort("last_timestamp",1):
+    # for doc in r
+    # start = raw.find_one(sort=[("first_timestamp", 1)])["first_timestamp"] + 40
+    # end = start + 20
+    for doc in raw.find({"_id": {"$in": ids}}).sort("last_timestamp",1):
     #     # doc = resample(doc)
-    #     # docs.append(doc)
-    #     if doc["first_timestamp"] > start and doc["first_timestamp"] < end:
-    #         stitched_queue.put([doc])
+        # if doc["first_timestamp"] > start and doc["first_timestamp"] < end:
+        docs.append(doc)
+        stitched_queue.put([doc])
             
-    # print("total number of trajs: ", stitched_queue.qsize())
+    print("total number of trajs: ", stitched_queue.qsize())
     # #       datetime.utcfromtimestamp(int(start)).strftime('%H:%M:%S'), 
     # #       datetime.utcfromtimestamp(int(end)).strftime('%H:%M:%S'))
 
@@ -1181,28 +1160,36 @@ if __name__ == '__main__':
     parameters["raw_collection"] = raw_collection
     parameters["reconciled_collection"] = rec_collection
     parameters["reconciliation_args"] = reconciliation_args
-    raw_transformed = DBClient(**db_param, database_name = "temp", collection_name = parameters["raw_collection"])
-    rec_transformed = DBClient(**db_param, database_name = "temp", collection_name = parameters["reconciled_collection"])
+    # raw_transformed = DBClient(**db_param, database_name = "temp", collection_name = parameters["raw_collection"])
+    raw_transformed = dbc.client["temp"][raw_collection]
+    rec_transformed = dbc.client["transformed"][rec_collection]
     
     # # print(raw_transformed.get_min("timestamp"), raw_transformed.get_max("timestamp"))
-    
-    # raw_transformed.collection.drop()
-    # rec_transformed.collection.drop()
-    # rec.collection.drop()
+    #%%
+    raw_transformed.drop() # drop temp 
+    rec.drop() # drop rec
+    rec_transformed.drop() # drop transformed
     
     #%% start a single process
     
-    # preprocess_reconcile(stitched_queue, parameters, db_param) # 
-    # solve_collision_avoidance_rolling(parameters, db_param)
-    # postprocess_reconcile(parameters, db_param)
+    preprocess_reconcile("eb", stitched_queue, parameters, db_param) # 
+    solve_collision_avoidance_rolling("eb", res_queue, parameters, db_param)
+    postprocess_reconcile(res_queue, parameters, db_param)
     
     
     #%% animate the rolling solver solution
+    from multi_opt_viz import animate_tracks
+    # # query = raw_transformed.get_range("timestamp", 1623877121, 1623877151)
+    # # # snapshots = {time_doc["timestamp"]: time_doc["eb"] for time_doc in query}
+    snapshots = time_transform([doc for doc in rec.find({}).sort("last_timestamp",1)])
+    # # snapshots = time_transform(docs)
+    # # # snapshots_post = separatum_smooth(snapshots)
+    ani = animate_tracks(snapshots, offset=0, save=False, name="separatum_smooth_raw")
     
-    # query = rec_transformed.collection.find({}).sort("timestamp", 1)
-    # snapshots = {time_doc["timestamp"]: time_doc["value"] for time_doc in query}
-    # ani = animate_tracks(snapshots, offset=0, save=False, name="before_maxiter3")
-    
-    
+    #%%
+    import matplotlib.pyplot as plt
+    # for doc in rec.find({}).sort("last_timestamp",1):
+    doc = rec.find_one({"_id":ObjectId('62fd2a2ab463d2b0792821c3')})
+    plt.scatter(doc["timestamp"], doc["x_position"], s=0.5)
     
     

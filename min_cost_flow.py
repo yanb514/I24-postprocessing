@@ -219,7 +219,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     
 def dummy_stitcher(direction, fragment_queue, stitched_trajectory_queue, parameters):
     '''
-    incrementally fixing the matching
+    directly put fragments into stitched_queue
     '''
  
     # Initiate a logger

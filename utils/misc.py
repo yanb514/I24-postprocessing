@@ -125,7 +125,13 @@ def calc_fit_select(t,x,y,residual_threshold_x, residual_threshold_y):
     same as calc_fit, but only on given t,x,y
     '''
     ransacx = linear_model.RANSACRegressor(residual_threshold=residual_threshold_x)
-    X = t.reshape(1, -1).T
+    try:
+        X = t.reshape(1, -1).T
+    except AttributeError:
+        t = np.array(t)
+        x = np.array(x)
+        y = np.array(y)
+        X = t.reshape(1, -1).T
     ransacx.fit(X, x)
     fitx = [ransacx.estimator_.coef_[0], ransacx.estimator_.intercept_]
       

@@ -41,7 +41,10 @@ def merge_resample(traj, conf_threshold):
     return df
     TODO: DEAL WITH NAN after conf mask
     '''
+    # try:
     conf = np.array(traj["detection_confidence"])
+    # except KeyError:
+    #     conf = np.ones(len(traj["timestamp"]))
     
     # get confidence mask
     highconf_mask = np.array(conf >= conf_threshold)

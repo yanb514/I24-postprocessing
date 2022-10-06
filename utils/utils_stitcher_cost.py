@@ -207,8 +207,12 @@ def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshol
         dir = -1 # use the fit of track2 to "predict" back in time
     
     # find where to start the cone
-    tdiff = (meast - pt) * dir # tdiff should be positive
-
+    try:
+        tdiff = (meast - pt) * dir # tdiff should be positive
+    except TypeError:
+        meast = np.array(meast)
+        tdiff = (meast - pt) * dir 
+        
     slope, intercept = fitx
     targetx = slope * meast + intercept
     slope, intercept = fity

@@ -1,6 +1,6 @@
 {
     "mode": "sequence",
-    "description": "process ground truth 2",
+    "description": "test conflict resolution in the pipeline",
     "raw_collection": "sanctimonious_beluga--RAW_GT1",
     
 	"raw_database": "trajectories",

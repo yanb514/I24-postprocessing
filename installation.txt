@@ -3,8 +3,11 @@ pip install git+https://github.com/DerekGloudemans/i24_configparse@latest
 pip install git+https://github.com/Lab-Work/I24_logging@latest
 pip install git+https://github.com/yanb514/i24_database_api@latest
 conda install pandas
+
+if run into libarchive issue
+conda install -c conda-forge libarchive
 conda install -c anaconda networkx
 conda install scikit-learn
 conda install -c conda-forge cvxopt
 conda install -c conda-forge cvxpy
-conda install -c conda-forge pyscipopt=3.5.0
+conda install -c conda-forge pyscipopt=3.5.0 # integer programming solver

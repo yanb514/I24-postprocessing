@@ -1,9 +1,7 @@
 # -----------------------------
 __file__ = 'postprocess.py'
 __doc__ = """
-I-24 MOTION processing software.
-Top level process for live post-processing
-Spawns and manages child processes for trajectory fragment stitching and trajectory reconciliation.
+first pipeline: run postproc in trajectory-indexed documents, do not transform
 """
 # -----------------------------
 
@@ -19,6 +17,7 @@ import data_feed as df
 import min_cost_flow as mcf
 import reconciliation as rec
 import merge
+from collections import deque, OrderedDict
 
 # import _evaluation.evaluation as ev
 import multi_opt as mo
@@ -71,8 +70,9 @@ def main(collection_name = None):
     # Stitched trajectory queue
     # -- populated by stitcher and consumed by reconciliation pool
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    stitched_trajectory_queue_e = mp_manager.Queue(maxsize=parameters["stitched_trajectory_queue_size"]) 
-    stitched_trajectory_queue_w = mp_manager.Queue(maxsize=parameters["stitched_trajectory_queue_size"]) 
+    # stitched_trajectory_queue_e = mp_manager.Queue(maxsize=parameters["stitched_trajectory_queue_size"]) 
+    # stitched_trajectory_queue_w = mp_manager.Queue(maxsize=parameters["stitched_trajectory_queue_size"]) 
+    stitched_trajectory_queue = mp_manager.Queue(maxsize=parameters["stitched_trajectory_queue_size"]) 
     
     reconciled_queue = mp_manager.Queue() # maxsize=parameters["reconciled_trajectory_queue_size"]
     
@@ -99,48 +99,49 @@ def main(collection_name = None):
     processes_to_spawn["static_data_reader"] = (df.static_data_reader,
                     (mp_param, db_param, raw_fragment_queue_e, raw_fragment_queue_w, 1000,))
     
-    processes_to_spawn["merger_e"] = (merge.merge_fragments,
-                      ("eb", raw_fragment_queue_e, merged_queue_e, mp_param, ))
+    # processes_to_spawn["merger_e"] = (merge.merge_fragments,
+    #                   ("eb", raw_fragment_queue_e, merged_queue_e, mp_param, ))
     
-    processes_to_spawn["merger_w"] = (merge.merge_fragments,
-                      ("wb", raw_fragment_queue_w, merged_queue_w, mp_param, ))
-    
-    processes_to_spawn["stitcher_e"] = (mcf.min_cost_flow_online_alt_path,
-                      ("eb", merged_queue_e, stitched_trajectory_queue_e, mp_param, ))
-    
-    processes_to_spawn["stitcher_w"] = (mcf.min_cost_flow_online_alt_path,
-                      ("wb", merged_queue_w, stitched_trajectory_queue_w, mp_param, ))
+    # processes_to_spawn["merger_w"] = (merge.merge_fragments,
+    #                   ("wb", raw_fragment_queue_w, merged_queue_w, mp_param, ))
     
     
-    # processes_to_spawn["stitcher_e"] = (mcf.dummy_stitcher,
-    #                   ("eb", raw_fragment_queue_e, stitched_trajectory_queue, mp_param, ))
+    # processes_to_spawn["stitcher_e"] = (mcf.min_cost_flow_online_alt_path,
+    #                   ("eb", merged_queue_e, stitched_trajectory_queue_e, mp_param, ))
     
-    # processes_to_spawn["stitcher_w"] = (mcf.dummy_stitcher,
-    #                   ("wb", raw_fragment_queue_w, stitched_trajectory_queue, mp_param, ))
+    # processes_to_spawn["stitcher_w"] = (mcf.min_cost_flow_online_alt_path,
+    #                   ("wb", merged_queue_w, stitched_trajectory_queue_w, mp_param, ))
+    
+    
+    processes_to_spawn["stitcher_e"] = (mcf.dummy_stitcher,
+                      ("eb", raw_fragment_queue_e, stitched_trajectory_queue, mp_param, ))
+    
+    processes_to_spawn["stitcher_w"] = (mcf.dummy_stitcher,
+                      ("wb", raw_fragment_queue_w, stitched_trajectory_queue, mp_param, ))
     
    
-    # processes_to_spawn["reconciliation"] = (rec.reconciliation_pool,
-    #                   (mp_param, db_param, stitched_trajectory_queue, reconciled_queue,))
+    processes_to_spawn["reconciliation"] = (rec.reconciliation_pool,
+                      (mp_param, db_param, stitched_trajectory_queue, reconciled_queue,))
 
-    # processes_to_spawn["reconciliation_writer"] = (rec.write_reconciled_to_db,
-    #                   (mp_param, db_param, reconciled_queue,))
+    processes_to_spawn["reconciliation_writer"] = (rec.write_reconciled_to_db,
+                      (mp_param, db_param, reconciled_queue,))
     
     
     
-    processes_to_spawn["preproc_reconcile_e"] = (mo.preprocess_reconcile,
-                                                  ("eb", stitched_trajectory_queue_e, mp_param, db_param, ))
+    # processes_to_spawn["preproc_reconcile_e"] = (mo.preprocess_reconcile,
+    #                                               ("eb", stitched_trajectory_queue_e, mp_param, db_param, ))
     
-    processes_to_spawn["solve_collision_avoidance_rolling_e"] = (mo.solve_collision_avoidance_rolling,
-                                                  ("eb", reconciled_queue, mp_param, db_param, ))  
+    # processes_to_spawn["solve_collision_avoidance_rolling_e"] = (mo.solve_collision_avoidance_rolling,
+    #                                               ("eb", reconciled_queue, mp_param, db_param, ))  
     
-    processes_to_spawn["preproc_reconcile_w"] = (mo.preprocess_reconcile,
-                                                  ("wb", stitched_trajectory_queue_w, mp_param, db_param, ))
+    # processes_to_spawn["preproc_reconcile_w"] = (mo.preprocess_reconcile,
+    #                                               ("wb", stitched_trajectory_queue_w, mp_param, db_param, ))
     
-    processes_to_spawn["solve_collision_avoidance_rolling_w"] = (mo.solve_collision_avoidance_rolling,
-                                                  ("wb", reconciled_queue, mp_param, db_param, ))  
+    # processes_to_spawn["solve_collision_avoidance_rolling_w"] = (mo.solve_collision_avoidance_rolling,
+    #                                               ("wb", reconciled_queue, mp_param, db_param, ))  
 
-    processes_to_spawn["postproc_reconcile"] = (mo.postprocess_reconcile,
-                                                  (reconciled_queue, mp_param, db_param, ))  
+    # processes_to_spawn["postproc_reconcile"] = (mo.postprocess_reconcile,
+    #                                               (reconciled_queue, mp_param, db_param, ))  
     
     
     
@@ -150,18 +151,18 @@ def main(collection_name = None):
         # a process can only die if (all/any?) of its predecessors is not alive
         predecessor = {
             "static_data_reader": None, # no dependent
-            "merger_e": ["static_data_reader"],
-            "merger_w": ["static_data_reader"],
-            "stitcher_e": ["merger_e"],
-            "stitcher_w": ["merger_w"],
-            "preproc_reconcile_e": ["stitcher_e"],
-            "preproc_reconcile_w": ["stitcher_w"],
-            "solve_collision_avoidance_rolling_e": ["preproc_reconcile_e"],
-            "solve_collision_avoidance_rolling_w": ["preproc_reconcile_w"],
-            "postproc_reconcile": ["solve_collision_avoidance_rolling_e", "solve_collision_avoidance_rolling_w"],
+            # "merger_e": ["static_data_reader"],
+            # "merger_w": ["static_data_reader"],
+            "stitcher_e": ["static_data_reader"],
+            "stitcher_w": ["static_data_reader"],
+            # "preproc_reconcile_e": ["stitcher_e"],
+            # "preproc_reconcile_w": ["stitcher_w"],
+            # "solve_collision_avoidance_rolling_e": ["preproc_reconcile_e"],
+            # "solve_collision_avoidance_rolling_w": ["preproc_reconcile_w"],
+            # "postproc_reconcile": ["solve_collision_avoidance_rolling_e", "solve_collision_avoidance_rolling_w"],
             
-            # "reconciliation": ["stitcher_e", "stitcher_w"], # and
-            # "reconciliation_writer": ["reconciliation"],
+            "reconciliation": ["stitcher_e", "stitcher_w"], # and
+            "reconciliation_writer": ["reconciliation"],
             
             # "_eval_raw": None,
             # "_eval_merge_e": ["merger_e"],
@@ -171,19 +172,19 @@ def main(collection_name = None):
         # corresponding queue has to be empty for the process to safety die
         dependent_queues = {
             "static_data_reader": None, # no dependent
-            "merger_e": raw_fragment_queue_e,
-            "merger_w": raw_fragment_queue_w,
+            # "merger_e": raw_fragment_queue_e,
+            # "merger_w": raw_fragment_queue_w,
             "stitcher_e": raw_fragment_queue_e, 
             "stitcher_w": raw_fragment_queue_w,
-            "preproc_reconcile_e": stitched_trajectory_queue_e,
-            "preproc_reconcile_w": stitched_trajectory_queue_w,
-            "solve_collision_avoidance_rolling_e": None,
-            "solve_collision_avoidance_rolling_w": None,
-            "postproc_reconcile": reconciled_queue,
+            # "preproc_reconcile_e": stitched_trajectory_queue_e,
+            # "preproc_reconcile_w": stitched_trajectory_queue_w,
+            # "solve_collision_avoidance_rolling_e": None,
+            # "solve_collision_avoidance_rolling_w": None,
+            # "postproc_reconcile": reconciled_queue,
             
 
-            # "reconciliation": stitched_trajectory_queue, #if parameters["eval"] else stitched_trajectory_queue_copy, # change back if no evaluation
-            # "reconciliation_writer": reconciled_queue,
+            "reconciliation": stitched_trajectory_queue, #if parameters["eval"] else stitched_trajectory_queue_copy, # change back if no evaluation
+            "reconciliation_writer": reconciled_queue,
             # "_eval_raw": None,
             # "_eval_merge_e": merged_queue_e,
             # "_eval_merge_w": merged_queue_w,

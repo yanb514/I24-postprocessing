@@ -52,7 +52,9 @@ def plot_time_space(df, lanes=[1], time="Time", space="Distance", ax=None, show 
         ax.set_xlabel(time)
         ax.set_ylabel(space)
         ax.set_title('Lane {}'.format(lane_idx)) 
+        
     return None if show else ax
+
 
 def standardize(df):
     '''

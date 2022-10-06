@@ -689,7 +689,7 @@ if __name__ == '__main__':
     # with open('config.json') as f:
     #     config = json.load(f)
       
-    collection = "funny_squirrel--RAW_GT2__giggles"
+    collection = "sanctimonious_beluga--RAW_GT1__test"
     # collection = "sanctimonious_beluga--RAW_GT1__administers"
     if "__" in collection:
         database_name = "reconciled"

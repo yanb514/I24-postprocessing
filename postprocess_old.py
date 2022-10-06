@@ -1,9 +1,7 @@
 # -----------------------------
 __file__ = 'postprocess.py'
 __doc__ = """
-I-24 MOTION processing software.
-Top level process for live post-processing
-Spawns and manages child processes for trajectory fragment stitching and trajectory reconciliation.
+RESTART DEAD PROCESSES INFINTIE TIMES!
 """
 # -----------------------------
 
@@ -104,16 +102,16 @@ def main(collection_name = None):
                             #                   ("west", raw_fragment_queue_w, stitched_trajectory_queue,
                             #                   mp_param, )),
                             
-                             "stitcher_e": (mcf.min_cost_flow_online_alt_path,
-                                             ("east", raw_fragment_queue_e, stitched_trajectory_queue,
-                                             mp_param, )),
-                             "stitcher_w": (mcf.min_cost_flow_online_alt_path,
-                                             ("west", raw_fragment_queue_w, stitched_trajectory_queue,
-                                             mp_param, )),
-                             "reconciliation": (rec.reconciliation_pool,
-                                         (mp_param, db_param, stitched_trajectory_queue, reconciled_queue,)),
-                             "reconciliation_writer": (rec.write_reconciled_to_db,
-                                         (mp_param, db_param, reconciled_queue,)),
+                             # "stitcher_e": (mcf.min_cost_flow_online_alt_path,
+                             #                 ("east", raw_fragment_queue_e, stitched_trajectory_queue,
+                             #                 mp_param, )),
+                             # "stitcher_w": (mcf.min_cost_flow_online_alt_path,
+                             #                 ("west", raw_fragment_queue_w, stitched_trajectory_queue,
+                             #                 mp_param, )),
+                              "reconciliation": (rec.reconciliation_pool,
+                                          (mp_param, db_param, stitched_trajectory_queue, reconciled_queue,)),
+                              "reconciliation_writer": (rec.write_reconciled_to_db,
+                                          (mp_param, db_param, reconciled_queue,)),
                            }
 
     # Stores the actual mp.Process objects so they can be controlled directly.
