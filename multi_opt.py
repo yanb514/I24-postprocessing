@@ -9,27 +9,22 @@ import json
 import numpy as np
 from bson.objectid import ObjectId
 import os
-
-from i24_database_api import DBClient
-import cvxpy as cp
-# from cvxopt import matrix, solvers, sparse,spdiag,spmatrix
-import time
-from scipy.sparse import identity, coo_matrix, hstack, csr_matrix,lil_matrix
-from utils.utils_opt import resample
+from pymongo import UpdateOne
 import pandas as pd
-
+import cvxpy as cp
+import time
 from itertools import combinations
 from collections import defaultdict, OrderedDict
 import queue
 from datetime import datetime
 from multiprocessing.pool import ThreadPool
-from utils.utils_opt import combine_fragments
+from scipy.sparse import identity, coo_matrix,lil_matrix
+
 import i24_logger.log_writer as log_writer
-from pymongo import UpdateOne
+from i24_database_api import DBClient
+from utils.utils_opt import resample, combine_fragments
 
 dt = 0.04
-
-    
 def _blocdiag_scipy(X, n):
     """
     makes diagonal blocs of X, for indices in [sub1,sub2]
@@ -60,8 +55,8 @@ def solve_single(track, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     # define some matrices
     t1 = time.time()
     D1 = _blocdiag_scipy(coo_matrix([-1,1]), N) * (1/dt)
-    D2 = _blocdiag_scipy(coo_matrix([1,-2,1]), N) * (1/dt)
-    D3 = _blocdiag_scipy(coo_matrix([-1,3,-3,1]), N) * (1/dt)
+    D2 = _blocdiag_scipy(coo_matrix([1,-2,1]), N) *  (1/(dt**2))
+    D3 = _blocdiag_scipy(coo_matrix([-1,3,-3,1]), N) *  (1/(dt**3))
     
     I = identity(N).toarray()
     H = I[idx,:]
@@ -254,7 +249,7 @@ def separatum_smooth(snapshots):
     '''
     https://mikekling.com/comparing-algorithms-for-dispersing-overlapping-rectangles/
     snpashot = {
-        i:[centerx, centery, l, w],
+        i:[centerx, centery, l, w, dir, v],
         j:[...],
         ...
         }
@@ -403,7 +398,6 @@ def tracks_2_snapshots(tracks):
             }
         ...
         }
-        
     '''
     snapshots = defaultdict(dict)
     for traj in tracks:
@@ -437,7 +431,7 @@ def snapshots_2_tracks(snapshots):
             y: [],
             l; [],
             w: [],
-            dir: 1
+            dir: 1,
             },
         { ... }
         ]
@@ -448,7 +442,7 @@ def snapshots_2_tracks(snapshots):
     timestamps = sorted(snapshots.keys())
     for t in timestamps:
         for _id, pos in snapshots[t].items():
-            x,y,l,w,dir = pos
+            x,y,l,w,dir,_ = pos
             # create new
             if _id not in lru:
                 lru[_id] = defaultdict(list)
@@ -513,8 +507,8 @@ def _build_obj_fcn_constr(tracks, beta, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, 
         ey = cp.Variable(n)
 
         # D1 = _blocdiag_scipy(coo_matrix([-1,1]), n) * (1/dt)
-        D2 = _blocdiag_scipy(coo_matrix([1,-2,1]), n) * (1/dt)
-        D3 = _blocdiag_scipy(coo_matrix([-1,3,-3,1]), n) * (1/dt)
+        D2 = _blocdiag_scipy(coo_matrix([1,-2,1]), n) *  (1/(dt**2))
+        D3 = _blocdiag_scipy(coo_matrix([-1,3,-3,1]), n) *  (1/(dt**3))
         objx = 1/n * cp.sum_squares(zx-x-ex) + lam2_x/(n-2) * cp.sum_squares(D2@x) + lam3_x/(n-3) * cp.sum_squares(D3@x) + lam1_x/n * cp.norm(ex,1)
         objy = 1/n * cp.sum_squares(zy-y-ey) + lam2_y/(n-2) * cp.sum_squares(D2@y) + lam3_y/(n-3) * cp.sum_squares(D3@y) + lam1_y/n * cp.norm(ey,1)
     
@@ -584,8 +578,8 @@ def _build_obj_fcn(tracks, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y, D1=No
             
         if D2 is None or D2.shape[1] != n: # recalcualte matrices
             D1 = _blocdiag_scipy(coo_matrix([-1,1]), n) * (1/dt)
-            D2 = _blocdiag_scipy(coo_matrix([1,-2,1]), n) * (1/dt)
-            D3 = _blocdiag_scipy(coo_matrix([-1,3,-3,1]), n) * (1/dt)
+            D2 = _blocdiag_scipy(coo_matrix([1,-2,1]), n) *  (1/(dt**2))
+            D3 = _blocdiag_scipy(coo_matrix([-1,3,-3,1]), n) *  (1/(dt**3))
     
         objx = 1/n * cp.sum_squares(zx-x-ex) + lam2_x/(n-2) * cp.sum_squares(D2@x) + lam3_x/(n-3) * cp.sum_squares(D3@x) + lam1_x/n * cp.norm(ex,1)
         objy = 1/n * cp.sum_squares(zy-y-ey) + lam2_y/(n-2) * cp.sum_squares(D2@y) + lam3_y/(n-3) * cp.sum_squares(D3@y) + lam1_y/n * cp.norm(ey,1)
@@ -644,7 +638,7 @@ def solve_collision_avoidance3(tracks, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, l
 
 def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
     '''
-    stitched_queue is ordered by last_timestamp
+    stitched_queue is ordered by last_timestamp per direction
     1. combine and resample stitched fragments from queue
     2. write to rec (combined, resampled but not smoothed)
     3. transform trajs to time-indexed and write to temp_raw
@@ -657,12 +651,12 @@ def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
             "_id":
             "timetamp": t1,
             "eb": {
-                "traj1_id": [centerx, centery, l, w],
+                "traj1_id": [centerx, centery, l, w, dir, v],
                 "traj2_id": [...],
                 ...
                 },
             "wb": {
-                "traj3_id": [centerx, centery, l, w],
+                "traj3_id": [centerx, centery, l, w, dir, v],
                 "traj4_id": [...],
                 ...
                 },
@@ -679,17 +673,18 @@ def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
     logger.set_name("preproc_reconcile_"+direction)
     setattr(logger, "_default_logger_extra",  {})
     
-    temp = DBClient(**db_param, database_name = "temp", collection_name = parameters["raw_collection"]) # write results to temp
+    trs = DBClient(**db_param, database_name=parameters["transformed_database"], collection_name = parameters["raw_collection"]) # write results to temp
     rec = DBClient(**db_param, database_name = parameters["reconciled_database"], collection_name = parameters["reconciled_collection"])
     
-    temp.collection.create_index("timestamp")
-    time_series_field = ["timestamp", "x_position", "y_position"]
+    trs.collection.create_index("timestamp")
+    time_series_field = ["timestamp", "x_position", "y_position", "length", "width"]
     lru = OrderedDict()
     stale = defaultdict(int) # key: timestamp, val: number of timestamps that it hasn't been updated
     stale_thresh = 50 # if a timestamp is not updated after processing [stale_thresh] number of trajs, then update to database
     last_poped_t = 0
     pool = ThreadPool(processes=100)
     
+    dir = 1 if direction=="eb" else -1
     
     while True:
         try:
@@ -703,15 +698,20 @@ def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
         for k in stale:  
             stale[k] += 1
         
-        _id = traj["_id"]
-        dir = traj["direction"]
-        try:
-            l,w = np.nanmedian(traj["length"]), np.nanmedian(traj["width"])
-        except:
-            l,w = traj["length"], traj["width"]
+        
+        _id, l,w = traj["_id"], traj["length"], traj["width"]
+        if isinstance(l, float):
+            n = len(traj["x_position"])
+            l,w = [l]*n, [w]*n # dump but ok
+            
+        velocity = list(dir*np.diff(traj["x_position"])/dt)
+        velocity.append(velocity[-1])
             
         # resample to 1/dt hz
         data = {key:traj[key] for key in time_series_field}
+        data["velocity"] = velocity
+        data["length"] = l
+        data["width"] = w
         df = pd.DataFrame(data, columns=data.keys()) 
         index = pd.to_timedelta(df["timestamp"], unit='s')
         df = df.set_index(index)
@@ -738,10 +738,12 @@ def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
         traj["ending_x"] = df['x_position'].values[-1]
         
         # insert to rec collection, for postprocess use
-        # insert without timestamp, x, y
+        # insert without time-series fields
         traj.pop('timestamp', None)
         traj.pop('x_position', None)
         traj.pop('y_position', None)
+        traj.pop('length', None)
+        traj.pop('width', None)
         pool.apply_async(thread_insert_one, (rec.collection, traj,))
 
         
@@ -750,13 +752,25 @@ def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
             
             # [centerx, centery, l ,w]
             try:
-                lru[t][str(_id)] = [df["x_position"][t] + dir*0.5*l,df["y_position"][t],l,w, dir]
+                lru[t][str(_id)] = [df["x_position"][t] + dir*0.5*df["length"][t],
+                                    df["y_position"][t],
+                                    df["length"][t],
+                                    df["width"][t], 
+                                    dir,
+                                    df["velocity"][t]]
+            
             except: # t does not exists in lru yet
                 if t <= last_poped_t:
                     # meaning t was poped pre-maturely
                     print("t was poped prematurely from LRU in transform_queue")
                     
-                lru[t] = {str(_id): [df["x_position"][t] + dir*0.5*l,df["y_position"][t],l,w, dir]}
+                lru[t] = {str(_id): [df["x_position"][t] + dir*0.5*df["length"][t],
+                                    df["y_position"][t],
+                                    df["length"][t],
+                                    df["width"][t], 
+                                    dir,
+                                    df["velocity"][t]]}
+                
             lru.move_to_end(t, last=True)
             stale[t] = 0 # reset staleness
             
@@ -767,7 +781,7 @@ def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
             stale.pop(t)
             # change d to value.objectid: array, so that it does not reset the value field, but only update it
             d={direction+"."+key: val for key,val in d.items()}
-            pool.apply_async(thread_update_one, (temp.collection, {"timestamp": round(t,2)},{"$set": d},))
+            pool.apply_async(thread_update_one, (trs.collection, {"timestamp": round(t,2)},{"$set": d},))
             parameters[direction+"_last"] = t # let rolling solver know when to query
             
             
@@ -776,14 +790,14 @@ def preprocess_reconcile(direction, stitched_queue, parameters, db_param):
     while len(lru) > 0:
         t, d = lru.popitem(last=False) # pop first
         d={direction+"."+key: val for key,val in d.items()}
-        pool.apply_async(thread_update_one, (temp.collection, {"timestamp": round(t,2)},{"$set": d},))
+        pool.apply_async(thread_update_one, (trs.collection, {"timestamp": round(t,2)},{"$set": d},))
         parameters[direction+"_last"] = t
         
         
     pool.close()
     pool.join()
-    logger.info("Final timestamps in temp: {}".format(temp.collection.count_documents({})))   
-    del temp
+    logger.info("Final timestamps in temp: {}".format(trs.collection.count_documents({})))   
+    del trs
     del rec
     return 
 
@@ -802,7 +816,7 @@ def solve_collision_avoidance_rolling(direction, res_queue, parameters, db_param
     setattr(logger, "_default_logger_extra",  {})
     
     # listen to the transformed collection in temp db
-    raw_transformed = DBClient(**db_param, database_name = "temp", collection_name = parameters["raw_collection"])
+    raw_transformed = DBClient(**db_param, database_name=parameters["transformed_database"], collection_name=parameters["raw_collection"])
     # rec_transformed = DBClient(**db_param, database_name = "temp", collection_name = parameters["reconciled_collection"])
     # rec_transformed.create_index("timestamp")
     # pool = ThreadPool(processes=200) # for insert
@@ -813,7 +827,6 @@ def solve_collision_avoidance_rolling(direction, res_queue, parameters, db_param
     reconciliation_args = parameters["reconciliation_args"]
     
     constr_rhs = {} # continuity constraints are initialized to none (first window)
-    maxiter = 0
     timeout = 10
     
     # wait for the first timestamp in raw_transformed, this direction
@@ -830,8 +843,8 @@ def solve_collision_avoidance_rolling(direction, res_queue, parameters, db_param
     # precompute some matrices
     n = int(PH/dt)
     D1 = _blocdiag_scipy(coo_matrix([-1,1]), n) * (1/dt)
-    D2 = _blocdiag_scipy(coo_matrix([1,-2,1]), n) * (1/dt)
-    D3 = _blocdiag_scipy(coo_matrix([-1,3,-3,1]), n) * (1/dt)
+    D2 = _blocdiag_scipy(coo_matrix([1,-2,1]), n) * (1/(dt**2))
+    D3 = _blocdiag_scipy(coo_matrix([-1,3,-3,1]), n) * (1/(dt**3))
     
     dir = -1 if "w" in direction else 1
     
@@ -961,7 +974,6 @@ def solve_collision_avoidance_rolling(direction, res_queue, parameters, db_param
                                                     np.median(tracks_s[i]["l"]),
                                                     np.median(tracks_s[i]["w"]),dir])
 
-                
                 # update constr_rhs here
                 ns = len(xx)
                 if ns > 0:

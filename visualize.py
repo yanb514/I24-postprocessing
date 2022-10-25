@@ -19,7 +19,6 @@ import queue
 import mplcursors
 from collections import OrderedDict
 import json
-from copy import copy
 import time
 import requests
 import os

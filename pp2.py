@@ -1,5 +1,5 @@
 # -----------------------------
-__file__ = 'postprocess.py'
+__file__ = 'pp2.py'
 __doc__ = """
 I-24 MOTION processing software.
 Top level process for live post-processing
@@ -17,7 +17,6 @@ from i24_logger.log_writer import logger
 # Custom modules
 import data_feed as df
 import min_cost_flow as mcf
-import reconciliation as rec
 import merge
 
 # import _evaluation.evaluation as ev

@@ -1,12 +1,12 @@
 {
     "mode": "sequence",
-    "description": "process ground truth 2",
-    "raw_collection": "sanctimonious_beluga--RAW_GT1",
-    
+    "description": "try with pp2, new transformed schema",
+    "raw_collection": "adaptable_stork--RAW_GT2",
 	"raw_database": "trajectories",
 	"stitched_database": "stitched",
 	"reconciled_database": "reconciled",
-	"reconciled_collection": "sanctimonious_beluga--RAW_GT1__test",
+	"reconciled_collection": "",
+	"transformed_database": "transformed_beta",
 	"eval_database": "evaluation",
 	"meta_database": "meta",
 	"server_id": 1,

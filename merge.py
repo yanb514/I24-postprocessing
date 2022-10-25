@@ -82,28 +82,36 @@ def merge_resample(traj, conf_threshold):
 
     return traj
 
-
+import warnings
+warnings.filterwarnings('error')
         
 @catch_critical(errors = (Exception))
 def merge_cost(track1, track2):
     '''
     track1 and 2 have to be resmplaed first
-    only deals with two tracks that have time overlap!
+    only deals with two tracks that have time overlap (in the general case by separation of axis)
     speeded up bhartt cost
     '''
     t1 = track1["timestamp"]#[filter1]
     t2 = track2["timestamp"]#[filter2]
     
-    gap = t2[0] - t1[-1] 
-    if gap >= 0: # if no time overlap, don't merge -> stitcher's job
+    if t2[0]>=t1[-1] or t2[-1]<=t1[0]: # separation of axis
+        # if no time overlap, don't merge -> stitcher's job
         return 1e6
     
     s1, e1, s2, e2 = find_overlap_idx(t1, t2)
     x1,x2,y1,y2 = track1["x_position"], track2["x_position"], track1["y_position"], track2["y_position"]
     
     # check if the overalpped position deviates too much
+    # try:
     if np.nanmean(np.abs(x1[s1:e1] - x2[s2:e2])) > 30 or np.nanmean(np.abs(y1[s1:e1] - y2[s2:e2])) > 6:
         return 1e6
+    # except:
+    #     print(track1["_id"], track2["_id"])
+    #     print(s1, e1,s2,e2)
+    #     print("t1", [t-1.628083e9 for t in t1])
+    #     print("t2", [t-1.628083e9 for t in t2])
+        
     
     # try to vectorize
     mu1_arr = np.array([x1[s1:e1], y1[s1:e1]]) # 2xK
