@@ -1,5 +1,5 @@
 # -----------------------------
-__file__ = 'pp1.py'
+__file__ = 'pp1_all_nodes.py'
 __doc__ = """
 first pipeline: run postproc in trajectory-indexed documents, do not transform
 1. create shared data structures (dictionaries, queues)
@@ -25,6 +25,7 @@ import merge
 
 class SIGINTException(Exception):
     pass
+
 
 def main(raw_collection = None, reconciled_collection = None):
     #%% SIGNAL HANDLING
@@ -97,71 +98,73 @@ def main(raw_collection = None, reconciled_collection = None):
     df.initialize_db(mp_param, db_param)
     manager_logger.info("Post-processing manager initialized db collections. Creating shared data structures")
     
-    # Raw trajectory fragment queue
-    # -- populated by data_reader and consumed by merger
-    raw_fragment_queue_e = mp_manager.Queue(maxsize=parameters["raw_queue_size"]) # east direction
-    raw_fragment_queue_w = mp_manager.Queue(maxsize=parameters["raw_queue_size"]) # west direction
-    
-    # Merged queues
-    # -- populated by merger and consumed by stitcher
-    merged_queue_e = mp_manager.Queue(maxsize=parameters["merged_queue_size"]) # east direction
-    merged_queue_w = mp_manager.Queue(maxsize=parameters["merged_queue_size"]) # west direction
-    
-    # Stitched trajectory queue
-    # -- populated by stitcher and consumed by reconciliation pool
-    stitched_trajectory_queue = mp_manager.Queue(maxsize=parameters["stitched_queue_size"]) 
-    
-    # Reconciled queue
-    # -- populated by stitcher and consumed by reconciliation_writer
+    # initialize queues and processes
+    # -- master queues (not videonode specific)
+    stitched_queue = mp_manager.Queue(maxsize=5*parameters["stitched_queue_size"]) 
     reconciled_queue = mp_manager.Queue() # maxsize=parameters["reconciled_trajectory_queue_size"]
     
-    # PID tracker is a single dictionary of format {processName: PID}
-    pid_tracker = mp_manager.dict()
+    # -- populated by data_reader and consumed by merger
+    queue_map = mp_manager.dict() # master object -> [1/.../9] -> [EB/WB] -> [raw_q/merged_q/stitched_q]
+    q_sizes = [parameters["raw_queue_size"], parameters["merged_queue_size"], parameters["stitched_queue_size"]]
+    proc_per_node = ["feed", "merge", "stitch"]
+    proc_map = mp_manager.dict()
     
+    for node in range(parameters["num_video_nodes"]):
+        for dir in ["eb", "wb"]:
+            for i, proc in enumerate(proc_per_node):
+                key = "node"+str(node)+"_"+dir+"_"+proc
+                if i >=1:
+                    prev_key = "node"+str(node)+"_"+dir+"_"+proc_per_node[i-1]
+                    prev_queue = queue_map[prev_key]
+                else:
+                    prev_key,prev_queue = None,None
+                    
+                queue = mp_manager.Queue(maxsize=q_sizes[i]) 
+                queue_map[key] = queue
+                proc_map[key] = {}
+                if proc == "feed":
+                    proc_map[key]["command"] = df.static_data_reader # TODO: modify data_feed
+                    proc_map[key]["args"] = (node, dir, mp_param, db_param, queue, )
+                    proc_map[key]["predecessor"] = None # should be None
+                    proc_map[key]["dependent_queue"] = None
+                    
+                elif proc == "merge":
+                    proc_map[key]["command"] = merge.merge_fragments 
+                    proc_map[key]["args"] = (dir, prev_queue, queue, mp_param, ) 
+                    proc_map[key]["predecessor"] = [prev_key]
+                    proc_map[key]["dependent_queue"] = queue_map[prev_key]
+                    
+                elif proc == "stitch":
+                    proc_map[key]["command"] = mcf.min_cost_flow_online_alt_path
+                    proc_map[key]["args"] = (dir, prev_queue, queue, mp_param, )
+                    proc_map[key]["dependent_queue"] = queue_map[prev_key]
+            
+    
+    # global processes (not videonode specific)
+    proc_map["eb_master_stitcher"] = {"command": mcf.min_cost_flow_online_alt_path,
+                                      "args": ("eb", prev_queue, queue, mp_param, ),
+                                      "predecessor": ,
+                                      "dependent_queue": } # TODO: all local stitchers eb
+    proc_map["wb_master_stitcher"] = {"command": mcf.min_cost_flow_online_alt_path,
+                                      "args": ("wb", prev_queue, queue, mp_param, ),
+                                      "predecessor": ,
+                                      "dependent_queue": } # TODO: all local wb stitchers
+    proc_map["reconciliation"] = {"command": rec.reconciliation_pool,
+                                      "args": (mp_param, db_param, stitched_queue, reconciled_queue,),
+                                      "predecessor": ["eb_master_stitcher", "wb_master_stitcher"],
+                                      "dependent_queue": stitched_queue}
+    proc_map["reconciliation_writer"] = {"command": rec.write_reconciled_to_db,
+                                      "args": (mp_param, db_param, reconciled_queue,),
+                                      "predecessor": ["reconciliation"],
+                                      "dependent_queue": reconciled_queue}
+    
+    # add PID to proc_map
+    for proc_name, proc_info in proc_map.items():
+        subsys_process = mp.Process(target=proc_info["command"], args=proc_info["args"], name=proc_name, daemon=False)
+        subsys_process.start()
+        proc_map[proc_name]["pid"] = subsys_process.pid
+            
 
-#%% Define processes
-    # ASSISTANT/CHILD PROCESSES
-    # ----------------------------------
-    # References to subsystem processes that will get spawned so that these can be recalled
-    # upon any failure. Each list item contains the name of the process, its function handle, and
-    # its function arguments for call.
-    # ----------------------------------
-    # -- raw_data_feed: populates the `raw_fragment_queue` from the database
-    # -- stitcher: constantly runs trajectory stitching and puts completed trajectories in `stitched_trajectory_queue`
-    # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
-    # -- log_handler: watches a queue for log messages and sends them to Elastic
-    processes_to_spawn = {}
-    
-    processes_to_spawn["static_data_reader"] = (df.static_data_reader,
-                    (mp_param, db_param, raw_fragment_queue_e, raw_fragment_queue_w, 1000,))
-    
-    processes_to_spawn["merger_e"] = (merge.merge_fragments,
-                      ("eb", raw_fragment_queue_e, merged_queue_e, mp_param, ))
-    
-    processes_to_spawn["merger_w"] = (merge.merge_fragments,
-                      ("wb", raw_fragment_queue_w, merged_queue_w, mp_param, ))
-    
-    
-    processes_to_spawn["stitcher_e"] = (mcf.min_cost_flow_online_alt_path,
-                      ("eb", merged_queue_e, stitched_trajectory_queue, mp_param, ))
-    
-    processes_to_spawn["stitcher_w"] = (mcf.min_cost_flow_online_alt_path,
-                      ("wb", merged_queue_w, stitched_trajectory_queue, mp_param, ))
-    
-    
-    # processes_to_spawn["stitcher_e"] = (mcf.dummy_stitcher,
-    #                   ("eb", raw_fragment_queue_e, stitched_trajectory_queue, mp_param, ))
-    
-    # processes_to_spawn["stitcher_w"] = (mcf.dummy_stitcher,
-    #                   ("wb", raw_fragment_queue_w, stitched_trajectory_queue, mp_param, ))
-    
-   
-    processes_to_spawn["reconciliation"] = (rec.reconciliation_pool,
-                      (mp_param, db_param, stitched_trajectory_queue, reconciled_queue,))
-
-    processes_to_spawn["reconciliation_writer"] = (rec.write_reconciled_to_db,
-                      (mp_param, db_param, reconciled_queue,))
-    
 
     # Specify dependencies amongst subprocesses 
     # -- a process can only die if (all/any?) of its predecessors is not alive
@@ -186,7 +189,7 @@ def main(raw_collection = None, reconciled_collection = None):
         "reconciliation_writer": reconciled_queue,
         }
 
-    # Store subprocesses and their PIDs, but don't start them just yet
+    # Store subprocesses and their PIDs. A process has to start to have a PID
     live_process_objects = {}
     for process_name, (process_function, process_args) in processes_to_spawn.items():
         subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)

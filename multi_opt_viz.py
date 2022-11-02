@@ -306,7 +306,7 @@ if __name__=="__main__":
     
     dbc = DBClient(**db_param)
     ani = animate_collection(dbc, database_name="transformed_beta", 
-                             collection_name = "635997ddc8d071a13a9e5293", 
+                             collection_name = "634ef772f8f31a6d48eab58e__castigates", 
                              offset=0, duration=1500, save=False)
     
     

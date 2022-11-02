@@ -1,6 +1,6 @@
 {
-    "mode": "sequence",
     "description": "try new pp1 with signal handling",
+    "num_video_nodes": 9,
     "raw_collection": "",
 	"raw_database": "trajectories",
 	"stitched_database": "stitched",
@@ -20,9 +20,9 @@
 	"raw_schema_path": "raw_schema.json",
 	"stitched_schema_path": "stitched_schema.json",
 	"reconciled_schema_path": "reconciled_schema.json",
-	"raw_trajectory_queue_size": 20000,
-	"stitched_trajectory_queue_size": 10000,
-    "reconciled_trajectory_queue_size": 10000,
+	"raw_queue_size": 20000,
+	"stitched_queue_size": 10000,
+    "reconciled_queue_size": 10000,
     
     "range_increment": 10,
     "buffer_time": 10,
