@@ -8,7 +8,9 @@ import numpy as np
 # import torch
 # from scipy import stats
 from i24_logger.log_writer import catch_critical
-from utils.misc import calc_fit_select
+from utils.misc import calc_fit_select, calc_fit_select_ransac
+import warnings
+warnings.filterwarnings('error')
 
 
 def bhattacharyya_distance(mu1, mu2, cov1, cov2):
@@ -132,17 +134,14 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
 
     
 
-    
-    
-    
+
+
 @catch_critical(errors = (Exception))
 def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshold_y):
     '''
     use bhattacharyya_distance
     vectorize bhattacharyya_distance
     '''
-    
-    cost_offset = 0
 
     # filter1 = np.array(track1["filter"], dtype=bool) # convert fomr [1,0] to [True, False]
     # filter2 = np.array(track2["filter"], dtype=bool)
@@ -174,13 +173,14 @@ def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshol
     # ONLY DEAL WITH NO-TIME-OVERLAPPED TRACKS!!!
     if len(t1) >= len(t2):
         # anchor = 1
-        
         # find the new fit for anchor1 based on the last ~1 sec of data
         t1 = t1[-n1:]
         x1 = x1[-n1:]
         y1 = y1[-n1:] # TODO: could run into the danger that the ends of a track has bad speed estimate
-        fitx, fity = calc_fit_select(t1,x1,y1,residual_threshold_x, residual_threshold_y)
-            
+        # fitx, fity = calc_fit_select_ransac(t1,x1,y1,residual_threshold_x, residual_threshold_y)
+        fitx, fity = calc_fit_select(t1,x1,y1)
+        # print(fitx, fity)
+        
         # get the first chunk of track2
         meast = t2[:n2]
         measx = x2[:n2]
@@ -192,15 +192,14 @@ def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshol
         
     else:
         # anchor = 2
-        
         # find the new fit for anchor2 based on the first ~1 sec of track2
         t2 = t2[:n2]
         x2 = x2[:n2]
         y2 = y2[:n2]
-        fitx, fity = calc_fit_select(t2,x2,y2,residual_threshold_x, residual_threshold_y)
-        
+        # fitx, fity = calc_fit_select_ransac(t2,x2,y2,residual_threshold_x, residual_threshold_y)
+        fitx, fity = calc_fit_select(t2,x2,y2)
         pt = t2[0]
-        # get teh last chunk of tarck1
+        # get the last chunk of tarck1
         meast = t1[-n1:]
         measx = x1[-n1:]
         measy = y1[-n1:]
@@ -218,7 +217,7 @@ def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshol
     slope, intercept = fity
     targety = slope * meast + intercept
     
-    sigmax = (0.1 + tdiff * 0.01) * fitx[0] #0.1,0.1, sigma in unit ft
+    sigmax = (0.1 + tdiff * 0.01) * fitx[0] # 0.1,0.1, sigma in unit ft
     varx = sigmax**2
     # vary_pred = np.var(y1) if anchor == 1 else np.var(y2)
     sigmay = 1.5 + tdiff* 2 * fity[0]
@@ -227,20 +226,30 @@ def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshol
     vary_meas = np.var(measy)
     vary_meas = max(vary_meas, 2) # lower bound 
     
+    # bd = 0
+    # for i, t in enumerate(tdiff):
+    #     mu1 = np.array([targetx[i], targety[i]]) # predicted state
+    #     mu2 = np.array([measx[i], measy[i]]) # measured state
+    #     cov1 = np.diag([varx[i], vary_pred[i]]) # prediction variance - grows as tdiff
+    #     cov2 = np.diag([varx[0], vary_meas])  # measurement variance - does not grow as tdiff
+    #     # mu1 = np.array([targetx[i]]) # predicted state
+    #     # mu2 = np.array([measx[i]]) # measured state
+    #     # cov1 = np.diag([varx[i]]) # prediction variance - grows as tdiff
+    #     # cov2 = np.diag([varx[0]])  # measurement variance - does not grow as tdiff
+    #     bd += bhattacharyya_distance(mu1, mu2, cov1, cov2)
     
-    bd = []
-    for i, t in enumerate(tdiff):
-        mu1 = np.array([targetx[i], targety[i]]) # predicted state
-        mu2 = np.array([measx[i], measy[i]]) # measured state
-        cov1 = np.diag([varx[i], vary_pred[i]]) # prediction variance - grows as tdiff
-        cov2 = np.diag([varx[0], vary_meas])  # measurement variance - does not grow as tdiff
-        # mu1 = np.array([targetx[i]]) # predicted state
-        # mu2 = np.array([measx[i]]) # measured state
-        # cov1 = np.diag([varx[i]]) # prediction variance - grows as tdiff
-        # cov2 = np.diag([varx[0]])  # measurement variance - does not grow as tdiff
-        bd.append(bhattacharyya_distance(mu1, mu2, cov1, cov2))
-    
-    nll = np.mean(bd)
+
+    # vectorize!
+    n = len(meast)
+    mu1 = np.hstack([targetx, targety]) # 1x 2n
+    mu2 = np.hstack([measx, measy]) # 1 x 2n
+    cov1 = np.diag(np.hstack([varx, vary_pred])) # 2n x 2n
+    cov2 = np.diag(np.hstack([np.ones(n)*varx[0], np.ones(n)*vary_meas])) 
+    try:
+        bd = bhattacharyya_distance(mu1, mu2, cov1, cov2)
+        nll = bd/n # mean
+    except:
+        return 1e6
     
     # time_cost = 0.01* (np.exp(gap) - 1)
     time_cost = 0.1 * gap

@@ -3,7 +3,7 @@ import numpy as np
 from cvxopt import matrix, solvers, sparse,spdiag,spmatrix
 from bson.objectid import ObjectId
 from collections import defaultdict
-
+import os
 from i24_logger.log_writer import logger, catch_critical, log_warnings, log_errors
 
 # TODO
@@ -53,6 +53,7 @@ def combine_fragments(all_fragment):
         stacked["coarse_vehicle_class"].append(fragment["coarse_vehicle_class"])
         stacked["fine_vehicle_class"].append(fragment["fine_vehicle_class"])
         stacked["direction"].append(fragment["direction"])
+        stacked["local_fragment_id"].append(fragment["local_fragment_id"])
     
 
     # first_fragment = raw_collection.find_one({"_id": first_id})
@@ -78,6 +79,9 @@ def combine_fragments(all_fragment):
     stacked["coarse_vehicle_class"] = max(set(stacked["coarse_vehicle_class"]), key = stacked["coarse_vehicle_class"].count)
     stacked["fine_vehicle_class"] = max(set(stacked["fine_vehicle_class"]), key = stacked["fine_vehicle_class"].count)
     stacked["direction"] = max(set(stacked["direction"]), key = stacked["direction"].count)
+    
+    # other parameters
+    stacked["compute_node_id"] = os.uname()[1]
     
     return stacked
 
@@ -133,7 +137,7 @@ def resample(car):
 @catch_critical(errors = (Exception))    
 def opt1(car, lam3_x, lam3_y):
     '''
-    1/M||z-Hx||_2^2 + \lam3/N ||D3x||_2^2
+    1/M||z-Hx||_2^2 + \\lam3/N ||D3x||_2^2
     '''
     x = car["x_position"]
     y = car["y_position"]
@@ -164,7 +168,7 @@ def opt1(car, lam3_x, lam3_y):
 
 def opt1_l1(car, lam3_x, lam3_y, lam1_x, lam1_y):
     '''
-    1/M||z-Hx||_2^2 + \lam3/N ||D3x||_2^2 + \lam1/M ||e||_1
+    1/M||z-Hx||_2^2 + \\lam3/N ||D3x||_2^2 + \\lam1/M ||e||_1
     '''
     x = car["x_position"]
     y = car["y_position"]
@@ -196,7 +200,7 @@ def opt1_l1(car, lam3_x, lam3_y, lam1_x, lam1_y):
 
 def opt2(car, lam2_x, lam2_y, lam3_x, lam3_y):
     '''
-    1/M||z-Hx||_2^2 + \lam2/N ||D2x||_2^2 + \lam3/N ||D3x||_2^2
+    1/M||z-Hx||_2^2 + \\lam2/N ||D2x||_2^2 + \\lam3/N ||D3x||_2^2
     '''
     x = car["x_position"]
     y = car["y_position"]
@@ -227,7 +231,7 @@ def opt2(car, lam2_x, lam2_y, lam3_x, lam3_y):
 
 def opt2_l1(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     '''
-    1/M||z-Hx||_2^2 + \lam2/N ||D2x||_2^2 + \lam3/N ||D3x||_2^2 + \lam1/M ||e||_1
+    1/M||z-Hx||_2^2 + \\lam2/N ||D2x||_2^2 + \\lam3/N ||D3x||_2^2 + \\lam1/M ||e||_1
     "reconciliation_args":{
         "lam2_x": 0,
         "lam2_y": 0,
@@ -324,7 +328,7 @@ def opt2_l1(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
 
 def opt2_l1_constr(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     '''
-    1/M||z-Hx||_2^2 + \lam2/N ||D2x||_2^2 + \lam3/N ||D3x||_2^2 + \lam1/M ||e||_1
+    1/M||z-Hx||_2^2 + \\lam2/N ||D2x||_2^2 + \\lam3/N ||D3x||_2^2 + \\lam1/M ||e||_1
     s.t. D1x >=0, -10<=D2x<=10, -3 <=D3x<=3
     '''
     x = car["x_position"]

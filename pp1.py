@@ -2,6 +2,9 @@
 __file__ = 'pp1.py'
 __doc__ = """
 first pipeline: run postproc in trajectory-indexed documents, do not transform
+1. create shared data structures (dictionaries, queues)
+2. create subprocesses (reader, merger, stitcher, reconciliation pool)
+3. register signals
 """
 # -----------------------------
 
@@ -10,6 +13,7 @@ import os
 import signal
 import time
 import json
+import signal
 from i24_logger.log_writer import logger
 
 # Custom modules
@@ -17,20 +21,61 @@ import data_feed as df
 import min_cost_flow as mcf
 import reconciliation as rec
 import merge
-from collections import deque, OrderedDict
-
-# import _evaluation.evaluation as ev
-import multi_opt as mo
 
 
+class SIGINTException(Exception):
+    pass
 
-def main(collection_name = None):
+def main(raw_collection = None, reconciled_collection = None):
+    #%% SIGNAL HANDLING
+    def soft_stop_hdlr(sig, action):
+        # send SIGINT to all subprocesses
+        
+        manager_logger.info("Manager received SIGINT")
+        for pid_name, pid_val in pid_tracker.items():
+            try:
+                os.kill(pid_val, signal.SIGINT)
+            except:
+                pass
+            # time.sleep(2)
+            try:
+                live_process_objects.pop(pid_name)
+            except:
+                pass
+            manager_logger.info("Sent SIGINT to PID={} ({})".format(pid_val, pid_name))
+            
+        raise SIGINTException # so to exit the while true loop
+        
+        
+    def finish_hdlr(sig, action):
+        # kill data_reader only
+        
+        manager_logger.info("Manager received SIGUSR1")
+        try:
+            os.kill(pid_tracker["static_data_reader"], signal.SIGINT)
+        except:
+            pass
+        try:
+            live_process_objects.pop("static_data_reader")
+        except:
+            pass
+        manager_logger.info("Sent SIGINT to PID={} (data_reader)".format(pid_tracker["static_data_reader"]))
+
+    # register signals
+    signal.signal(signal.SIGINT, soft_stop_hdlr)
+    signal.signal(signal.SIGUSR1, finish_hdlr)
+
+
+    # %%
     # GET PARAMAETERS
     with open("config/parameters.json") as f:
         parameters = json.load(f)
     
-    if collection_name is not None:
-        parameters["raw_collection"] = collection_name
+    if raw_collection:
+        parameters["raw_collection"] = raw_collection
+    
+    if reconciled_collection:
+        parameters["reconciled_collection"] = reconciled_collection
     
     with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)
@@ -45,8 +90,6 @@ def main(collection_name = None):
     manager_logger.info("Post-processing manager has PID={}".format(os.getpid()))
 
     # SHARED DATA STRUCTURES
-    # ----------------------------------
-    # ----------------------------------
     mp_param = mp_manager.dict()
     mp_param.update(parameters)
     
@@ -54,30 +97,25 @@ def main(collection_name = None):
     df.initialize_db(mp_param, db_param)
     manager_logger.info("Post-processing manager initialized db collections. Creating shared data structures")
     
-    # DELETE ME LATER
-    # if parameters["eval"]:
-    # ev.eval_raw(mp_param, db_param)
-    
     # Raw trajectory fragment queue
-    # -- populated by database connector that listens for updates
-    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    # -- populated by data_reader and consumed by merger
     raw_fragment_queue_e = mp_manager.Queue(maxsize=parameters["raw_trajectory_queue_size"]) # east direction
     raw_fragment_queue_w = mp_manager.Queue(maxsize=parameters["raw_trajectory_queue_size"]) # west direction
     
+    # Merged queues
+    # -- populated by merger and consumed by stitcher
     merged_queue_e = mp_manager.Queue(maxsize=parameters["raw_trajectory_queue_size"]) # east direction
     merged_queue_w = mp_manager.Queue(maxsize=parameters["raw_trajectory_queue_size"]) # west direction
     
     # Stitched trajectory queue
     # -- populated by stitcher and consumed by reconciliation pool
-    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    # stitched_trajectory_queue_e = mp_manager.Queue(maxsize=parameters["stitched_trajectory_queue_size"]) 
-    # stitched_trajectory_queue_w = mp_manager.Queue(maxsize=parameters["stitched_trajectory_queue_size"]) 
     stitched_trajectory_queue = mp_manager.Queue(maxsize=parameters["stitched_trajectory_queue_size"]) 
     
+    # Reconciled queue
+    # -- populated by stitcher and consumed by reconciliation_writer
     reconciled_queue = mp_manager.Queue() # maxsize=parameters["reconciled_trajectory_queue_size"]
     
     # PID tracker is a single dictionary of format {processName: PID}
-    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     pid_tracker = mp_manager.dict()
     
 
@@ -93,8 +131,6 @@ def main(collection_name = None):
     # -- reconciliation: creates a pool of reconciliation workers and feeds them from `stitched_trajectory_queue`
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {}
-
-
     
     processes_to_spawn["static_data_reader"] = (df.static_data_reader,
                     (mp_param, db_param, raw_fragment_queue_e, raw_fragment_queue_w, 1000,))
@@ -127,138 +163,73 @@ def main(collection_name = None):
                       (mp_param, db_param, reconciled_queue,))
     
 
+    # Specify dependencies amongst subprocesses 
+    # -- a process can only die if (all/any?) of its predecessors is not alive
+    predecessor = {
+        "static_data_reader": None, # no dependent
+        "merger_e": ["static_data_reader"],
+        "merger_w": ["static_data_reader"],
+        "stitcher_e": ["merger_e"],
+        "stitcher_w": ["merger_w"],
+        "reconciliation": ["stitcher_e", "stitcher_w"], # and
+        "reconciliation_writer": ["reconciliation"],
+        }
     
+    # corresponding queue has to be empty for the process to safety die
+    dependent_queues = {
+        "static_data_reader": None, # no dependent
+        "merger_e": raw_fragment_queue_e,
+        "merger_w": raw_fragment_queue_w,
+        "stitcher_e": merged_queue_e, 
+        "stitcher_w": merged_queue_w,
+        "reconciliation": stitched_trajectory_queue, #if parameters["eval"] else stitched_trajectory_queue_copy, # change back if no evaluation
+        "reconciliation_writer": reconciled_queue,
+        }
+
+    # Store subprocesses and their PIDs, but don't start them just yet
     live_process_objects = {}
-    if parameters["mode"] == "sequence":
-        # a process can only die if (all/any?) of its predecessors is not alive
-        predecessor = {
-            "static_data_reader": None, # no dependent
-            "merger_e": ["static_data_reader"],
-            "merger_w": ["static_data_reader"],
-            "stitcher_e": ["merger_e"],
-            "stitcher_w": ["merger_w"],
-            "reconciliation": ["stitcher_e", "stitcher_w"], # and
-            "reconciliation_writer": ["reconciliation"],
-
-            }
-        # corresponding queue has to be empty for the process to safety die
-        dependent_queues = {
-            "static_data_reader": None, # no dependent
-            "merger_e": raw_fragment_queue_e,
-            "merger_w": raw_fragment_queue_w,
-            "stitcher_e": merged_queue_e, 
-            "stitcher_w": merged_queue_w,
-            "reconciliation": stitched_trajectory_queue, #if parameters["eval"] else stitched_trajectory_queue_copy, # change back if no evaluation
-            "reconciliation_writer": reconciled_queue,
-            }
-
-    # Start all processes for the first time and put references to those processes in `live_process_objects`
-    # manager_logger.info("Post-process manager beginning to spawn processes")
-
     for process_name, (process_function, process_args) in processes_to_spawn.items():
-        manager_logger.info("Post-process manager spawning {}".format(process_name))
         subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
         subsys_process.start()
-        # Put the process object in the dictionary, keyed by the process name.
         live_process_objects[process_name] = subsys_process
-        # Each process is responsible for putting its own children's PIDs in the tracker upon creation (if it spawns).
         pid_tracker[process_name] = subsys_process.pid
+
+
+
+
+#%% Run indefinitely until signals received
+
+    # Start subprocesses
+    # for process_name, subsys_process in live_process_objects.items():
+    #     manager_logger.info("Post-process manager spawning {}".format(process_name))
+    #     subsys_process.start()
         
-
-
-#%% SIGNAL HANDLING
-
-    # Simulate server control
-    def hard_stop_hdlr(sig, action):
-        manager_logger.info("Manager received hard stop signal")
-        for pid_name, pid_val in pid_tracker.items():
-            try:
-                os.kill(pid_val, signal.SIGKILL)
-            except:
-                pass
-            time.sleep(2)
-            try:
-                live_process_objects.pop(pid_name)
-            except:
-                pass
-            manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_val, pid_name))
-       
-    def soft_stop_hdlr(sig, action):
-        manager_logger.info("Manager received soft stop signal")
-        for pid_name, pid_val in pid_tracker.items():
-            try:
-                os.kill(pid_val, signal.SIGINT)
-            except:
-                pass
-            time.sleep(2)
-            try:
-                live_process_objects.pop(pid_name)
-            except:
-                pass
-            manager_logger.info("Sent SIGINT to PID={} ({})".format(pid_val, pid_name))
-            
-    def finish_hdlr(sig, action):
-        manager_logger.info("Manager received finish-processing signal")
-        for pid_name, pid_val in pid_tracker.items():
-            try:
-                os.kill(pid_val, signal.SIGUSR1)
-            except:
-                pass
-            time.sleep(2)
-            try:
-                live_process_objects.pop(pid_name)
-            except:
-                pass
-            manager_logger.info("Sent SIGUSR1 to PID={} ({})".format(pid_val, pid_name))
-            
-    
-    # register signals depending on the mode     
-    if parameters["mode"] == "hard_stop":
-        signal.signal(signal.SIGINT, hard_stop_hdlr)
         
-    elif parameters["mode"] == "soft_stop":
-        signal.signal(signal.SIGINT, soft_stop_hdlr)
-        
-    elif parameters["mode"] == "finish":
-        manager_logger.warning("Currently do not support finish-processing. Manually kill live_data_read instead")
-        # signal.signal(signal.SIGINT, finish_hdlr)
-        
-    elif parameters["mode"] == "sequence":
-        manager_logger.info("In sequence mode")
-    else:
-        manager_logger.error("Unrecongnized signal")
-
-
-
-#%% Run indefinitely until SIGINT received
     while True:
-        
-        # for each process that is being managed at this level, check if it's still running
-        time.sleep(2)
-        if all([not p.is_alive() for _,p in live_process_objects.items()]) and all([q.qsize() == 0 for _,q in dependent_queues.items() if q is not None]):
-            manager_logger.info("None of the processes is alive and queues are all empty")
-            break
-        
-        for pid_name, pid_val in pid_tracker.items():
-            try:
-                child_process = live_process_objects[pid_name]
-                # print("child_process: ", child_process.name, child_process.is_alive())
-            except:
-                continue
-
-            # print(child_process.name, child_process.is_alive())
-            if not child_process.is_alive():
-                # do not restart if in one of the stopping modes
-                if parameters["mode"] in ["hard_stop", "soft_stop", "finish"]:
+        try:
+            # for each process that is being managed at this level, check if it's still running
+            time.sleep(2)
+            # 
+            if all([not p.is_alive() for _,p in live_process_objects.items()]) and all([dependent_queues[n].qsize() == 0 for n,_ in live_process_objects.items() if dependent_queues[n] is not None]):
+                manager_logger.info("None of the processes is alive and dependent queues are all empty")
+                break
+            
+            for pid_name, pid_val in pid_tracker.items():
+                try:
+                    child_process = live_process_objects[pid_name]
+                    # print("child_process: ", child_process.name, child_process.is_alive())
+                except:
+                    continue
+    
+                # print(child_process.name, child_process.is_alive())
+                if not child_process.is_alive():
                     try:
                         live_process_objects.pop(pid_name)
                         print("RIP {}, you will be missed".format(pid_name))
                     except:
                         pass
                     
-                elif parameters["mode"] == "sequence":
-                    # keep the rest of the sequence live - a process cannot die if its predecessor is still alive
-                    
+                    # DEFAULT: restart processes ONLY if death is unnatural
                     process_name = child_process.name
                     preds = predecessor[process_name]
                     if preds is None:
@@ -278,7 +249,7 @@ def main(collection_name = None):
                     if no_pred_alive and queue_empty: 
                         # live_process_objects.pop(process_name)
                         manager_logger.debug("RIP: {} died of natural causes.".format(pid_name))
-   
+       
                     else: # if unatural death, restart
                         if not no_pred_alive:
                             manager_logger.warning("{} is resurrected by the Lord of Light because its predecessor is still alive".format(process_name))
@@ -291,36 +262,32 @@ def main(collection_name = None):
                         live_process_objects[pid_name] = subsys_process
                         pid_tracker[process_name] = subsys_process.pid
                         
-                    
-                else:
-                    # Restart the child process
-                    process_name = child_process.name
-
-                    if process_name in live_process_objects.keys():
-                        manager_logger.warning("Restarting process: {}".format(process_name))
                         
-                        # Get the function handle and function arguments to spawn this process again.
-                        process_function, process_args = processes_to_spawn[process_name]
-                        # Restart the process the same way we did originally.
-                        subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
-                        subsys_process.start()
-                        # Re-write the process object in the dictionary and update its PID.
-                        live_process_objects[pid_name] = subsys_process
-                        pid_tracker[process_name] = subsys_process.pid
-                    
-            else:
-                # Process is running; do nothing.
-                # if pid_name in live_process_objects:
-                # print("Long live {}! {}".format(pid_name, child_process))
-                time.sleep(2)
-                pass
-        
+                else:
+                    # Process is running; do nothing.
+                    # if pid_name in live_process_objects:
+                    # print("Long live {}! {}".format(pid_name, child_process))
+                    time.sleep(2)
+                    manager_logger.info("Current queue sizes, raw_e: {}, raw_w: {}, merge_e: {}, merge_w:{}, stitched: {}, reconciled: {}".format(raw_fragment_queue_e.qsize(), raw_fragment_queue_w.qsize(), 
+                                                                                                                                                  merged_queue_e.qsize(), merged_queue_w.qsize(), 
+                                                                                                                                                  stitched_trajectory_queue.qsize(), 
+                                                                                                                                                  reconciled_queue.qsize()))
+                    pass
+                
+        except SIGINTException:
+            manager_logger.info("Postprocessing interrupted by SIGINT.")
+            break # break the while true loop
+            
+        except Exception as e:
+            manager_logger.warning("Other exceptions occured. Exit. Exception:{}".format(e))
+            break
+    
         
     manager_logger.info("Postprocessing Mischief Managed.")
-    manager_logger.info("Final queue sizes, raw east: {}, raw west: {}, stitched: {}, reconciled: {}".format(raw_fragment_queue_e.qsize(), raw_fragment_queue_w.qsize(), stitched_trajectory_queue.qsize(), reconciled_queue.qsize()))
-    
-    
-    # start evaluation
+    manager_logger.info("Final queue sizes, raw_e: {}, raw_w: {}, merge_e: {}, merge_w:{}, stitched: {}, reconciled: {}".format(raw_fragment_queue_e.qsize(), raw_fragment_queue_w.qsize(), 
+                                                                                                                                  merged_queue_e.qsize(), merged_queue_w.qsize(), 
+                                                                                                                                  stitched_trajectory_queue.qsize(), 
+                                                                                                                                  reconciled_queue.qsize()))
     
 if __name__ == '__main__':
     main()

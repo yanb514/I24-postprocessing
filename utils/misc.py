@@ -1,8 +1,48 @@
 from i24_logger.log_writer import catch_critical
 import numpy as np
 from sklearn import linear_model
+from scipy.stats import linregress
 
 
+
+def nan_helper(y):
+    """Helper to handle indices and logical indices of NaNs.
+
+    Input:
+        - y, 1d numpy array with possible NaNs
+    Output:
+        - nans, logical indices of NaNs
+        - index, a function, with signature indices= index(logical_indices),
+          to convert logical indices of NaNs to 'equivalent' indices
+    Example:
+        >>> # linear interpolation of NaNs
+        >>> nans, x= nan_helper(y)
+        >>> y[nans]= np.interp(x(nans), x(~nans), y[~nans])
+    """
+
+    return np.isnan(y), lambda z: z.nonzero()[0]
+
+
+@catch_critical(errors = (Exception))
+def interpolate(traj):
+    '''
+    interpolate raw trajectories to get rid of nans in x_position and y_position
+    update starting_x, ending_x
+    '''
+    x = np.array(traj["x_position"])
+    y = np.array(traj["y_position"])
+    
+    nans, fcn = nan_helper(x)
+    x[nans]= np.interp(fcn(nans), fcn(~nans), x[~nans])
+    y[nans]= np.interp(fcn(nans), fcn(~nans), y[~nans]) # assume missing y and missing x are at the same indices
+    
+    # update document
+    traj['x_position'] = list(x)
+    traj['y_position'] = list(y)
+    traj["starting_x"] = float(x[0])
+    traj["ending_x"] = float(x[-1])
+    
+    return traj
 
 
 @catch_critical(errors = (Exception))
@@ -120,9 +160,11 @@ def calc_fit(traj, residual_threshold_x, residual_threshold_y):
 
     return traj
 
-def calc_fit_select(t,x,y,residual_threshold_x, residual_threshold_y):
+@catch_critical(errors = (Exception))
+def calc_fit_select_ransac(t,x,y,residual_threshold_x, residual_threshold_y):
     '''
     same as calc_fit, but only on given t,x,y
+    ransac fit could be expensive
     '''
     ransacx = linear_model.RANSACRegressor(residual_threshold=residual_threshold_x)
     try:
@@ -140,6 +182,21 @@ def calc_fit_select(t,x,y,residual_threshold_x, residual_threshold_y):
     fity = [ransacy.estimator_.coef_[0], ransacy.estimator_.intercept_]
     
     return fitx, fity
+
+
+@catch_critical(errors = (Exception))
+def calc_fit_select(t,x,y):
+    '''
+    same as calc_fit, but only on given t,x,y using least square
+    y=mt+c
+    https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.linalg.lstsq.html#numpy.linalg.lstsq
+    '''
+    mx, cx, _,_,_ = linregress(t, x)
+    my, cy, _,_,_ = linregress(t, y)
+    
+    
+    return [mx,cx], [my,cy]
+
 
 
 def find_overlap_idx(x, y):

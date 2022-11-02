@@ -16,34 +16,43 @@ import i24_logger.log_writer as log_writer
 from utils.utils_mcf import MOTGraphSingle
 from utils.misc import calc_fit, find_overlap_idx
 
+class SIGINTException(SystemExit):
+    pass
 
+def soft_stop_hdlr(sig, action):
+    '''
+    Signal handling for SIGINT
+    Soft terminate current process. Close ports and exit.
+    '''
+    raise SIGINTException # so to exit the while true loop
+    
 # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
-class SignalHandler():
+# class SignalHandler():
 
-    run = True
-    count_sigint = 0 # count the number of times a SIGINT is received
-    count_sigusr = 0
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+#     run = True
+#     count_sigint = 0 # count the number of times a SIGINT is received
+#     count_sigusr = 0
+#     signal.signal(signal.SIGINT, signal.SIG_IGN)
     
-    def __init__(self):
-        signal.signal(signal.SIGINT, self.soft_stop)
-        signal.signal(signal.SIGUSR1, self.finish_processing)
+#     def __init__(self):
+#         signal.signal(signal.SIGINT, self.soft_stop)
+#         signal.signal(signal.SIGUSR1, self.finish_processing)
     
-    def soft_stop(self, *args):
-        signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
-        self.run = False
-        self.count_sigint += 1
-        # stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigint))
+#     def soft_stop(self, *args):
+#         signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+#         self.run = False
+#         self.count_sigint += 1
+#         # stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigint))
         
-    def finish_processing(self, *args):
-        # do nothing
-        self.count_sigusr += 1
-        # stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigusr))
+#     def finish_processing(self, *args):
+#         # do nothing
+#         self.count_sigusr += 1
+#         # stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigusr))
         
-        siginfo = signal.sigwaitinfo({signal.SIGUSR1})
-        print("py: got %d from %d by user %d\n" % (siginfo.si_signo,
-                                                 siginfo.si_pid,
-                                                 siginfo.si_uid))
+#         siginfo = signal.sigwaitinfo({signal.SIGUSR1})
+#         print("py: got %d from %d by user %d\n" % (siginfo.si_signo,
+#                                                  siginfo.si_pid,
+#                                                  siginfo.si_uid))
         
         
 # @catch_critical(errors = (Exception))  
@@ -107,14 +116,15 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     '''
     incrementally fixing the matching
     '''
- 
+    signal.signal(signal.SIGINT, soft_stop_hdlr)
+    
     # Initiate a logger
     stitcher_logger = log_writer.logger
     stitcher_logger.set_name("stitcher_"+direction)
     stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
     setattr(stitcher_logger, "_default_logger_extra",  {})
 
-    sig_hdlr = SignalHandler()
+    # sig_hdlr = SignalHandler()
 
     # Get parameters
     ATTR_NAME = parameters["fragment_attr_name"]
@@ -126,9 +136,12 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     m = MOTGraphSingle(ATTR_NAME, parameters)
     counter = 0 # iterations for log
 
+    cum_t1 = 0
+    cum_t2 = 0
+    cum_t3 = 0
     
     GET_TIMEOUT = parameters["stitcher_timeout"]
-    while sig_hdlr.run:
+    while True:
         try:
             try:
                 fgmt = fragment_queue.get(timeout = GET_TIMEOUT) # a merged dictionary
@@ -164,19 +177,22 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             #         continue # skip this fgmt
             # except:
             #     pass
-                
+            t1 = time.time()
             m.add_node(fgmt)
+            cum_t1 += time.time()-t1
             
             # print("* add ", fgmt_id)
             # print("**", m.G.edges(data=True))
             
             # run MCF
+            t2 = time.time()
             m.augment_path(fgmt_id)
-    
+            cum_t2 += time.time()-t2
+            
             # pop path if a path is ready
             # print("**", m.G.edges(data=True))
+            t3 = time.time()
             all_paths = m.pop_path(time_thresh = fgmt["first_timestamp"] - TIME_WIN)  
-            
             
             for path in all_paths:
                 # filters = m.get_filters(path)
@@ -192,20 +208,22 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                 m.clean_graph(path)
                 stitcher_logger.debug("** Stitched {} fragments".format(len(path)),extra = None)
              
+            cum_t3 += time.time()-t3
+            
             if counter % 100 == 0:
-                stitcher_logger.debug("Graph nodes : {}, Graph edges: {}, Cache: {}".format(m.G.number_of_nodes(), m.G.number_of_edges(), len(m.cache)),extra = None)
-                stitcher_logger.debug(f"raw queue: {fragment_queue.qsize()}, stitched queue: {stitched_trajectory_queue.qsize()}")
+                stitcher_logger.debug("MCF graph # nodes: {}, # edges: {}, deque: {}, cache: {}".format(m.G.number_of_nodes(), m.G.number_of_edges(), len(m.in_graph_deque), len(m.cache)),extra = None)
+                stitcher_logger.debug("Cumulative runtime add:{:.2f}, augment:{:.2f}, pop:{:.2f}".format(cum_t1, cum_t2, cum_t3), extra=None)
+                # stitcher_logger.debug(f"raw queue: {fragment_queue.qsize()}, stitched queue: {stitched_trajectory_queue.qsize()}")
                 counter = 0
             counter += 1
         
-        
-        except Exception as e: 
-            if sig_hdlr.run:
-                raise e
-                # stitcher_logger.error("Unexpected exception: {}".format(e))
-            else:
-                stitcher_logger.warning("SIGINT detected. Exception:{}".format(e))
+        except SIGINTException:  # SIGINT detected
+            stitcher_logger.warning("SIGINT detected. Exit")
             break
+            
+        # except Exception as e:   
+        #     stitcher_logger.error("Unexpected exception: {}".format(e))
+        #     break
             
         
     stitcher_logger.info("Exit stitcher")

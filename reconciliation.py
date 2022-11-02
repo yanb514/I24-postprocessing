@@ -24,6 +24,22 @@ from i24_database_api import DBClient
 # from utils.utils_reconciliation import receding_horizon_2d_l1, resample, receding_horizon_2d, combine_fragments, rectify_2d
 from utils.utils_opt import combine_fragments, resample, opt1, opt2, opt1_l1, opt2_l1, opt2_l1_constr
 
+
+class SIGINTException(SystemExit):
+    pass
+
+def soft_stop_hdlr(sig, action):
+    '''
+    Signal handling for SIGINT
+    Soft terminate current process. Close and join the pool.
+    '''
+    raise SIGINTException # so to exit the while true loop
+    
+# def soft_stop_hdlr(sig, frame):
+    # signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+    
+
+    
 def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue) -> None:
     """
     Resample and reconcile a single trajectory, and write the result to a queue
@@ -46,7 +62,7 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
             finished_trajectory = opt2_l1_constr(resampled_trajectory, **reconciliation_args)  
             # finished_trajectory = opt2(resampled_trajectory, **reconciliation_args)  
             reconciled_queue.put(finished_trajectory)
-            rec_worker_logger.debug("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
+            # rec_worker_logger.debug("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
     
         except Exception as e:
             rec_worker_logger.info("+++ Flag as {}, skip reconciliation".format(str(e)), extra = None)
@@ -61,6 +77,12 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
     :param pid_tracker: a dictionary
     :return:
     """
+    # Signal handling: https://stackoverflow.com/questions/11312525/catch-ctrlc-sigint-and-exit-multiprocesses-gracefully-in-python/35134329#35134329
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    worker_pool = Pool(processes=multiprocessing.cpu_count())
+    # signal.signal(signal.SIGINT, original_sigint_handler)
+    signal.signal(signal.SIGINT, soft_stop_hdlr)
+    
     # parameters
     reconciliation_args=parameters["reconciliation_args"]
     # for key in ["lam2_x","lam2_y", "lam3_x", "lam3_y","lam1_x","lam1_y"]:
@@ -73,25 +95,10 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
     # wait to get raw collection name
     while parameters["raw_collection"]=="":
         time.sleep(1)
-    raw = DBClient(**db_param, database_name = parameters["raw_database"], collection_name = parameters["raw_collection"])
-   
-    # Signal handling: 
-    original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    worker_pool = Pool(processes=multiprocessing.cpu_count())
-    signal.signal(signal.SIGINT, original_sigint_handler)
     
     rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(multiprocessing.cpu_count()), extra = None)
     TIMEOUT = parameters["reconciliation_pool_timeout"]
-    
-    # Signal handling: 
-    # SIGINT raises KeyboardInterrupt,  close dbw, close pool and exit.
-    # SIGUSR1 is ignored. The process terminates when queue is empty. Close and join the pool
-    def handler(sigusr, frame):
-        rec_parent_logger.warning("SIGUSR1 detected. Finish processing current queues.")
-        signal.signal(sigusr, signal.SIG_IGN)    
-        signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
-        
-    signal.signal(signal.SIGUSR1, handler) # ignore SIGUSR1
+
 
     cntr = 0
     while True:
@@ -101,6 +108,7 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
                 cntr += 1
             except queue.Empty: 
                 rec_parent_logger.warning("Reconciliation pool is timed out after {}s. Close the reconciliation pool.".format(TIMEOUT))
+                worker_pool.close()
                 break
         
             combined_trajectory = combine_fragments(traj_docs)    
@@ -109,14 +117,19 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
             if cntr % 100 == 0:
                 rec_parent_logger.info("reconciled_queue size: {}".format(reconciled_queue.qsize()))
 
-        except (KeyboardInterrupt, BrokenPipeError): # handle SIGINT here
-            rec_parent_logger.warning("SIGINT detected. Exit pool.")
+        except SIGINTException: # handle SIGINT here
+            rec_parent_logger.warning("SIGINT detected. Terminate pool.")
+            worker_pool.terminate() # immediately terminate all tasks
             break
         
-    # Finish up
-    worker_pool.close()
-    # rec_parent_logger.info("Closed the pool, waiting to join...")
+        except Exception as e: # other exception
+            rec_parent_logger.warning("{}, Close the pool".format(e))
+            worker_pool.close() # wait until all processes finish their task
+            break
+            
+            
         
+    # Finish up  
     worker_pool.join()
     rec_parent_logger.info("Joined the pool.")
     
@@ -126,6 +139,7 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
 
 def write_reconciled_to_db(parameters, db_param, reconciled_queue):
     
+    signal.signal(signal.SIGINT, soft_stop_hdlr)
     
     reconciled_writer = log_writer.logger
     reconciled_writer.set_name("reconciliation_writer")
@@ -133,12 +147,12 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
     # Signal handling: 
     # SIGINT raises KeyboardInterrupt,  close dbw, terminate pool and exit. # TODO: pool.terminate() or close()?
     # SIGUSR1 is ignored. The process terminates when queue is empty. Close and join the pool
-    def handler(sigusr, frame):
-        reconciled_writer.warning("SIGUSR1 detected. Finish processing current queues.")
-        signal.signal(sigusr, signal.SIG_IGN)    
-        signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+    # def handler(sigusr, frame):
+    #     reconciled_writer.warning("SIGUSR1 detected. Finish processing current queues.")
+    #     signal.signal(sigusr, signal.SIG_IGN)    
+    #     signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
         
-    signal.signal(signal.SIGUSR1, handler) # ignore SIGUSR1
+    # signal.signal(signal.SIGUSR1, handler) # ignore SIGUSR1
     reconciled_schema_path = os.path.join(os.environ["USER_CONFIG_DIRECTORY"], parameters["reconciled_schema_path"])
 
     # wait to get raw collection name
@@ -161,14 +175,14 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
             dbw.write_one_trajectory(thread = True, **reconciled_traj)
             cntr += 1
             if cntr % 100 == 0:
-                reconciled_writer.info("Current count in collection {}: {}".format(dbw.collection_name, dbw.count()))
+                reconciled_writer.info("Est. count in collection {}: {}".format(dbw.collection_name, dbw.collection.estimated_document_count()))
                 
-        except (KeyboardInterrupt, BrokenPipeError): # handle SIGINT here 
+        except SIGINTException: # handle SIGINT here 
             reconciled_writer.warning("SIGINT detected. Exit reconciled writer")
             break
     
     
-    reconciled_writer.info("Count in reconciled collection {}: {}".format(dbw.collection_name, dbw.count()))
+    reconciled_writer.info("Est. count in reconciled collection {}: {}".format(dbw.collection_name, dbw.collection.estimated_document_count()))
     
     
     # Safely close the mongodb client connection

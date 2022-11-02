@@ -19,6 +19,7 @@ import pandas as pd
 from collections import OrderedDict
 from functools import reduce
 import time
+import signal
 from utils.misc import calc_fit_select, find_overlap_idx
 
 # from i24_database_api import DBClient
@@ -29,7 +30,15 @@ from utils.misc import SortedDLL
 # import warnings
 # warnings.filterwarnings('error')
 
+class SIGINTException(SystemExit):
+    pass
 
+def soft_stop_hdlr(sig, action):
+    '''
+    Signal handling for SIGINT
+    Soft terminate current process. Close ports and exit.
+    '''
+    raise SIGINTException # so to exit the while true loop
 
 @catch_critical(errors = (RuntimeWarning))
 def merge_resample(traj, conf_threshold):
@@ -285,6 +294,8 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters):
         raw: fragment dict
         data: resampled fragment df
     '''
+    signal.signal(signal.SIGINT, soft_stop_hdlr)
+    
     merge_logger = log_writer.logger
     merge_logger.set_name("merger_"+direction)
     merge_logger.info("Process started")
@@ -301,81 +312,89 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters):
     sdll = SortedDLL()
     while True:
         try:
-            fragment = fragment_queue.get(timeout = TIMEOUT) # fragments are ordered in last_timestamp
-            cntr += 1
-        except queue.Empty:
-            merge_logger.warning("merger timed out after {} sec.".format(TIMEOUT))
-            comps = nx.connected_components(G)
-            for comp in comps:
-                if len(comp) > 1:
-                    merge_logger.debug("Merged {}".format(comp))
-                unmerged = [ G.nodes[v]["data"] for v in list(comp)]
-                merged = combine_merged_dict(unmerged)
-                merged_queue.put(merged) 
-            break
-        
-        resampled = merge_resample(fragment, CONF_THRESH) # convert to df ! last_timestamp might be changed!!!
+            try:
+                fragment = fragment_queue.get(timeout = TIMEOUT) # fragments are ordered in last_timestamp
+                cntr += 1
+            except queue.Empty:
+                merge_logger.warning("merger timed out after {} sec.".format(TIMEOUT))
+                comps = nx.connected_components(G)
+                for comp in comps:
+                    if len(comp) > 1:
+                        merge_logger.debug("Merged {}".format(comp))
+                    unmerged = [ G.nodes[v]["data"] for v in list(comp)]
+                    merged = combine_merged_dict(unmerged)
+                    merged_queue.put(merged) 
+                break
             
-        if resampled is None:
-            merge_logger.info("skip {} in merging: LOW CONF".format(fragment["_id"]))
-            continue
-        
-        
-        curr_time = resampled["last_timestamp"]
-        curr_id = resampled["_id"]
-        
-        # lru[fragment["_id"]] = curr_time # TODO DF LAST
-        sdll.append({"id": curr_id, "tail_time": curr_time})
-        
-        curr_nodes = list(G.nodes(data=True)) # current nodes in G
-        G.add_node(curr_id, data=resampled) 
-        
-        t1 = time.time()
-        for node_id, node in curr_nodes:
-            # if they have time overlaps
-            dist = merge_cost(node["data"], resampled) # TODO: these two are not ordered in time,check time overlap within
-            # print(str(node_id)[-4:], str(curr_id)[-4:], dist)
-            if dist <= DIST_THRESH:
-                G.add_edge(node_id, curr_id, weight = dist)
-                # lru[node_id] = curr_time # TODO: reset to the larger last-tiemstamp of the two
-                # lru.move_to_end(node_id, last=True) # move node_id to last of lru
-                # larger = max([G.nodes[node_id]["data"]["last_timestamp"], G.nodes[curr_id]["data"]["last_timetsamp"]])
-                # sdll.update(key=fragment["_id"], attr_val=larger)
-                sdll.update(key=curr_id, attr_val=curr_time)
-                sdll.update(key=node_id, attr_val=curr_time)
+            resampled = merge_resample(fragment, CONF_THRESH) # convert to df ! last_timestamp might be changed!!!
                 
-                # merge_logger.info("Merged {} and {}".format(node_id, fragment["_id"]))
+            if resampled is None:
+                merge_logger.info("skip {} in merging: LOW CONF".format(fragment["_id"]))
+                continue
+            
+            
+            curr_time = resampled["last_timestamp"]
+            curr_id = resampled["_id"]
+            
+            # lru[fragment["_id"]] = curr_time # TODO DF LAST
+            sdll.append({"id": curr_id, "tail_time": curr_time})
+            
+            curr_nodes = list(G.nodes(data=True)) # current nodes in G
+            G.add_node(curr_id, data=resampled) 
+            
+            t1 = time.time()
+            for node_id, node in curr_nodes:
+                # if they have time overlaps
+                dist = merge_cost(node["data"], resampled) # TODO: these two are not ordered in time,check time overlap within
+                # print(str(node_id)[-4:], str(curr_id)[-4:], dist)
+                if dist <= DIST_THRESH:
+                    G.add_edge(node_id, curr_id, weight = dist)
+                    # lru[node_id] = curr_time # TODO: reset to the larger last-tiemstamp of the two
+                    # lru.move_to_end(node_id, last=True) # move node_id to last of lru
+                    # larger = max([G.nodes[node_id]["data"]["last_timestamp"], G.nodes[curr_id]["data"]["last_timetsamp"]])
+                    # sdll.update(key=fragment["_id"], attr_val=larger)
+                    sdll.update(key=curr_id, attr_val=curr_time)
+                    sdll.update(key=node_id, attr_val=curr_time)
+                    
+                    # merge_logger.info("Merged {} and {}".format(node_id, fragment["_id"]))
+            
+            t2 = time.time()
+            
+            # find connected components in G and check for timeout
+            # TODO: use better data structure to make the following more efficient
+            if cntr % 10 == 0:
+                merge_logger.debug("Graph nodes : {}, Graph edges: {}, cache: {}".format(G.number_of_nodes(), G.number_of_edges(), sdll.count()),extra = None)
+                merge_logger.debug("Time elapsed for adding edge: {:.2f}".format(t2-t1))
+                # t3 = time.time()
+            to_remove = set()
+            # check if the first in lru is timed out
+            while True:
+                # node_id, latest_time = next(iter(lru.items()))
+                first = sdll.first_node()
+                first_id = first.id
+                first_tail = first.tail_time
+                if first_tail < curr_time - TIMEWIN:
+                    comp = nx.node_connected_component(G, first_id)
+                    if len(comp) > 1:
+                        merge_logger.debug("Merged {}".format(comp), extra=None)
+                    unmerged = [G.nodes[v]["data"] for v in list(comp)]
+                    merged = combine_merged_dict(unmerged)
+                    merged_queue.put(merged) 
+                    to_remove = to_remove.union(comp)
+                    # [lru.pop(v) for v in comp]
+                    [sdll.delete(v) for v in comp]
+                else:
+                    break # no need to check lru further
+            # clean up graph and lru
+            G.remove_nodes_from(to_remove)
+            
+        except SIGINTException:  # SIGINT detected
+            merge_logger.info("SIGINT detected. Exit.")
+
+            break
+    
         
-        t2 = time.time()
-        
-        # find connected components in G and check for timeout
-        # TODO: use better data structure to make the following more efficient
-        if cntr % 10 == 0:
-            merge_logger.debug("Graph nodes : {}, Graph edges: {}, cache: {}".format(G.number_of_nodes(), G.number_of_edges(), sdll.count()),extra = None)
-            merge_logger.debug("Time elapsed for adding edge: {:.2f}".format(t2-t1))
-            # t3 = time.time()
-        to_remove = set()
-        # check if the first in lru is timed out
-        while True:
-            # node_id, latest_time = next(iter(lru.items()))
-            first = sdll.first_node()
-            first_id = first.id
-            first_tail = first.tail_time
-            if first_tail < curr_time - TIMEWIN:
-                comp = nx.node_connected_component(G, first_id)
-                if len(comp) > 1:
-                    merge_logger.debug("Merged {}".format(comp), extra=None)
-                unmerged = [G.nodes[v]["data"] for v in list(comp)]
-                merged = combine_merged_dict(unmerged)
-                merged_queue.put(merged) 
-                to_remove = to_remove.union(comp)
-                # [lru.pop(v) for v in comp]
-                [sdll.delete(v) for v in comp]
-            else:
-                break # no need to check lru further
-        # clean up graph and lru
-        G.remove_nodes_from(to_remove)
-        
+
         
         
 if __name__ == '__main__':

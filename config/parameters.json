@@ -1,7 +1,7 @@
 {
     "mode": "sequence",
-    "description": "try with pp2, new transformed schema",
-    "raw_collection": "adaptable_stork--RAW_GT2",
+    "description": "try new pp1 with signal handling",
+    "raw_collection": "",
 	"raw_database": "trajectories",
 	"stitched_database": "stitched",
 	"reconciled_database": "reconciled",
@@ -20,10 +20,9 @@
 	"raw_schema_path": "raw_schema.json",
 	"stitched_schema_path": "stitched_schema.json",
 	"reconciled_schema_path": "reconciled_schema.json",
-	"raw_trajectory_queue_size": 10000,
+	"raw_trajectory_queue_size": 20000,
 	"stitched_trajectory_queue_size": 10000,
     "reconciled_trajectory_queue_size": 10000,
-    
     
     "range_increment": 10,
     "buffer_time": 10,

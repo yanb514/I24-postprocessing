@@ -49,7 +49,6 @@ class Fragment():
         
 
 
-
 class MOTGraphSingle:
     '''
     same as MOT_Graph except that every fragment is represented as a single node. this is equivalent to say that the inclusion cost for each fragment is 0, or the false positive rate is 0
@@ -81,7 +80,6 @@ class MOTGraphSingle:
         update distance from t
         add all incident edges from i to other possible nodes, mark edges as match = False
         '''
-        
         # new_id = getattr(fragment, self.attr)
         new_id = fragment[self.attr]
         self.G.add_edge("t", new_id, weight=0, match=True)
@@ -108,14 +106,19 @@ class MOTGraphSingle:
         while self.in_graph_deque[0]["last_timestamp"] < fragment["first_timestamp"] - self.TIME_WIN:
             fgmt = self.in_graph_deque.popleft()
             fgmt_id = fgmt[self.attr]
-            for v,_,data in self.G.in_edges(fgmt_id, data = True):
-                if data["match"] and v != "t":
-                    # compress fgmt and v -> roll up subpath 
-                    # TODO: need to check the order
-                    self.G.nodes[v]["subpath"].extend(self.G.nodes[fgmt_id]["subpath"])
-                    # self.G.nodes[v]["filters"].extend(self.G.nodes[fgmt_id]["filters"])
-                    self.G.remove_node(fgmt_id)
-                    break
+            try:
+                for v,_,data in self.G.in_edges(fgmt_id, data = True):
+                    if data["match"] and v != "t":
+                        # compress fgmt and v -> roll up subpath 
+                        # TODO: need to check the order
+                        self.G.nodes[v]["subpath"].extend(self.G.nodes[fgmt_id]["subpath"])
+                        # self.G.nodes[v]["filters"].extend(self.G.nodes[fgmt_id]["filters"])
+                        self.G.remove_node(fgmt_id)
+                        break
+            except nx.exception.NetworkXError:
+                # if fgmt_id not in G.nodes(): 
+                pass
+
         
     @catch_critical(errors = (Exception))
     def verify_path(self, path, cost_thresh = 10):
@@ -137,6 +140,8 @@ class MOTGraphSingle:
     def clean_graph(self, path):
         '''
         remove all nodes in path from G and in_graph_deque
+        in_graph_deque() is not cleaned
+        it is cleaned during add_node iteration
         '''
         for node in path:
             try:
@@ -203,6 +208,7 @@ class MOTGraphSingle:
                    
         # print("alt path for {} is {}".format(root, best_path))           
         return best_path, best_dist
+    
     
     @catch_critical(errors = (Exception))
     def augment_path(self, node):

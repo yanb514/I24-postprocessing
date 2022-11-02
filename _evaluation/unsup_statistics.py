@@ -174,10 +174,10 @@ def doOverlap(pts1, pts2,xpad = 0,ypad = 0):
     return True if two rectangles overlap
     '''
     # by separating axix theorem
-    if xpad != 0:
-        return not (pts1[0] > xpad + pts2[2] or pts1[1] + ypad < pts2[3] or pts1[2] + xpad < pts2[0] or pts1[3] > pts2[1] + ypad )
-    else:
-        return not (pts1[0] > pts2[2] or pts1[1] < pts2[3] or pts1[2] < pts2[0] or pts1[3] > pts2[1] )
+    # right hand rule
+    # left hand rule - y comparison sign is flipped
+    pts1[1], pts1[3], pts2[1], pts2[3] = -pts1[1], -pts1[3], -pts2[1], -pts2[3]
+    return not (pts1[0] > xpad + pts2[2] or pts1[1] + ypad < pts2[3] or pts1[2] + xpad < pts2[0] or pts1[3] > pts2[1] + ypad )
 
 def calc_space_gap(pts1, pts2):
     '''
@@ -256,14 +256,14 @@ class UnsupervisedEvaluator():
         self.collection_name = collection_name
         
         client = DBClient(**config)
-        db_time = client.client["transformed"]
+        db_time = client.client["transformed_beta"]
         
         # print("N collections before transformation: {} {} {}".format(len(db_raw.list_collection_names()),len(db_rec.list_collection_names()),len(db_time.list_collection_names())))
         # start transform trajectory-indexed collection to time-indexed collection if not already exist
         # this will create a new collection in the "transformed" database with the same collection name as in "trajectory" database
         if collection_name not in db_time.list_collection_names(): # always overwrite
             print("Transform to time-indexed collection first")
-            client.transform(read_database_name=config["database_name"], 
+            client.transform2(read_database_name=config["database_name"], 
                       read_collection_name=collection_name)
            
         # print("N collections after transformation: {} {} {}".format(len(db_raw.list_collection_names()),len(db_rec.list_collection_names()),len(db_time.list_collection_names())))
@@ -271,7 +271,7 @@ class UnsupervisedEvaluator():
         # print(config,collection_name)
         self.dbr_v = DBClient(**config, collection_name = collection_name)
         self.dbr_t = DBClient(host=config["host"], port=config["port"], username=config["username"], password=config["password"],
-                              database_name = "transformed", collection_name = collection_name)
+                              database_name = "transformed_beta", collection_name = collection_name)
         print("connected to pymongo client")
         self.res = defaultdict(dict) # min, max, avg, stdev
         self.num_threads = num_threads
@@ -347,17 +347,6 @@ class UnsupervisedEvaluator():
             res = self.thread_pool(fcn, iterable=traj_cursor) # cursor cannot be reused
             self.res[attr_name] = [r for r in res if r]
             
-        # get flags - all functions that write to a shared variable
-        # functions_flags = [_get_post_flags]
-        # for fcn in functions_flags:
-        #     attr_name = fcn.__name__[5:]
-        #     print(f"Evaluating {attr_name}...")
-        #     self.flag_dict = defaultdict(int)
-        #     traj_cursor = self.dbr_v.collection.find({})
-        #     res = self.thread_pool(fcn, iterable=traj_cursor, kwargs={"flag_dict": self.flag_dict}) 
-        #     self.res[attr_name] = self.flag_dict
-        
-        # pprint.pprint(self.res["post_flags"])
         return 
         
     
@@ -370,7 +359,7 @@ class UnsupervisedEvaluator():
         '''
         # matries to convert [x,y,len,wid] to [lefttop_x, lefttop_y, bottomright_x, bottomright_y]
         east_m = np.array([[1, 0,0,0], [0,1,0,0.5], [1,0,1,0], [0,1,0,-0.5]]).T
-        west_m = np.array([[1,0,-1,0], [0,1,0,0.5], [1, 0,0,0], [0,1,0,-0.5]]).T
+        west_m = np.array([[1,0,-1,0], [0,1,0,0.5], [1,0,0,0], [0,1,0,-0.5]]).T
         
         # cache vehicle dimension
         
@@ -408,7 +397,6 @@ class UnsupervisedEvaluator():
                 time_doc_dict = {veh_ids[i]: pos[i] + dims[i][:2] for i in range(len(veh_ids))} #key:id, val:[x,y,l,w]
             except KeyError:
                 time_doc_dict = {veh_ids[i]: pos[i] + cache_dim[veh_ids[i]] for i in range(len(veh_ids))}
-
             
             east_b = np.array([time_doc_dict[veh_id] for veh_id in curr_east_ids])
             west_b = np.array([time_doc_dict[veh_id] for veh_id in curr_west_ids])
@@ -464,21 +452,6 @@ class UnsupervisedEvaluator():
                     overlaps[pair] = occurances * step /25 # convert to cumulative seconds
                 # pprint.pprint(overlaps, width = 1)
                 self.res[attr_name] = overlaps
-
-                # id2idx = {}
-                # cntr = 0
-                # for i, pair in enumerate(overlaps):
-                #     for j, _id in enumerate(pair):
-                #         if _id not in id2idx:
-                #             id2idx[_id] = cntr
-                #             cntr+=1
-                
-                # overlaps_m = torch.zeros([cntr, cntr])
-                # for pair, val in overlaps.items():
-                #     id1, id2 = pair
-                #     overlaps_m[id2idx[id1], id2idx[id2]] = val
-                    
-                # self.res["overlap_matrix"] = overlaps_m
                     
             else:
                 res = self.thread_pool(fcn, iterable=time_cursor) 
@@ -495,6 +468,116 @@ class UnsupervisedEvaluator():
         return
     
         
+    def time_evaluate2(self, step=1):
+        '''
+        Evaluate using time-indexed collection from transformed_beta database
+        step: (int) select every [step] timestamps to evaluate
+        '''
+        # matries to convert [centerx,centery,len,wid] to [lefttop_x, lefttop_y, bottomright_x, bottomright_y]
+        # M = np.array([[1, 0,-0.5,0], [0,1,0,0.5], [1,0,0.5,0], [0,1,0,-0.5]]).T # right hand rule
+        M = np.array([[1, 0,-0.5,0], [0,1,0,-0.5], [1,0,0.5,0], [0,1,0,0.5]]).T # left hand rule
+
+        def _get_overlaps(time_doc):
+            '''
+            Calculate pair-wise overlaps and space gap at a given timestamp
+            time_doc has the schema in transformed_beta
+            '''
+            try:
+                eb = time_doc["eb"]
+            except KeyError:
+                print(time_doc["timestamp"], " has no eb")
+                eb = {}
+                
+            try:
+                wb = time_doc["wb"]
+            except KeyError:
+                print(time_doc["timestamp"], " has no wb")
+                wb = {}
+                
+            
+            eb_ids, wb_ids, east_b, west_b = [],[],[],[]
+            
+            for _id,val in eb.items():
+                eb_ids.append(_id)
+                east_b.append(val[:4])
+                
+            for _id,val in wb.items():
+                wb_ids.append(_id)
+                west_b.append(val[:4])
+                
+            east_b = np.array(east_b) # [centerx, centery, l,w]
+            west_b = np.array(west_b)
+            
+            overlap = []
+
+            # east_pts = M*east_b, where east_pts=[lx, ly, rx, ry], east_b =[x,y,len,wid]
+            # vectorize to all vehicles: A = M*B
+            try:
+                east_pts = np.matmul(east_b, M)
+                
+            except ValueError: # ids are empty
+                east_pts = []
+
+            for i, pts1 in enumerate(east_pts):
+                for j, pts2 in enumerate(east_pts[i+1:]):
+                    # check if two boxes overlap, if so append the pair ids
+                    if doOverlap(pts1, pts2):
+                        # overlap.append((str(curr_east_ids[i]),str(curr_east_ids[i+j+1])))
+                        overlap.append((eb_ids[i], eb_ids[i+j+1]))
+                        # print((eb_ids[i], eb_ids[i+j+1]))
+
+            # west bound
+            try:
+                west_pts = np.matmul(west_b, M)
+            except ValueError:
+                west_pts = []
+                
+            for i, pts1 in enumerate(west_pts):
+                for j, pts2 in enumerate(west_pts[i+1:]):
+                    # check if two boxes overlap
+                    if doOverlap(pts1, pts2):
+                        # overlap.append((str(curr_west_ids[i]),str(curr_west_ids[i+j+1])))
+                        overlap.append((wb_ids[i], wb_ids[i+j+1]))
+                        # print((wb_ids[i], wb_ids[i+j+1]))
+            return overlap
+
+                    
+        # start thread_pool for each timestamp
+        functions = [_get_overlaps]
+        # functions = [_get_min_spacing]
+        for fcn in functions:
+            time_cursor = self.dbr_t.collection.find({})
+            attr_name = fcn.__name__[5:]
+            print(f"Evaluating {attr_name}...")
+            if "overlap" in attr_name:
+                overlaps = defaultdict(int) # key: (conflict pair), val: num of timestamps
+                count = 0
+                for time_doc in time_cursor:
+                    if count % step == 0:
+                        overlap_t = _get_overlaps(time_doc)
+                        for pair in overlap_t:
+                            # overlaps.add(pair)
+                            overlaps[pair]+=1
+                    count += 1
+                for pair, occurances in overlaps.items():
+                    overlaps[pair] = occurances * step /25 # convert to cumulative seconds
+                # pprint.pprint(overlaps, width = 1)
+                self.res[attr_name] = overlaps
+                    
+            else:
+                res = self.thread_pool(fcn, iterable=time_cursor) 
+                self.res[attr_name]["min"] = np.nanmin(res).item()
+                self.res[attr_name]["max"] = np.nanmax(res).item()
+                self.res[attr_name]["median"] = np.nanmedian(res).item()
+                self.res[attr_name]["avg"] = np.nanmean(res).item()
+                self.res[attr_name]["stdev"] = np.nanstd(res).item()
+                self.res[attr_name]["raw"] = res
+        
+        # write to database
+        self.update_db()
+        
+        return
+    
     def print_res(self):
         pprint.pprint(self.res, width = 1)
     
@@ -539,6 +622,8 @@ class UnsupervisedEvaluator():
         for pair, occurances in self.res["overlaps"].items():
             # {'$push': {'tags': new_tag}}, upsert = True)
             id1, id2 = pair
+            if isinstance(id1, str):
+                id1, id2 = ObjectId(id1), ObjectId(id2)
             col.update_one({"_id": id1}, 
                             {"$push": {"conflicts": [id2, occurances]}},
                             upsert = True)
@@ -561,7 +646,6 @@ class UnsupervisedEvaluator():
                                        }},
                             upsert = True)
             
-        
         print("Updated feasibility for {}".format(self.collection_name))
 
     
@@ -577,7 +661,7 @@ def call(db_param,collection):
     
     ue = UnsupervisedEvaluator(db_param, collection_name=collection, num_threads=200)
     t1 = time.time()
-    ue.time_evaluate(step = 1)
+    ue.time_evaluate2(step = 1)
     ue.traj_evaluate()
     t2 = time.time()
     print("time: ", t2-t1)
@@ -689,7 +773,7 @@ if __name__ == '__main__':
     # with open('config.json') as f:
     #     config = json.load(f)
       
-    collection = "sanctimonious_beluga--RAW_GT1__test"
+    collection = "634ef772f8f31a6d48eab58e__castigates"
     # collection = "sanctimonious_beluga--RAW_GT1__administers"
     if "__" in collection:
         database_name = "reconciled"
@@ -717,8 +801,8 @@ if __name__ == '__main__':
     # plot_histogram(ue.res["feasibility_score"]["raw"], "conflict_score")
     # plot_histogram(ue.res["distance_score"]["raw"], "distance_score")
     
-    dbc = DBClient(**db_param, collection_name=collection)
-    conflict_graph(dbc.collection)
+    # dbc = DBClient(**db_param, collection_name=collection)
+    # conflict_graph(dbc.collection)
     
     
     

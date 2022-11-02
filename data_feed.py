@@ -25,28 +25,36 @@ verbs = ["medicates", "taunts", "sweettalks", "initiates", "harasses", "negotiat
 max_trials = 10
 
     
-class SIGINTException(Exception):
+class SIGINTException(SystemExit):
     pass
 
-class SignalHandler():
+def soft_stop_hdlr(sig, action):
     '''
     Signal handling: in live/static data read, SIGINT and SIGUSR1 are handled in the same way
     Soft terminate current process. Close ports and exit.
     '''
-    run = True
-    # count = 0 # count the number of times a signal is received
-    # signal.signal(signal.SIGINT, signal.SIG_IGN)  
+    raise SIGINTException # so to exit the while true loop
     
-    def __init__(self):
-        signal.signal(signal.SIGINT, self.shut_down)
-        signal.signal(signal.SIGUSR1, self.shut_down)
-        signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+
+# class SignalHandler():
+#     '''
+#     Signal handling: in live/static data read, SIGINT and SIGUSR1 are handled in the same way
+#     Soft terminate current process. Close ports and exit.
+#     '''
+#     run = True
+#     # count = 0 # count the number of times a signal is received
+#     # signal.signal(signal.SIGINT, signal.SIG_IGN)  
     
-    def shut_down(self, *args):
-        self.run = False
-        raise SIGINTException
-        # self.count += 1
-        # logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
+#     def __init__(self):
+#         signal.signal(signal.SIGINT, self.shut_down)
+#         signal.signal(signal.SIGUSR1, self.shut_down)
+#         signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
+    
+#     def shut_down(self, *args):
+#         self.run = False
+#         raise SIGINTException
+#         # self.count += 1
+#         # logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
         
  
 def initialize_db(parameters, db_param):
@@ -291,6 +299,10 @@ def static_data_reader(default_param, db_param, east_queue, west_queue, min_queu
     :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
     :return:
     """
+    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way    
+    # sig_hdlr = SignalHandler()  
+    signal.signal(signal.SIGINT, soft_stop_hdlr)
+    
     # running_mode = os.environ["my_config_section"]
     logger = log_writer.logger
     logger.set_name("static_data_reader")
@@ -312,20 +324,17 @@ def static_data_reader(default_param, db_param, east_queue, west_queue, min_queu
     
     # start from min and end at max if collection is static
     rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param["range_increment"], query_sort= [("last_timestamp", "ASC")])
-
-    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way    
-    sig_hdlr = SignalHandler()  
-    
     
     # for debug only
     # rri._reader.range_iter_stop = rri._reader.range_iter_start + 60
 
     discard = 0 # counter for short (<3) tracks
     
-    while sig_hdlr.run: 
-        logger.debug("* current lower: {}, upper: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+    while True: 
         
         try:
+            logger.debug("* current lower: {}, upper: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+            
             # keep filling the queues so that they are not low in stock
             while east_queue.qsize() <= min_queue_size or west_queue.qsize() <= min_queue_size:
            
@@ -336,6 +345,7 @@ def static_data_reader(default_param, db_param, east_queue, west_queue, min_queu
                     if len(doc["timestamp"]) > 3: 
                         # doc = misc.add_filter(doc, dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
                         #                CONF_THRESH, REMAIN_THRESH)
+                        doc = misc.interpolate(doc)
                         
                         if doc["direction"] == 1:
                             # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
