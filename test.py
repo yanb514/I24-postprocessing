@@ -22,9 +22,9 @@ if __name__ == '__main__':
     # dbc.transform()
     
     #%% BASIC INFO
-    # collection_name = "634ef772f8f31a6d48eab58e"
+    collection_name = "635997ddc8d071a13a9e5293"
     # print("collection name: ", collection_name)
-    # dbr = DBClient(**db_param, database_name = "trajectories", collection_name = collection_name)
+    dbr = DBClient(**db_param, database_name = "trajectories", collection_name = collection_name)
     # print("number of traj: ", dbr.count())
 
     # # print("min ID: ", dbr.get_min("ID"))
@@ -50,25 +50,29 @@ if __name__ == '__main__':
     
     #%% quick fix ugh
     
-    from bson.objectid import ObjectId
+    # from bson.objectid import ObjectId
     
-    collection_name = "634ef772f8f31a6d48eab58e__castigates"
-    dbc = DBClient(**db_param, database_name = "reconciled", collection_name = collection_name)
+    # collection_name = "634ef772f8f31a6d48eab58e__castigates"
+    # dbc = DBClient(**db_param, database_name = "reconciled", collection_name = collection_name)
     
-    for doc in dbc.collection.find({}):
-        # try:
-        #     correct_dir = int(np.sign(doc["x_position"][-1] - doc["x_position"][0]))
-        #     if correct_dir == 0:
-        #         if doc["y_position"][0] >0:
-        #             correct_dir = 1
-        #         else:
-        #             correct_dir = -1
+    # for doc in dbc.collection.find({}):
+    #     # try:
+    #     #     correct_dir = int(np.sign(doc["x_position"][-1] - doc["x_position"][0]))
+    #     #     if correct_dir == 0:
+    #     #         if doc["y_position"][0] >0:
+    #     #             correct_dir = 1
+    #     #         else:
+    #     #             correct_dir = -1
             
-        # except ValueError:
-        #     print(doc["_id"])
-        #     correct_dir = int(np.sign(doc["x_position"][-2] - doc["x_position"][0]))
-        y = [-yy for yy in doc["y_position"]]
-        dbc.collection.update_one({"_id": doc["_id"]}, {"$set": {"y_position": y}})
+    #     # except ValueError:
+    #     #     print(doc["_id"])
+    #     #     correct_dir = int(np.sign(doc["x_position"][-2] - doc["x_position"][0]))
+    #     y = [-yy for yy in doc["y_position"]]
+    #     dbc.collection.update_one({"_id": doc["_id"]}, {"$set": {"y_position": y}})
             
         
-    print("complete")
+    # print("complete")
+    
+    #%%
+    
+    

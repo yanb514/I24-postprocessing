@@ -17,6 +17,7 @@ import os
 import signal
 import sys
 import queue
+import heapq
 
 import i24_logger.log_writer as log_writer
 from i24_database_api import DBClient
@@ -38,6 +39,30 @@ def soft_stop_hdlr(sig, action):
 # def soft_stop_hdlr(sig, frame):
     # signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
     
+
+def apprentice(dir, queue_list, sorted_queue, mp_param, name):
+    """
+    :param queue_list: a list of queues to store stitched fragment lists
+    :param sorted_queue: queue with fragments sorted on last_timestamp
+    1. combine fragments from queue_list
+    2. put them to a heap
+    3. pop from heap to sorted_queue
+    It is right now a batch process-> store everything in memory
+    """
+    h = []
+    
+    for q in queue_list:
+        while not q.empty():
+            traj_docs = queue.get(block=False)
+            combined_trajectory = combine_fragments(traj_docs)
+            resampled_trajectory = resample(combined_trajectory)
+            heapq.heappush(h, (resampled_trajectory["last_timestamp"], resampled_trajectory))
+            
+    # pop from queue -> sorted in last_timestamp
+    while h:
+        sorted_queue.put(heapq.heappop(h))
+        
+    return
 
     
 def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue) -> None:
@@ -63,7 +88,7 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
             # finished_trajectory = opt2(resampled_trajectory, **reconciliation_args)  
             reconciled_queue.put(finished_trajectory)
             # rec_worker_logger.debug("*** Reconciled a trajectory, duration: {:.2f}s, length: {}".format(finished_trajectory["last_timestamp"]-finished_trajectory["first_timestamp"], len(finished_trajectory["timestamp"])), extra = None)
-    
+        
         except Exception as e:
             rec_worker_logger.info("+++ Flag as {}, skip reconciliation".format(str(e)), extra = None)
 
@@ -224,18 +249,18 @@ if __name__ == '__main__':
     # send some fragments to queue
     stitched_q = multiprocessing.Manager().Queue()
     reconciled_queue = multiprocessing.Manager().Queue()
+    raw_queue = multiprocessing.Manager().Queue()
     counter = 0 
     
-    test_dbr = DBClient(**db_param, database_name = "trajectories", collection_name = "sanctimonious_beluga--RAW_GT1")
+    test_dbr = DBClient(**db_param, database_name = "trajectories", collection_name = "636332547c61e6427c5ad508_short")
     
-    for doc in test_dbr.collection.find({"_id": ObjectId("62fd2a29b463d2b0792821c1")}):
+    for doc in test_dbr.collection.find({}).sort("starting_x",-1).limit(3):
         # doc = add_filter(doc, test_dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
         #                CONF_THRESH, REMAIN_THRESH)
         stitched_q.put([doc])
         counter += 1
         print("doc length: ", len(doc["timestamp"]))
-        if counter > 15:
-            break
+        raw_queue.put(doc)
         # stitched_q.put(doc)
         # print(doc["_id"])
         # print(doc["fragment_ids"])
@@ -254,10 +279,10 @@ if __name__ == '__main__':
         # doc["y_position"] = np.array(doc["y_position"])
         # rec_doc = rectify_2d(doc, reg = "l1", **reconciliation_args)  
      
-    r = reconciled_queue.get()
-    print("final queue size: ",reconciled_queue.qsize())
-    print(reconciliation_args)
-    print(r["x_score"], r["y_score"])
+    # r = reconciled_queue.get()
+    # print("final queue size: ",reconciled_queue.qsize())
+    # print(reconciliation_args)
+    # print(r["x_score"], r["y_score"])
     
     #%% plot
     # import matplotlib.pyplot as plt
@@ -271,8 +296,12 @@ if __name__ == '__main__':
     # ax[1].scatter(np.array(doc["timestamp"]),np.array(doc["y_position"]), c="lightgrey")
     # ax[1].scatter(r["timestamp"], r["y_position"], s=1)
     
-    from multi_opt import plot_track
-    plot_track([doc, r])
+    from multi_opt_viz import plot_track
+    while not reconciled_queue.empty():
+        r = reconciled_queue.get()
+        doc = raw_queue.get()
+    
+        plot_track([doc, r])
     
     
     

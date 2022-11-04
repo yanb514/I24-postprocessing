@@ -141,7 +141,7 @@ def animate_tracks(snapshots, offset = 0, save=False, name="before"):
 
 
 
-def animate_collection(dbc, database_name="transformed_beta", collection_name = None, offset = 0, duration=None, save=False, upload=True, extra=""):
+def animate_collection(dbc, vehicle_database="trajectories", time_database ="transformed_beta", collection_name = None, offset = 0, duration=None, save=False, upload=True, extra=""):
     '''
     resample tracks, make to the dataframe, join the dataframe to get the overlapped time
     make an animation
@@ -151,24 +151,17 @@ def animate_collection(dbc, database_name="transformed_beta", collection_name = 
         print("collection_name has to be specified")
         return
     
-    if collection_name not in dbc.client[database_name].list_collection_names():
-        print(f"{collection_name} not in {database_name}. Start transform")
-        if "__" in collection_name:
-            read_database_name = "reconciled"
-        else:
-            read_database_name = "trajectories"
-        dbc.transform2(read_database_name=read_database_name, read_collection_name=collection_name,
-                      write_database_name=database_name, write_collection_name=collection_name)
+    if collection_name not in dbc.client[time_database].list_collection_names():
+        print(f"{collection_name} not in {time_database}. Start transform")
+        dbc.transform2(read_database_name=vehicle_database, read_collection_name=collection_name,
+                      write_database_name=time_database, write_collection_name=collection_name)
         
     # time-based
-    dbc.db = dbc.client[database_name]
-    dbc.collection = dbc.client[database_name][collection_name]
+    dbc.db = dbc.client[time_database]
+    dbc.collection = dbc.client[time_database][collection_name]
     
     # traj-based
-    if "__" not in collection_name:
-        veh = DBClient(**db_param, database_name = "trajectories", collection_name = collection_name)
-    else:
-        veh = DBClient(**db_param, database_name = "reconciled", collection_name = collection_name)
+    veh = DBClient(**db_param, database_name = vehicle_database, collection_name = collection_name)
     
     # animate it!
     fig, ax = plt.subplots(1,1, figsize=(25,5))
@@ -305,8 +298,8 @@ if __name__=="__main__":
         db_param = json.load(f)
     
     dbc = DBClient(**db_param)
-    ani = animate_collection(dbc, database_name="transformed_beta", 
-                             collection_name = "634ef772f8f31a6d48eab58e__castigates", 
+    ani = animate_collection(dbc, vehicle_database = "reconciled", time_database="transformed_beta", 
+                             collection_name = "635997ddc8d071a13a9e5293_videonode1", 
                              offset=0, duration=1500, save=False)
     
     

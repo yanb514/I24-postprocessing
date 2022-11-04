@@ -112,7 +112,7 @@ def read_to_queue(gt_ids, gt_val, lt_val, parameters):
 
 
     
-def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory_queue, parameters):
+def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory_queue, parameters, name=None):
     '''
     incrementally fixing the matching
     '''
@@ -120,7 +120,10 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     
     # Initiate a logger
     stitcher_logger = log_writer.logger
-    stitcher_logger.set_name("stitcher_"+direction)
+    if name:
+        stitcher_logger.set_name(name)
+    else:
+        stitcher_logger.set_name("stitcher_"+direction)
     stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
     setattr(stitcher_logger, "_default_logger_extra",  {})
 
@@ -129,8 +132,8 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     # Get parameters
     ATTR_NAME = parameters["fragment_attr_name"]
     TIME_WIN = parameters["time_win"]
-    RES_THRESH_X = parameters["residual_threshold_x"]
-    RES_THRESH_Y = parameters["residual_threshold_y"]
+    # RES_THRESH_X = parameters["residual_threshold_x"]
+    # RES_THRESH_Y = parameters["residual_threshold_y"]
     
     # Initialize tracking graph
     m = MOTGraphSingle(ATTR_NAME, parameters)

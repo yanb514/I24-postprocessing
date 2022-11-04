@@ -70,6 +70,7 @@ def initialize_db(parameters, db_param):
                           collection_name = parameters["raw_collection"], latest_collection=True)
     parameters["raw_collection"] = dbc.collection_name # raw_collection should NOT be empty
       
+    dbc.collection.create_index("compute_node_id")
     rec_db = dbc.client[parameters["reconciled_database"]]
     existing_cols = rec_db.list_collection_names()
     
@@ -287,25 +288,35 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, read_f
     
  
     
-def static_data_reader(default_param, db_param, east_queue, west_queue, min_queue_size = 1000):
+def static_data_reader(default_param, db_param, raw_queue, dir, node=None, min_queue_size = 10000, name=None):
     """
     Read data from a static collection, sort by last_timestamp and write to queues
-    :param host: Database connection host name.
-    :param port: Database connection port number.
-    :param username: Database authentication username.
-    :param password: Database authentication password.
-    :param database_name: Name of database to connect to (do not confuse with collection name).
-    :param collection_name: Name of database collection from which to query.
-    :param ready_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
+    :param default_param
+        :param host: Database connection host name.
+        :param port: Database connection port number.
+        :param username: Database authentication username.
+        :param password: Database authentication password.
+        :param database_name: Name of database to connect to (do not confuse with collection name).
+        :param collection_name: Name of database collection from which to query.
+    :param raw_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
+    :param dir: "eb" or "wb"
+    :param: node: (str) compute_node_id for videonode
     :return:
     """
     # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way    
     # sig_hdlr = SignalHandler()  
     signal.signal(signal.SIGINT, soft_stop_hdlr)
     
+    
     # running_mode = os.environ["my_config_section"]
     logger = log_writer.logger
-    logger.set_name("static_data_reader")
+    if name is not None:
+        logger.set_name(name)
+    elif node:
+        logger.set_name("data_feed_"+dir+"_"+node)
+    else:
+        logger.set_name("static_data_reader_"+dir)
+        
     setattr(logger, "_default_logger_extra",  {})
     
     # Connect to a database reader
@@ -313,17 +324,20 @@ def static_data_reader(default_param, db_param, east_queue, west_queue, min_queu
         time.sleep(1)
      
     # get parameters for fitting
-    
-    # CONF_THRESH = default_param["conf_threshold"],
-    # REMAIN_THRESH = default_param["remain_threshold"]
-    
     dbr = DBClient(**db_param, database_name = default_param["raw_database"], collection_name=default_param["raw_collection"])  
-    # default_param["raw_collection"] = dbr.collection_name
-    # print("default param raw ", default_param["raw_collection"])
     
-    
+    if dir == "eb":
+        dir = 1
+    elif dir == "wb":
+        dir = -1
+    if node:
+        query_filter = {"compute_node_id": node, "direction": dir}
+    else: # query all nodes
+        query_filter = {"direction": dir}
+        
     # start from min and end at max if collection is static
-    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param["range_increment"], query_sort= [("last_timestamp", "ASC")])
+    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param["range_increment"], query_sort= [("last_timestamp", "ASC")],
+                               query_filter = query_filter)
     
     # for debug only
     # rri._reader.range_iter_stop = rri._reader.range_iter_start + 60
@@ -336,28 +350,20 @@ def static_data_reader(default_param, db_param, east_queue, west_queue, min_queu
             logger.debug("* current lower: {}, upper: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, rri._reader.range_iter_start, rri._reader.range_iter_stop))
             
             # keep filling the queues so that they are not low in stock
-            while east_queue.qsize() <= min_queue_size or west_queue.qsize() <= min_queue_size:
+            while raw_queue.qsize() <= min_queue_size :#or west_queue.qsize() <= min_queue_size:
            
                 next_batch = next(rri)  
     
                 for doc in next_batch:
-                    
                     if len(doc["timestamp"]) > 3: 
-                        # doc = misc.add_filter(doc, dbr.collection, RES_THRESH_X, RES_THRESH_Y, 
-                        #                CONF_THRESH, REMAIN_THRESH)
                         doc = misc.interpolate(doc)
-                        
-                        if doc["direction"] == 1:
-                            # logger.debug("write a doc to east queue, dir={}".format(doc["direction"]))
-                            east_queue.put(doc)          
-                        else:
-                            west_queue.put(doc)
+                        raw_queue.put(doc)          
                     else:
                         discard += 1
                         # logger.info("Discard a fragment with length less than 3")
     
-                logger.info("** qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
-                
+                # logger.info("** qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
+                logger.info("** qsize for raw_data_queue:{}".format(raw_queue.qsize()))
                             
             # if queue has sufficient number of items, then wait before the next iteration (throttle)
             logger.info("** queue size is sufficient. wait")     

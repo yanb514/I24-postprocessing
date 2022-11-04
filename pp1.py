@@ -23,11 +23,13 @@ import reconciliation as rec
 import merge
 
 
+#%% SIGNAL HANDLING
+
 class SIGINTException(Exception):
     pass
 
-def main(raw_collection = None, reconciled_collection = None):
-    #%% SIGNAL HANDLING
+def main(raw_collection = None, reconciled_collection = None, node=None):
+    
     def soft_stop_hdlr(sig, action):
         # send SIGINT to all subprocesses
         
@@ -120,6 +122,7 @@ def main(raw_collection = None, reconciled_collection = None):
     
 
 #%% Define processes
+
     # ASSISTANT/CHILD PROCESSES
     # ----------------------------------
     # References to subsystem processes that will get spawned so that these can be recalled
@@ -132,8 +135,11 @@ def main(raw_collection = None, reconciled_collection = None):
     # -- log_handler: watches a queue for log messages and sends them to Elastic
     processes_to_spawn = {}
     
-    processes_to_spawn["static_data_reader"] = (df.static_data_reader,
-                    (mp_param, db_param, raw_fragment_queue_e, raw_fragment_queue_w, 1000,))
+    processes_to_spawn["static_data_reader_e"] = (df.static_data_reader,
+                    (mp_param, db_param, raw_fragment_queue_e, "eb", node, 5000, "data_reader_e",))
+    
+    processes_to_spawn["static_data_reader_w"] = (df.static_data_reader,
+                    (mp_param, db_param, raw_fragment_queue_w, "wb", node, 5000, "data_reader_w", ))
     
     processes_to_spawn["merger_e"] = (merge.merge_fragments,
                       ("eb", raw_fragment_queue_e, merged_queue_e, mp_param, ))
@@ -147,14 +153,7 @@ def main(raw_collection = None, reconciled_collection = None):
     
     processes_to_spawn["stitcher_w"] = (mcf.min_cost_flow_online_alt_path,
                       ("wb", merged_queue_w, stitched_trajectory_queue, mp_param, ))
-    
-    
-    # processes_to_spawn["stitcher_e"] = (mcf.dummy_stitcher,
-    #                   ("eb", raw_fragment_queue_e, stitched_trajectory_queue, mp_param, ))
-    
-    # processes_to_spawn["stitcher_w"] = (mcf.dummy_stitcher,
-    #                   ("wb", raw_fragment_queue_w, stitched_trajectory_queue, mp_param, ))
-    
+
    
     processes_to_spawn["reconciliation"] = (rec.reconciliation_pool,
                       (mp_param, db_param, stitched_trajectory_queue, reconciled_queue,))
@@ -166,9 +165,10 @@ def main(raw_collection = None, reconciled_collection = None):
     # Specify dependencies amongst subprocesses 
     # -- a process can only die if (all/any?) of its predecessors is not alive
     predecessor = {
-        "static_data_reader": None, # no dependent
-        "merger_e": ["static_data_reader"],
-        "merger_w": ["static_data_reader"],
+        "static_data_reader_e": None, # no dependent
+        "static_data_reader_w": None, # no dependent
+        "merger_e": ["static_data_reader_e"],
+        "merger_w": ["static_data_reader_w"],
         "stitcher_e": ["merger_e"],
         "stitcher_w": ["merger_w"],
         "reconciliation": ["stitcher_e", "stitcher_w"], # and
@@ -177,7 +177,8 @@ def main(raw_collection = None, reconciled_collection = None):
     
     # corresponding queue has to be empty for the process to safety die
     dependent_queues = {
-        "static_data_reader": None, # no dependent
+        "static_data_reader_e": None, # no dependent
+        "static_data_reader_w": None, # no dependent
         "merger_e": raw_fragment_queue_e,
         "merger_w": raw_fragment_queue_w,
         "stitcher_e": merged_queue_e, 
@@ -284,7 +285,10 @@ def main(raw_collection = None, reconciled_collection = None):
                                                                                                                                   reconciled_queue.qsize()))
     
 if __name__ == '__main__':
-    main()
+    # for i in range(9):
+    #     node = "videonode"+str(int(i+1))
+    #     print(node)
+    main(node="videonode2")
     
     
     

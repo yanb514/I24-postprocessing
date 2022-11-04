@@ -285,7 +285,7 @@ def combine_merged(unmerged):
 
 
 
-def merge_fragments(direction, fragment_queue, merged_queue, parameters):
+def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=None):
     '''
     graph structure
     if two nodes should be merged (by bhattar distance measure), then they are connected in graph
@@ -297,7 +297,11 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters):
     signal.signal(signal.SIGINT, soft_stop_hdlr)
     
     merge_logger = log_writer.logger
-    merge_logger.set_name("merger_"+direction)
+    if name:
+        merge_logger.set_name(name)
+    else:
+        merge_logger.set_name("merger_"+direction)
+        
     merge_logger.info("Process started")
     
     DIST_THRESH = parameters["merge_thresh"] # bhattar distance distance threshold

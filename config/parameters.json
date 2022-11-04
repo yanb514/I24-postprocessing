@@ -1,11 +1,11 @@
 {
     "description": "try new pp1 with signal handling",
     "num_video_nodes": 9,
-    "raw_collection": "",
+    "raw_collection": "636332547c61e6427c5ad508_short",
 	"raw_database": "trajectories",
 	"stitched_database": "stitched",
 	"reconciled_database": "reconciled",
-	"reconciled_collection": "",
+	"reconciled_collection": "636332547c61e6427c5ad508_short__testallnodes",
 	"transformed_database": "transformed_beta",
 	"eval_database": "evaluation",
 	"meta_database": "meta",
@@ -21,6 +21,7 @@
 	"stitched_schema_path": "stitched_schema.json",
 	"reconciled_schema_path": "reconciled_schema.json",
 	"raw_queue_size": 20000,
+	"merged_queue_size": 10000,
 	"stitched_queue_size": 10000,
     "reconciled_queue_size": 10000,
     
@@ -30,7 +31,7 @@
     
     "merge_thresh": 3,
     
-    "time_win": 25,
+    "time_win": 10,
     "varx": 2,
     "vary": 0.5,
     "inclusion": 0,

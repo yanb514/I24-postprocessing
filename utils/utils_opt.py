@@ -53,6 +53,7 @@ def combine_fragments(all_fragment):
         stacked["coarse_vehicle_class"].append(fragment["coarse_vehicle_class"])
         stacked["fine_vehicle_class"].append(fragment["fine_vehicle_class"])
         stacked["direction"].append(fragment["direction"])
+        stacked["compute_node_id"].append(fragment["compute_node_id"])
         stacked["local_fragment_id"].append(fragment["local_fragment_id"])
     
 
@@ -79,9 +80,10 @@ def combine_fragments(all_fragment):
     stacked["coarse_vehicle_class"] = max(set(stacked["coarse_vehicle_class"]), key = stacked["coarse_vehicle_class"].count)
     stacked["fine_vehicle_class"] = max(set(stacked["fine_vehicle_class"]), key = stacked["fine_vehicle_class"].count)
     stacked["direction"] = max(set(stacked["direction"]), key = stacked["direction"].count)
+    stacked["compute_node_id"] = max(set(stacked["compute_node_id"]), key = stacked["compute_node_id"].count)
     
     # other parameters
-    stacked["compute_node_id"] = os.uname()[1]
+    # stacked["compute_node_id"] = os.uname()[1]
     
     return stacked
 
@@ -325,7 +327,7 @@ def opt2_l1(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     return car 
 
 
-
+@catch_critical(errors = (Exception))
 def opt2_l1_constr(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     '''
     1/M||z-Hx||_2^2 + \\lam2/N ||D2x||_2^2 + \\lam3/N ||D3x||_2^2 + \\lam1/M ||e||_1
@@ -333,6 +335,8 @@ def opt2_l1_constr(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     '''
     x = car["x_position"]
     y = car["y_position"]
+    xmin = np.nanmin(x) # shift x to smaller numeral ranges
+    x = x-xmin
     
     # x
     max_iter = 10
@@ -355,9 +359,10 @@ def opt2_l1_constr(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     # amax = max(abs(D2*xhat))
     # jmax = max(abs(D3*xhat))
     # print("vmin: ", vmin, "amax: ", amax, "jamx: ",jmax)
-    if sol["status"]!= "optimal":
-        raise Exception("solver status is not optimal")
-        
+    # if sol["status"]!= "optimal":
+    #     raise Exception("solver status is not optimal")
+    # print("x: ",sol["status"])
+    
     # print("final")
     # print(f"lam2_x {lam2_x}, lam2_y {lam2_y}, lam3_x {lam3_x}, lam3_y {lam3_y},lam1_x {lam1_x}, lam1_y {lam1_y}")
     # print(sol["status"])
@@ -365,12 +370,12 @@ def opt2_l1_constr(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     Q, p, H, G, h, N, M, D2 = _get_qp_opt2_l1(y, lam2_y, lam3_y, lam1_y)
     sol=solvers.qp(P=Q, q=matrix(p) , G=G, h=matrix(h))
     yhat = sol["x"][:N]
-    if sol["status"]!= "optimal":
-        raise Exception("solver status is not optimal")
-
+    # if sol["status"]!= "optimal":
+    #     raise Exception("solver status is not optimal")
+    # print("y: ",sol["status"])
     
     car["timestamp"] = list(car["timestamp"])
-    car["x_position"] = list(xhat)
+    car["x_position"] = list(xhat+xmin)
     car["y_position"] = list(yhat)
     car["starting_x"] = car["x_position"][0]
     car["ending_x"] = car["x_position"][-1]
