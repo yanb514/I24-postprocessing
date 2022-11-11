@@ -1,12 +1,11 @@
 # -----------------------------
-__file__ = 'pp1_all_nodes.py'
+__file__ = 'pp1_roll.py'
 __doc__ = """
-first pipeline: run postproc in trajectory-indexed documents, do not transform
-Parallelize on videonodes
+2 pass
+1. parallel run merge and stitch on each compute node, save result in local queues
+2. stitch consecutive 2-node
+3. reconcile whenever a traj is ready from step (2)
 
-TODOs
-1. try to keep all processes alive except for SIGINT
-2. signal handling for finish_processing. if soft_kill=True, then 
 """
 # -----------------------------
 
@@ -25,9 +24,12 @@ import reconciliation as rec
 import merge
 
 
+
 #%% SIGNAL HANDLING
+
 class SIGINTException(Exception):
     pass
+
 
 def main(raw_collection = None, reconciled_collection = None):
     
@@ -40,7 +42,7 @@ def main(raw_collection = None, reconciled_collection = None):
     def finish_hdlr(sig, action):
         # kill data_reader only (from all nodes)
         manager_logger.info("Manager received SIGUSR1")
-        for proc_name, proc_info in local_proc_map.items():
+        for proc_name, proc_info in proc_map.items():
             if "feed" in proc_name:
                 try:
                     proc_info["keep_alive"] = False
@@ -78,26 +80,26 @@ def main(raw_collection = None, reconciled_collection = None):
     # CREATE A MANAGER
     mp_manager = mp.Manager()
     manager_logger.info("Post-processing manager has PID={}".format(os.getpid()))
-
-    # SHARED DATA STRUCTURES
-    mp_param = mp_manager.dict()
-    mp_param.update(parameters)
     
     # initialize some db collections
+    mp_param = mp_manager.dict()
+    mp_param.update(parameters)
     df.initialize(mp_param, db_param)
+    
+    # SHARED DATA STRUCTURES
+ 
     manager_logger.info("Post-processing manager initialized db collections. Creating shared data structures")
     
     # initialize queues and processes
     # -- populated by data_reader and consumed by merger
     queue_map = {} #{"stitched_queue":stitched_queue, "reconciled_queue": reconciled_queue} # master object -> [1/.../9] -> [EB/WB] -> [raw_q/merged_q/stitched_q]
-    q_sizes = [parameters["raw_queue_size"], parameters["merged_queue_size"], parameters["stitched_queue_size"]]
     
     proc_per_node = ["feed", "merge", "stitch"]
     raw_queues = defaultdict(list)
     merged_queues = defaultdict(list)
     stitched_queues = defaultdict(list)
     
-    local_proc_map = defaultdict(dict) #mp_manager.dict() #
+    proc_map = {} #mp_manager.dict() #
     
     # -- local processes (run on each videonode)
     for n in range(parameters["num_video_nodes"]):
@@ -114,85 +116,82 @@ def main(raw_collection = None, reconciled_collection = None):
                     
                 queue = mp_manager.Queue()  #maxsize=q_sizes[i]
                 queue_map[key] = queue
-                # local_proc_map[key] = {"keep_alive": True}
+                proc_map[key] = {"keep_alive": True}
                 
                 if "feed" in key:
-                    local_proc_map[key]["command"] = df.static_data_reader # TODO: modify data_feed
-                    local_proc_map[key]["args"] = (mp_param, db_param, queue, {"direction":1 if dir=="eb" else -1, "compute_node_id":node}, key, ) 
-                    local_proc_map[key]["predecessor"] = None # should be None
-                    local_proc_map[key]["dependent_queue"] = None
+                    proc_map[key]["command"] = df.static_data_reader # TODO: modify data_feed
+                    proc_map[key]["args"] = (mp_param, db_param, queue, dir, node, key, )
+                    proc_map[key]["predecessor"] = None # should be None
+                    proc_map[key]["dependent_queue"] = None
                     raw_queues[dir].append(queue)
                     
                 elif "merge" in proc:
-                    local_proc_map[key]["command"] = merge.merge_fragments 
-                    local_proc_map[key]["args"] = (dir, prev_queue, queue, mp_param, key, ) 
-                    local_proc_map[key]["predecessor"] = [prev_key]
-                    local_proc_map[key]["dependent_queue"] = [queue_map[prev_key]]
+                    proc_map[key]["command"] = merge.merge_fragments 
+                    proc_map[key]["args"] = (dir, prev_queue, queue, mp_param, key, ) 
+                    proc_map[key]["predecessor"] = [prev_key]
+                    proc_map[key]["dependent_queue"] = [queue_map[prev_key]]
                     merged_queues[dir].append(queue)
                     
                 elif "stitch" in proc:
-                    local_proc_map[key]["command"] = mcf.min_cost_flow_online_alt_path
-                    local_proc_map[key]["args"] = (dir, prev_queue, queue, mp_param, key,)
-                    local_proc_map[key]["predecessor"] = [prev_key]
-                    local_proc_map[key]["dependent_queue"] = [queue_map[prev_key]]
+                    proc_map[key]["command"] = mcf.min_cost_flow_online_alt_path
+                    proc_map[key]["args"] = (dir, prev_queue, queue, mp_param, key,)
+                    proc_map[key]["predecessor"] = [prev_key]
+                    proc_map[key]["dependent_queue"] = [queue_map[prev_key]]
                     stitched_queues[dir].append(queue)
             
-            # -- non node-specific jobs
-            temp_writer = "temp_writer_"+dir
-            # local_proc_map[temp_writer] = {}
-            local_proc_map[temp_writer]["command"] = rec.write_queues_2_db
-            local_proc_map[temp_writer]["args"] = (db_param, mp_param, stitched_queues[dir], temp_writer, )
-            local_proc_map[temp_writer]["predecessor"] = [proc_name for proc_name in local_proc_map if dir+"_stitch" in proc_name]
-            local_proc_map[temp_writer]["dependent_queue"] = stitched_queues[dir]
-            
     
-    # -- master processes (not videonode specific) START AFTER ALL THE LOCAL PROCESSES DIE
-    master_queues_map = {} # key:proc_name, val:queue that this process writes to
-    master_queues_map["master_eb_feed"] = mp_manager.Queue() 
-    master_queues_map["master_wb_feed"] = mp_manager.Queue() 
-    master_queues_map["master_stitch"] = mp_manager.Queue() 
-    master_queues_map["master_reconcile"] = mp_manager.Queue() 
+    # -- 2nd pass processes to stitch adjacent nodes
+    master_queue_map = {} # key:proc_name, val:queue that this process writes to
+    master_queue_map["stitched"] = mp_manager.Queue() 
+    # master_queue_map["reconciled"] = mp_manager.Queue() 
+    transition_queues = defaultdict(list) # to connect stitch_12 to stitch_23, for example
+    transition_queues["eb"].append(stitched_queues["eb"][0]) # local queue for node1
+    transition_queues["wb"].append(stitched_queues["wb"][0]) # local queue for node1
     
     master_proc_map = defaultdict(dict)
     
-    for dir in ["eb", "wb"]:
+    for n in range(parameters["num_video_nodes"]-1): # should have num_video_nodes-1 transition processes
         
-        # feed
-        key1 = "master_"+dir+"_feed"
-        master_proc_map[key1]["command"] = df.static_data_reader # TODO: modify data_feed
-        master_proc_map[key1]["args"] = (mp_param, db_param, master_queues_map[key1], {"direction":1 if dir=="eb" else -1}, key1,) # qeury all nodes #TODO should query from temp database
-        master_proc_map[key1]["predecessor"] = None
-        master_proc_map[key1]["dependent_queue"] = None
-        
-        
-        # stitch
-        key2 = "master_"+dir+"_stitch"
-        master_proc_map[key2]["command"] = mcf.min_cost_flow_online_alt_path
-        master_proc_map[key2]["args"] = (dir, master_queues_map[key1], master_queues_map["master_stitch"], mp_param, key2,)
-        master_proc_map[key2]["predecessor"] = [key1]
-        master_proc_map[key2]["dependent_queue"] = [master_queues_map[key1]]
-    
-    
-    
-    master_proc_map["reconciliation"] = {"command": rec.reconciliation_pool,
-                                      "args": (mp_param, db_param, master_queues_map["master_stitch"], master_queues_map["master_reconcile"] ,),
-                                      "predecessor": ["master_eb_stitch", "master_wb_stitch"],
-                                      "dependent_queue": [master_queues_map["master_stitch"]]}
-    
-    master_proc_map["reconciliation_writer"] = {"command": rec.write_reconciled_to_db,
-                                      "args": (mp_param, db_param, master_queues_map["master_reconcile"],),
-                                      "predecessor": ["reconciliation"],
-                                      "dependent_queue": [master_queues_map["master_reconcile"]]}
+        for dir in ["eb", "wb"]:
+            proc_name = "stitch_"+str(n+1)+str(n+2)+"_"+dir
+            qout = mp_manager.Queue() # write result to here for the next stitcher in line
+            transition_queues[dir].append(qout) # len = n+1
+            qin1 = transition_queues[dir][n]
+            qin2 = stitched_queues[dir][n+1]
+            
+            master_proc_map[proc_name]["command"] = mcf.stitch_rolling
+            master_proc_map[proc_name]["args"] = (dir, qin1, qin2, qout, master_queue_map["stitched"], mp_param, n,)
+            master_proc_map[proc_name]["predecessor"] = [proc_map["videonode"+str(n+1)+"_"+dir+"_stitch"], # TODO call objects instead of proc_name
+                                                         proc_map["videonode"+str(n+2)+"_"+dir+"_stitch"]]
+            master_proc_map[proc_name]["dependent_queue"] = [qin1, qin2]
+            if n >= 1:# not the first
+                master_proc_map[proc_name]["predecessor"].append(master_proc_map["stitch_"+str(n)+str(n+1)+"_"+dir])
+            
+            if n == parameters["num_video_nodes"]-2: # last
+                master_proc_map[proc_name]["args"] = (dir, qin1, qin2, master_queue_map["stitched"], master_queue_map["stitched"], mp_param, n, )
+                
 
-   
+    
+    # master_proc_map["reconciliation"] = {"command": rec.reconciliation_pool,
+    #                                   "args": (mp_param, db_param, master_queue_map["stitched"], master_queue_map["reconciled"],),
+    #                                   "predecessor": [master_proc_map[proc] for proc in master_proc_map if "stitch" in proc], # all transition stitchers
+    #                                   "dependent_queue": [master_queue_map["stitched"]],
+    #                                   "keep_alive": True}
+    # master_proc_map["reconciliation_writer"] = {"command": rec.write_reconciled_to_db,
+    #                                   "args": (mp_param, db_param, master_queue_map["reconciled"],),
+    #                                   "predecessor": [master_proc_map["reconciliation"]],
+    #                                   "dependent_queue": [master_queue_map["stitched"]],
+    #                                   "keep_alive": True}
+    
    
     # add PID to PID_tracker
-    pid_tracker = {} # mp_manager.dict()
-    for proc_name, proc_info in local_proc_map.items():
+    pid_tracker = {} #mp_manager.dict()
+    for proc_name, proc_info in proc_map.items():
         subsys_process = mp.Process(target=proc_info["command"], args=proc_info["args"], name=proc_name, daemon=False)
         subsys_process.start()
         pid_tracker[proc_name] = subsys_process.pid
-        local_proc_map[proc_name]["process"] = subsys_process # Process object cannot be pickled, thus local_proc_map cannot be a mp_manager.dict()
+        proc_map[proc_name]["process"] = subsys_process # Process object cannot be pickled, thus proc_map cannot be a mp_manager.dict()
+        
      
 
 #%% Run local processes until signals received  / all queues are empty
@@ -205,22 +204,19 @@ def main(raw_collection = None, reconciled_collection = None):
     while True:
         try:
             now = time.time()
-            
             all_queue_empty = all([q.empty() for q_name, q in queue_map.items() if "stitch" not in q_name])
-            all_local_alive = [proc_info["process"].is_alive() for proc_name, proc_info in local_proc_map.items()]
+            all_stitcher_alive = [proc_info["process"].is_alive() for proc_name, proc_info in proc_map.items() if "stitch" in proc_name]
             
-            if now - begin > 20 and all_queue_empty and not any(all_local_alive): # all data are in stitched queues
-                print("***********************************************************************************")
+            if now - begin > 20 and all_queue_empty and not any(all_stitcher_alive): # all data are in stitched queues
                 manager_logger.info("Local processes are completed in {} sec. Proceed to master proceses.".format(now-begin))
-                print("***********************************************************************************")
                 break
                 
                 
-            for proc_name, proc_info in local_proc_map.items():
+            for proc_name, proc_info in proc_map.items():
 
                 if not proc_info["process"].is_alive():
-                    pred_alive = [False] if not local_proc_map[proc_name]["predecessor"] else [local_proc_map[pred]["process"].is_alive() for pred in local_proc_map[proc_name]["predecessor"]]
-                    queue_empty = [True] if not local_proc_map[proc_name]["dependent_queue"] else [q.empty() for q in local_proc_map[proc_name]["dependent_queue"]]
+                    pred_alive = [False] if not proc_map[proc_name]["predecessor"] else [proc_map[pred]["process"].is_alive() for pred in proc_map[proc_name]["predecessor"]]
+                    queue_empty = [True] if not proc_map[proc_name]["dependent_queue"] else [q.empty() for q in proc_map[proc_name]["dependent_queue"]]
                     
                     if not any(pred_alive) and all(queue_empty): # natural death
                         proc_info["keep_alive"] = False
@@ -230,7 +226,7 @@ def main(raw_collection = None, reconciled_collection = None):
                         subsys_process = mp.Process(target=proc_info["command"], args=proc_info["args"], name=proc_name, daemon=False)
                         subsys_process.start()
                         pid_tracker[proc_name] = subsys_process.pid
-                        local_proc_map[proc_name]["process"] = subsys_process 
+                        proc_map[proc_name]["process"] = subsys_process 
                 
             # Heartbeat queue sizes
             now = time.time()
@@ -248,7 +244,7 @@ def main(raw_collection = None, reconciled_collection = None):
         except SIGINTException:
             manager_logger.info("Postprocessing interrupted by SIGINT.")
             
-            for proc_name in local_proc_map:
+            for proc_name in proc_map:
                 try:
                     # proc_info["keep_alive"] = False
                     # print(proc_name, pid_tracker[proc_name])
@@ -261,6 +257,7 @@ def main(raw_collection = None, reconciled_collection = None):
             # THIS BLOCK q.qsize has EOF error
             for q_name, q in queue_map.items():
                 if not q.empty():
+                    print(type(q.Queue()))
                     manager_logger.info("Queue size after process {}: {}".format(q_name, q.qsize()))   
             break # break the while true loop
             
@@ -273,32 +270,36 @@ def main(raw_collection = None, reconciled_collection = None):
     
     # add PID to PID_tracker
     time.sleep(3)
-    mp_param["time_win"] = mp_param["master_time_win"]
-    mp_param["stitch_thresh"] = mp_param["master_stitch_thresh"]
-    mp_param["stitcher_mode"] = "master" # switch from local to master
+    print(mp_param["transition_last_timestamp_eb"])
+    print(mp_param["transition_last_timestamp_wb"])
     
-    for proc_name, proc_info in master_proc_map.items():        
-        subsys_process = mp.Process(target=proc_info["command"], args=proc_info["args"], name=proc_name, daemon=False)
-        subsys_process.start()
-        pid_tracker[proc_name] = subsys_process.pid
-        master_proc_map[proc_name]["process"] = subsys_process # Process object cannot be pickled, thus local_proc_map cannot be a mp_manager.dict()
-
+    for n in range(parameters["num_video_nodes"]-1): # should have num_video_nodes-1 transition processes  
+        for dir in ["eb", "wb"]:
+            proc_name = "stitch_"+str(n+1)+str(n+2)+"_"+dir
+            proc_info = master_proc_map[proc_name]
+            subsys_process = mp.Process(target=proc_info["command"], args=proc_info["args"], name=proc_name, daemon=False)
+            subsys_process.start()
+            pid_tracker[proc_name] = subsys_process.pid
+            master_proc_map[proc_name]["process"] = subsys_process # Process object cannot be pickled, thus proc_map cannot be a mp_manager.dict()
+        
+        time.sleep(mp_param["delay"]) # add some delay to start the next node
+        
         
     start = time.time()
     begin = start
+    
     while True:
         try:
             now = time.time()
-            if now - begin > 20 and all([q.empty() for _,q in master_queues_map.items()]) and not any([master_proc_map[proc]["process"].is_alive() for proc in master_proc_map]):
+            if now - begin > 20 and all([q.empty() for _,q in master_queue_map.items()]) and not any([master_proc_map[proc]["process"].is_alive() for proc in master_proc_map]):
                 manager_logger.info("Master processes complete in {} sec.".format(now-begin))
                 break
                 
             for proc_name, proc_info in master_proc_map.items():
 
                 if not proc_info["process"].is_alive():
-                    pred_alive = [False] if not proc_info["predecessor"] else [master_proc_map[pred]["process"].is_alive() for pred in proc_info["predecessor"]]
+                    pred_alive = [False] if not proc_info["predecessor"] else [pred["process"].is_alive() for pred in proc_info["predecessor"]]
                     queue_empty = [True] if not proc_info["dependent_queue"] else [q.empty() for q in proc_info["dependent_queue"]]
-                    
                     
                     if not any(pred_alive) and all(queue_empty): # natural death
                         proc_info["keep_alive"] = False
@@ -313,9 +314,15 @@ def main(raw_collection = None, reconciled_collection = None):
             # Heartbeat queue sizes
             now = time.time()
             if now - start > HB:
-                for proc_name, q in master_queues_map.items():
-                    if not q.empty():
-                        manager_logger.info("Queue size for {}: {}".format(proc_name, master_queues_map[proc_name].qsize()))
+                manager_logger.info("transition_last_timestamp_eb: {}".format(mp_param["transition_last_timestamp_eb"]))
+                manager_logger.info("transition_last_timestamp_wb: {}".format(mp_param["transition_last_timestamp_wb"]))
+                
+                manager_logger.info("Transition queues EB: {}".format([q.qsize() for q in transition_queues["eb"]]))
+                manager_logger.info("Transition queues WB: {}".format([q.qsize() for q in transition_queues["wb"]]))
+                
+                for proc_name, q in master_queue_map.items():
+                    manager_logger.info("Queue size for {}: {}".format(proc_name, master_queue_map[proc_name].qsize()))
+                
                 manager_logger.info("Master processes have been running for {} sec".format(now-begin))
                 start = time.time()
                 
@@ -330,9 +337,12 @@ def main(raw_collection = None, reconciled_collection = None):
                     
                 except:
                     pass
-            for q_name, q in master_queues_map.items():
-                if not q.empty():
-                    manager_logger.info("Queue size after process {}: {}".format(q_name, q.qsize()))
+            
+            manager_logger.info("Transition queues EB: {}".format([q.qsize() for q in transition_queues["eb"]]))
+            manager_logger.info("Transition queues WB: {}".format([q.qsize() for q in transition_queues["wb"]]))
+            for proc_name, q in master_queue_map.items():
+                manager_logger.info("Queue size for {}: {}".format(proc_name, master_queue_map[proc_name].qsize()))
+                
             break # break the while true loop
             
 

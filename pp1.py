@@ -96,7 +96,7 @@ def main(raw_collection = None, reconciled_collection = None, node=None):
     mp_param.update(parameters)
     
     # initialize some db collections
-    df.initialize_db(mp_param, db_param)
+    df.initialize(mp_param, db_param)
     manager_logger.info("Post-processing manager initialized db collections. Creating shared data structures")
     
     # Raw trajectory fragment queue
@@ -136,10 +136,10 @@ def main(raw_collection = None, reconciled_collection = None, node=None):
     processes_to_spawn = {}
     
     processes_to_spawn["static_data_reader_e"] = (df.static_data_reader,
-                    (mp_param, db_param, raw_fragment_queue_e, "eb", node, 5000, "data_reader_e",))
+                    (mp_param, db_param, raw_fragment_queue_e, "eb", None, "data_reader_e",)) # all nodes
     
     processes_to_spawn["static_data_reader_w"] = (df.static_data_reader,
-                    (mp_param, db_param, raw_fragment_queue_w, "wb", node, 5000, "data_reader_w", ))
+                    (mp_param, db_param, raw_fragment_queue_w, "wb", None, "data_reader_w",)) # all nodes
     
     processes_to_spawn["merger_e"] = (merge.merge_fragments,
                       ("eb", raw_fragment_queue_e, merged_queue_e, mp_param, ))
@@ -147,19 +147,17 @@ def main(raw_collection = None, reconciled_collection = None, node=None):
     processes_to_spawn["merger_w"] = (merge.merge_fragments,
                       ("wb", raw_fragment_queue_w, merged_queue_w, mp_param, ))
     
-    
     processes_to_spawn["stitcher_e"] = (mcf.min_cost_flow_online_alt_path,
                       ("eb", merged_queue_e, stitched_trajectory_queue, mp_param, ))
     
     processes_to_spawn["stitcher_w"] = (mcf.min_cost_flow_online_alt_path,
                       ("wb", merged_queue_w, stitched_trajectory_queue, mp_param, ))
 
-   
-    processes_to_spawn["reconciliation"] = (rec.reconciliation_pool,
-                      (mp_param, db_param, stitched_trajectory_queue, reconciled_queue,))
+    # processes_to_spawn["reconciliation"] = (rec.reconciliation_pool,
+    #                   (mp_param, db_param, stitched_trajectory_queue, reconciled_queue,))
 
-    processes_to_spawn["reconciliation_writer"] = (rec.write_reconciled_to_db,
-                      (mp_param, db_param, reconciled_queue,))
+    # processes_to_spawn["reconciliation_writer"] = (rec.write_reconciled_to_db,
+    #                   (mp_param, db_param, reconciled_queue,))
     
 
     # Specify dependencies amongst subprocesses 
@@ -187,14 +185,13 @@ def main(raw_collection = None, reconciled_collection = None, node=None):
         "reconciliation_writer": reconciled_queue,
         }
 
-    # Store subprocesses and their PIDs, but don't start them just yet
+    # Store subprocesses and their PIDs after a process starts
     live_process_objects = {}
     for process_name, (process_function, process_args) in processes_to_spawn.items():
         subsys_process = mp.Process(target=process_function, args=process_args, name=process_name, daemon=False)
         subsys_process.start()
         live_process_objects[process_name] = subsys_process
         pid_tracker[process_name] = subsys_process.pid
-
 
 
 
@@ -288,7 +285,7 @@ if __name__ == '__main__':
     # for i in range(9):
     #     node = "videonode"+str(int(i+1))
     #     print(node)
-    main(node="videonode2")
+    main()
     
     
     

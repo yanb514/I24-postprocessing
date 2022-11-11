@@ -8,6 +8,46 @@ import time
 import sys
 
 
+    
+def dummy_stitcher(direction, fragment_queue, stitched_trajectory_queue, parameters):
+    '''
+    directly put fragments into stitched_queue
+    '''
+ 
+    # Initiate a logger
+    stitcher_logger = log_writer.logger
+    stitcher_logger.set_name("stitcher_"+direction)
+    stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
+    setattr(stitcher_logger, "_default_logger_extra",  {})
+
+    sig_hdlr = SignalHandler()
+
+    GET_TIMEOUT = parameters["stitcher_timeout"]
+    while sig_hdlr.run:
+        try:
+            try:
+                fgmt = fragment_queue.get(timeout = GET_TIMEOUT)
+                # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
+                # fgmt = Fragment(raw_fgmt)
+                stitched_trajectory_queue.put([fgmt])
+                
+            except queue.Empty: # queue is empty
+                stitcher_logger.info("Stitcher timed out after {} sec.".format(GET_TIMEOUT))
+ 
+
+        except Exception as e: 
+            if sig_hdlr.run:
+                raise e
+                # stitcher_logger.error("Unexpected exception: {}".format(e))
+            else:
+                stitcher_logger.warning("SIGINT detected. Exception:{}".format(e))
+            break
+            
+        
+    stitcher_logger.info("Exit stitcher")
+        
+    return   
+ 
 
 class MOT_Graph:
     

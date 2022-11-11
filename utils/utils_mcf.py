@@ -70,6 +70,9 @@ class MOTGraphSingle:
         self.VARY = parameters["vary"]
         self.residual_threshold_x = parameters["residual_threshold_x"]
         self.residual_threshold_y = parameters["residual_threshold_y"]
+        self.stitch_cost_thresh = parameters["stitch_thresh"]
+        self.stitcher_mode = parameters["stitcher_mode"]
+        # print("stitch_cost_thresh: ", self.stitch_cost_thresh)
         self.cache = {}
           
     @catch_critical(errors = (Exception))
@@ -88,19 +91,25 @@ class MOTGraphSingle:
         # self.G.nodes[new_id]["filters"] = [fragment["filter"]] # list of lists
         self.cache[new_id] = fragment
 
-        for fgmt in reversed(self.in_graph_deque):
-            # TODO: fix args
-            # cost = cost_3(fgmt, fragment, self.TIME_WIN, self.VARX, self.VARY)
-            cost = stitch_cost(fgmt, fragment, self.TIME_WIN, self.residual_threshold_x, self.residual_threshold_y)
-            # print(fgmt.data["_id"], fragment.data["_id"], cost)
-            
-            if cost <= 3:  # new edge points from new_id to existing nodes, with postive cost
-                fgmt_id = fgmt[self.attr]
-                self.G.add_edge(new_id, fgmt_id, weight = 3-cost, match = False)
+        nc = len(self.in_graph_deque)
+        node_id = fragment["compute_node_id"][-1]
         
-        # add Fragment pointer to the dictionary
+        for i in range(nc):
+            fgmt = self.in_graph_deque[nc-1-i]
+            fgmt_node_id = fgmt["compute_node_id"][-1]
+            
+            if self.stitcher_mode == "local" and fgmt_node_id == node_id:
+                cost = stitch_cost(fgmt, fragment, self.TIME_WIN, self.residual_threshold_x, self.residual_threshold_y)
+            elif self.stitcher_mode == "master" and abs(int(fgmt_node_id)-int(node_id)) == 1:
+                cost = stitch_cost(fgmt, fragment, self.TIME_WIN, self.residual_threshold_x, self.residual_threshold_y)
+            else:
+                cost = 1e5
+            if cost <= self.stitch_cost_thresh:  # new edge points from new_id to existing nodes, with postive cost
+                fgmt_id = fgmt[self.attr]
+                self.G.add_edge(new_id, fgmt_id, weight = self.stitch_cost_thresh-cost, match = False)
+        
+        # add Fragment pointer to cache
         self.in_graph_deque.append(fragment)
-        # self.fragment_dict[new_id] = fragment
 
         # check for time-out fragments in deque and compress paths
         while self.in_graph_deque[0]["last_timestamp"] < fragment["first_timestamp"] - self.TIME_WIN:

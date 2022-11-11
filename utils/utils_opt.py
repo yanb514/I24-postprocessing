@@ -5,6 +5,7 @@ from bson.objectid import ObjectId
 from collections import defaultdict
 import os
 from i24_logger.log_writer import logger, catch_critical, log_warnings, log_errors
+# from .misc import flattenList
 
 # TODO
 # add try except and put errors/warnings to log
@@ -80,7 +81,12 @@ def combine_fragments(all_fragment):
     stacked["coarse_vehicle_class"] = max(set(stacked["coarse_vehicle_class"]), key = stacked["coarse_vehicle_class"].count)
     stacked["fine_vehicle_class"] = max(set(stacked["fine_vehicle_class"]), key = stacked["fine_vehicle_class"].count)
     stacked["direction"] = max(set(stacked["direction"]), key = stacked["direction"].count)
-    stacked["compute_node_id"] = max(set(stacked["compute_node_id"]), key = stacked["compute_node_id"].count)
+    
+    # Take the min
+    # -- flatten the list first 
+    # compute_node_id_list = flattenList(stacked["compute_node_id"])
+    # stacked["compute_node_id"] = min(compute_node_id_list)
+    stacked["compute_node_id"] = max(stacked["compute_node_id"])
     
     # other parameters
     # stacked["compute_node_id"] = os.uname()[1]
@@ -90,7 +96,7 @@ def combine_fragments(all_fragment):
 
 
 @catch_critical(errors = (Exception))    
-def resample(car):
+def resample(car, dt=0.04, fillnan=False):
     # resample timestamps to 30hz, leave nans for missing data
     '''
     resample the original time-series to uniformly sampled time series in 30Hz
@@ -108,7 +114,10 @@ def resample(car):
     df = df.set_index(index)
     df = df.drop(columns = "timestamp")
     
-    df = df.resample('0.033333333S').mean() # close to 30Hz
+    freq = str(dt)+"S"
+    df = df.resample(freq).mean() # leave nans
+    if fillnan:
+        df = df.interpolate(method='linear')
     df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
 
     # resample to 25hz

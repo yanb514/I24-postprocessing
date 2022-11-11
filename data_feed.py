@@ -34,36 +34,19 @@ def soft_stop_hdlr(sig, action):
     Soft terminate current process. Close ports and exit.
     '''
     raise SIGINTException # so to exit the while true loop
-    
-
-# class SignalHandler():
-#     '''
-#     Signal handling: in live/static data read, SIGINT and SIGUSR1 are handled in the same way
-#     Soft terminate current process. Close ports and exit.
-#     '''
-#     run = True
-#     # count = 0 # count the number of times a signal is received
-#     # signal.signal(signal.SIGINT, signal.SIG_IGN)  
-    
-#     def __init__(self):
-#         signal.signal(signal.SIGINT, self.shut_down)
-#         signal.signal(signal.SIGUSR1, self.shut_down)
-#         signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
-    
-#     def shut_down(self, *args):
-#         self.run = False
-#         raise SIGINTException
-#         # self.count += 1
-#         # logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count))
         
  
-def initialize_db(parameters, db_param):
+def initialize(parameters, db_param):
     '''
     initialize the postprocessing pipeline (called by manager)
     1. get the latest raw collection if parameters["raw_collection"] == ""
     2. create a new stitched collection
     3. create a new reconciled collection
     '''
+    # make a list based on num_video_nodes
+    parameters["transition_last_timestamp_eb"] = [-1] * (parameters["num_video_nodes"]-1)
+    parameters["transition_last_timestamp_wb"] = [-1] * (parameters["num_video_nodes"]-1)
+    # print("inside: ", parameters["transition_last_timestamp_eb"], parameters["transition_last_timestamp_eb"])
     
     # get the latest collection if raw_collection is empty
     dbc = DBClient(**db_param, database_name = parameters["raw_database"], 
@@ -93,6 +76,9 @@ def initialize_db(parameters, db_param):
     dbc.client[parameters["meta_database"]]["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters._getvalue()},
                                   bypass_document_validation=True)
     
+    # drop the temp collection
+    dbc.client[parameters["temp_database"]][parameters["reconciled_collection"]].drop()
+    
     del dbc
     return
 
@@ -103,7 +89,109 @@ def thread_update_one(raw, _id, filter, fitx, fity):
     raw.update_one({"_id": _id}, {"$set": {"filter": filter,
                                             "fitx": list(fitx),
                                             "fity": list(fity)}}, upsert = True)
+    
+    
+    
+def static_data_reader(default_param, db_param, raw_queue, query_filter, name=None):
+    """
+    Read data from a static collection, sort by last_timestamp and write to queues
+    :param default_param
+        :param host: Database connection host name.
+        :param port: Database connection port number.
+        :param username: Database authentication username.
+        :param password: Database authentication password.
+        :param database_name: Name of database to connect to (do not confuse with collection name).
+        :param collection_name: Name of database collection from which to query.
+    :param raw_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
+    :param dir: "eb" or "wb"
+    :param: node: (str) compute_node_id for videonode
+    :return:
+    """
+    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way    
+    signal.signal(signal.SIGINT, soft_stop_hdlr)
+    
+    # running_mode = os.environ["my_config_section"]
+    logger = log_writer.logger
+    if name is None:
+        name = "static_data_reader"
+    logger.set_name(name)
+        
+    setattr(logger, "_default_logger_extra",  {})
+    
+    # Connect to a database reader
+    # -- if mode is master, read from a temp database which stores all local stitched results
+    if "master" in name:
+        while default_param["reconciled_collection"] == "":
+            time.sleep(1)
+        read_database = default_param["temp_database"]
+        read_collection = default_param["reconciled_collection"]
+    else:
+        while default_param["raw_collection"] == "":
+            time.sleep(1)
+        read_database = default_param["raw_database"]
+        read_collection = default_param["raw_collection"]
+     
+    # get parameters for fitting
+    logger.info("{} starts reading from DATABASE {} COLLECTION {}".format(name, read_database, read_collection))
+    dbr = DBClient(**db_param, database_name = read_database, collection_name=read_collection)  
+        
+    # start from min and end at max if collection is static
+    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param["range_increment"], query_sort= [("last_timestamp", "ASC")],
+                               query_filter = query_filter)
+    
+    # for debug only
+    # rri._reader.range_iter_stop = rri._reader.range_iter_start + 60
+    min_queue_size = default_param["min_queue_size"]
+    discard = 0 # counter for short (<3) tracks
+    
+    while True: 
+        
+        try:
+            logger.debug("* current lower: {}, upper: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+            
+            # keep filling the queues so that they are not low in stock
+            while raw_queue.qsize() <= min_queue_size :#or west_queue.qsize() <= min_queue_size:
+           
+                next_batch = next(rri)  
+    
+                for doc in next_batch:
+                    if len(doc["timestamp"]) > 3: 
+                        doc = misc.interpolate(doc)
+                        raw_queue.put(doc)          
+                    else:
+                        discard += 1
+                        # logger.info("Discard a fragment with length less than 3")
+    
+                # logger.info("** qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
+                logger.debug("** qsize for raw_data_queue:{}".format(raw_queue.qsize()))
+                            
+            # if queue has sufficient number of items, then wait before the next iteration (throttle)
+            logger.info("** queue size is sufficient. wait")     
+            time.sleep(2)
+          
+         
+            
+        except StopIteration:  # rri reaches the end
+            logger.warning("static_data_reader reaches the end of query range iteration. Exit")
+            break
+        
+        except SIGINTException:  # SIGINT detected
+            logger.warning("SIGINT/SIGUSR1 detected. Checkpoint not implemented.")
+            break
+        
+        except Exception as e:
+            logger.warning("Other exceptions occured. Exit. Exception:{}".format(e))
+            break
 
+        
+    
+    # logger.info("outside of while loop:qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
+    logger.debug("Discarded {} short tracks".format(discard))
+    del dbr 
+    logger.info("DBReader closed. Exit {}.".format(name))
+    sys.exit() # for linux
+
+    
 
    
 def change_stream_simulator(default_param, insert_rate):
@@ -288,109 +376,7 @@ def live_data_reader(default_param, east_queue, west_queue, t_buffer = 1, read_f
     
  
     
-def static_data_reader(default_param, db_param, raw_queue, dir, node=None, min_queue_size = 10000, name=None):
-    """
-    Read data from a static collection, sort by last_timestamp and write to queues
-    :param default_param
-        :param host: Database connection host name.
-        :param port: Database connection port number.
-        :param username: Database authentication username.
-        :param password: Database authentication password.
-        :param database_name: Name of database to connect to (do not confuse with collection name).
-        :param collection_name: Name of database collection from which to query.
-    :param raw_queue: Process-safe queue to which records that are "ready" are written.  multiprocessing.Queue
-    :param dir: "eb" or "wb"
-    :param: node: (str) compute_node_id for videonode
-    :return:
-    """
-    # Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way    
-    # sig_hdlr = SignalHandler()  
-    signal.signal(signal.SIGINT, soft_stop_hdlr)
-    
-    
-    # running_mode = os.environ["my_config_section"]
-    logger = log_writer.logger
-    if name is not None:
-        logger.set_name(name)
-    elif node:
-        logger.set_name("data_feed_"+dir+"_"+node)
-    else:
-        logger.set_name("static_data_reader_"+dir)
-        
-    setattr(logger, "_default_logger_extra",  {})
-    
-    # Connect to a database reader
-    while default_param["raw_collection"] == "":
-        time.sleep(1)
-     
-    # get parameters for fitting
-    dbr = DBClient(**db_param, database_name = default_param["raw_database"], collection_name=default_param["raw_collection"])  
-    
-    if dir == "eb":
-        dir = 1
-    elif dir == "wb":
-        dir = -1
-    if node:
-        query_filter = {"compute_node_id": node, "direction": dir}
-    else: # query all nodes
-        query_filter = {"direction": dir}
-        
-    # start from min and end at max if collection is static
-    rri = dbr.read_query_range(range_parameter='last_timestamp', range_increment=default_param["range_increment"], query_sort= [("last_timestamp", "ASC")],
-                               query_filter = query_filter)
-    
-    # for debug only
-    # rri._reader.range_iter_stop = rri._reader.range_iter_start + 60
-
-    discard = 0 # counter for short (<3) tracks
-    
-    while True: 
-        
-        try:
-            logger.debug("* current lower: {}, upper: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, rri._reader.range_iter_start, rri._reader.range_iter_stop))
-            
-            # keep filling the queues so that they are not low in stock
-            while raw_queue.qsize() <= min_queue_size :#or west_queue.qsize() <= min_queue_size:
-           
-                next_batch = next(rri)  
-    
-                for doc in next_batch:
-                    if len(doc["timestamp"]) > 3: 
-                        doc = misc.interpolate(doc)
-                        raw_queue.put(doc)          
-                    else:
-                        discard += 1
-                        # logger.info("Discard a fragment with length less than 3")
-    
-                # logger.info("** qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
-                logger.info("** qsize for raw_data_queue:{}".format(raw_queue.qsize()))
-                            
-            # if queue has sufficient number of items, then wait before the next iteration (throttle)
-            logger.info("** queue size is sufficient. wait")     
-            time.sleep(2)
-          
-         
-            
-        except StopIteration:  # rri reaches the end
-            logger.warning("static_data_reader reaches the end of query range iteration. Exit")
-            break
-        
-        except SIGINTException:  # SIGINT detected
-            logger.warning("SIGINT/SIGUSR1 detected. Checkpoint not implemented.")
-            break
-        
-        except Exception as e:
-            logger.warning("Other exceptions occured. Exit. Exception:{}".format(e))
-            break
-
-        
-    
-    # logger.info("outside of while loop:qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
-    logger.info("Discarded {} short tracks".format(discard))
-    del dbr 
-    logger.info("DBReader closed. Exiting live_data_reader while loop.")
-    sys.exit() # for linux
-
+ 
     
 if __name__ == '__main__':
 

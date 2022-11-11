@@ -20,9 +20,10 @@ from collections import OrderedDict
 from functools import reduce
 import time
 import signal
-from utils.misc import calc_fit_select, find_overlap_idx
+import sys
 
 # from i24_database_api import DBClient
+from utils.misc import calc_fit_select, find_overlap_idx
 import i24_logger.log_writer as log_writer
 from i24_logger.log_writer import catch_critical
 from utils.utils_stitcher_cost import bhattacharyya_distance
@@ -50,20 +51,24 @@ def merge_resample(traj, conf_threshold):
     return df
     TODO: DEAL WITH NAN after conf mask
     '''
-    # try:
-    conf = np.array(traj["detection_confidence"])
-    # except KeyError:
-    #     conf = np.ones(len(traj["timestamp"]))
-    
-    # get confidence mask
-    highconf_mask = np.array(conf >= conf_threshold)
-    num_highconf = np.count_nonzero(highconf_mask)
-    if num_highconf < 4:
-        return None
-       
     time_series_field = ["timestamp", "x_position", "y_position", "length", "width", "height"]
-    for key in time_series_field:
-        traj[key] = np.array(traj[key])[highconf_mask]
+    
+    if "detection_confidence" in traj:
+        conf = np.array(traj["detection_confidence"])
+        nl = min(len(conf), len(traj["timestamp"]))
+        
+        # get confidence mask
+        highconf_mask = np.array(conf >= conf_threshold)
+        num_highconf = np.count_nonzero(highconf_mask)
+        if num_highconf < 4:
+            return None
+
+        for key in time_series_field:
+            traj[key] = np.array(traj[key][:nl])[highconf_mask[:nl]]
+    
+    else:
+        for key in time_series_field:
+            traj[key] = np.array(traj[key])
         
     # resample to df
     data = {key: traj[key] for key in time_series_field} 
@@ -72,8 +77,8 @@ def merge_resample(traj, conf_threshold):
     df = df.set_index(index)
     df = df.drop(columns = "timestamp")
     
-    # resample to 25hz
-    df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq()
+    # resample to 10hz
+    df=df.groupby(df.index.floor('0.1S')).mean().resample('0.1S').asfreq()
     df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
     df = df.interpolate(method='linear')
     
@@ -82,7 +87,6 @@ def merge_resample(traj, conf_threshold):
     for key in df.columns:
         traj[key] = df[key].values
 
-
     traj["timestamp"] = df.index.values
     traj["first_timestamp"] = traj["timestamp"][0]
     traj["last_timestamp"] = traj["timestamp"][-1]
@@ -90,6 +94,8 @@ def merge_resample(traj, conf_threshold):
     traj["ending_x"] = traj["x_position"][-1]
 
     return traj
+
+
 
 import warnings
 warnings.filterwarnings('error')
@@ -104,6 +110,7 @@ def merge_cost(track1, track2):
     t1 = track1["timestamp"]#[filter1]
     t2 = track2["timestamp"]#[filter2]
     
+    # tt1 = time.time()
     if t2[0]>=t1[-1] or t2[-1]<=t1[0]: # separation of axis
         # if no time overlap, don't merge -> stitcher's job
         return 1e6
@@ -121,6 +128,7 @@ def merge_cost(track1, track2):
     #     print("t1", [t-1.628083e9 for t in t1])
     #     print("t2", [t-1.628083e9 for t in t2])
         
+    # tt2 = time.time()
     
     # try to vectorize
     mu1_arr = np.array([x1[s1:e1], y1[s1:e1]]) # 2xK
@@ -135,8 +143,10 @@ def merge_cost(track1, track2):
     det2 = np.linalg.det(cov2)
     nll = 0.125 * np.sum((mu.T@inv_cov@mu).diagonal())/(e1-s1+1) + 0.5 * np.log(det/np.sqrt(det1 * det2))
     
+    # tt3 = time.time()
     # print("id1: {}, id2: {}, cost:{:.2f}".format(str(track1['_id'])[-4:], str(track2['_id'])[-4:], nll))
     # print("")
+    # print("other: {:.4f}, cost: {:.4f}, shape: {}".format(tt2-tt1, tt3-tt2, mu.shape))
     
     return nll
 
@@ -295,7 +305,6 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
         data: resampled fragment df
     '''
     signal.signal(signal.SIGINT, soft_stop_hdlr)
-    
     merge_logger = log_writer.logger
     if name:
         merge_logger.set_name(name)
@@ -306,6 +315,7 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
     
     DIST_THRESH = parameters["merge_thresh"] # bhattar distance distance threshold
     TIMEWIN = parameters["time_win"]
+    # merge_logger.info("** time_win: {}".format(TIMEWIN), extra = None)
     CONF_THRESH = parameters["conf_threshold"]
     TIMEOUT = parameters["merger_timeout"]
     
@@ -314,6 +324,17 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
     # TODO: keep a heap
     # lru = OrderedDict() # order connected components by last_timestamp
     sdll = SortedDLL()
+    
+    HB = parameters["log_heartbeat"]
+    begin = time.time()
+    start = begin
+    ct1 = 0
+    ct2 = 0
+    ct3 = 0
+    input_obj = 0
+    output_obj = 0
+    low_conf_cnt = 0
+    
     while True:
         try:
             try:
@@ -323,17 +344,27 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
                 merge_logger.warning("merger timed out after {} sec.".format(TIMEOUT))
                 comps = nx.connected_components(G)
                 for comp in comps:
-                    if len(comp) > 1:
-                        merge_logger.debug("Merged {}".format(comp))
+                    # if len(comp) > 1:
+                    #     merge_logger.debug("Merged {}".format(comp))
+                    input_obj += len(comp)
+                    output_obj += 1
                     unmerged = [ G.nodes[v]["data"] for v in list(comp)]
                     merged = combine_merged_dict(unmerged)
                     merged_queue.put(merged) 
+                merge_logger.info("Flushing {} raw fragments --> {} merged fragments".format(input_obj, output_obj),extra = None)
                 break
             
+            except SIGINTException:
+                merge_logger.warning("SIGINT detected when trying to get from queue. Exit")
+                break
+            
+            t1 = time.time()
             resampled = merge_resample(fragment, CONF_THRESH) # convert to df ! last_timestamp might be changed!!!
-                
+            t2 = time.time()
+            ct1 += t2-t1
+            
             if resampled is None:
-                merge_logger.info("skip {} in merging: LOW CONF".format(fragment["_id"]))
+                low_conf_cnt += 1
                 continue
             
             
@@ -363,13 +394,9 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
                     # merge_logger.info("Merged {} and {}".format(node_id, fragment["_id"]))
             
             t2 = time.time()
+            ct2 += t2-t1
             
-            # find connected components in G and check for timeout
-            # TODO: use better data structure to make the following more efficient
-            if cntr % 10 == 0:
-                merge_logger.debug("Graph nodes : {}, Graph edges: {}, cache: {}".format(G.number_of_nodes(), G.number_of_edges(), sdll.count()),extra = None)
-                merge_logger.debug("Time elapsed for adding edge: {:.2f}".format(t2-t1))
-                # t3 = time.time()
+            t1 = time.time()
             to_remove = set()
             # check if the first in lru is timed out
             while True:
@@ -379,8 +406,10 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
                 first_tail = first.tail_time
                 if first_tail < curr_time - TIMEWIN:
                     comp = nx.node_connected_component(G, first_id)
-                    if len(comp) > 1:
-                        merge_logger.debug("Merged {}".format(comp), extra=None)
+                    # if len(comp) > 1:
+                    #     merge_logger.debug("Merged {}".format(comp), extra=None)
+                    input_obj += len(comp)
+                    output_obj += 1
                     unmerged = [G.nodes[v]["data"] for v in list(comp)]
                     merged = combine_merged_dict(unmerged)
                     merged_queue.put(merged) 
@@ -391,11 +420,26 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
                     break # no need to check lru further
             # clean up graph and lru
             G.remove_nodes_from(to_remove)
+            t2 = time.time()
+            ct3 += t2-t1
             
+            # heartbeat log
+            now = time.time()
+            if now - begin > HB:
+                merge_logger.info("Graph nodes : {}, Graph edges: {}, cache: {}".format(G.number_of_nodes(), G.number_of_edges(), sdll.count()),extra = None)
+                # merge_logger.info("Time elapsed for resample: {:.2f}, adding edge: {:.2f}, remove: {:.2f}, total run time: {:.2f}".format(ct1, ct2, ct3, now-start))
+                merge_logger.info("{} raw fragments --> {} merged fragments, skipped {} low_conf.".format(input_obj, output_obj, low_conf_cnt),extra = None)
+                begin = time.time()
+
         except SIGINTException:  # SIGINT detected
             merge_logger.info("SIGINT detected. Exit.")
-
             break
+        
+        except (ConnectionResetError, BrokenPipeError, EOFError) as e:   
+            merge_logger.warning("Connection error: {}".format(e))
+            break
+            
+    sys.exit()
     
         
 

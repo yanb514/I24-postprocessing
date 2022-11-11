@@ -6,15 +6,22 @@ Created on Sun May 15 15:17:59 2022
 @author: yanbing_wang
 """
 import queue
+import heapq
 import signal
 import time
 from collections import defaultdict
 from bson.objectid import ObjectId
+import sys
 
 from i24_database_api import DBClient
 import i24_logger.log_writer as log_writer
 from utils.utils_mcf import MOTGraphSingle
 from utils.misc import calc_fit, find_overlap_idx
+from utils.utils_opt import combine_fragments, resample
+import multiprocessing
+
+lock = multiprocessing.Lock()
+
 
 class SIGINTException(SystemExit):
     pass
@@ -25,36 +32,8 @@ def soft_stop_hdlr(sig, action):
     Soft terminate current process. Close ports and exit.
     '''
     raise SIGINTException # so to exit the while true loop
+           
     
-# Signal handling: in live data read, SIGINT and SIGUSR1 are handled in the same way
-# class SignalHandler():
-
-#     run = True
-#     count_sigint = 0 # count the number of times a SIGINT is received
-#     count_sigusr = 0
-#     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    
-#     def __init__(self):
-#         signal.signal(signal.SIGINT, self.soft_stop)
-#         signal.signal(signal.SIGUSR1, self.finish_processing)
-    
-#     def soft_stop(self, *args):
-#         signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
-#         self.run = False
-#         self.count_sigint += 1
-#         # stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigint))
-        
-#     def finish_processing(self, *args):
-#         # do nothing
-#         self.count_sigusr += 1
-#         # stitcher_logger.info("{} detected {} times".format(signal.Signals(args[0]).name, self.count_sigusr))
-        
-#         siginfo = signal.sigwaitinfo({signal.SIGUSR1})
-#         print("py: got %d from %d by user %d\n" % (siginfo.si_signo,
-#                                                  siginfo.si_pid,
-#                                                  siginfo.si_uid))
-        
-        
 # @catch_critical(errors = (Exception))  
 def read_to_queue(gt_ids, gt_val, lt_val, parameters):
     '''
@@ -127,156 +106,263 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
     setattr(stitcher_logger, "_default_logger_extra",  {})
 
-    # sig_hdlr = SignalHandler()
-
     # Get parameters
     ATTR_NAME = parameters["fragment_attr_name"]
     TIME_WIN = parameters["time_win"]
-    # RES_THRESH_X = parameters["residual_threshold_x"]
-    # RES_THRESH_Y = parameters["residual_threshold_y"]
     
     # Initialize tracking graph
     m = MOTGraphSingle(ATTR_NAME, parameters)
-    counter = 0 # iterations for log
-
+    
+    # counter = 0 # iterations for log
     cum_t1 = 0
     cum_t2 = 0
     cum_t3 = 0
     
     GET_TIMEOUT = parameters["stitcher_timeout"]
+    HB = parameters["log_heartbeat"]
+    begin = time.time()
+    start = begin
+    input_obj = 0
+    output_obj = 0
+    
     while True:
         try:
             try:
                 fgmt = fragment_queue.get(timeout = GET_TIMEOUT) # a merged dictionary
-                # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
-                # fgmt = Fragment(raw_fgmt)
                 
             except queue.Empty: # queue is empty
-                stitcher_logger.info("Stitcher timed out after {} sec.".format(GET_TIMEOUT))
+                stitcher_logger.info("Getting from fragment_queue timed out after {} sec.".format(GET_TIMEOUT))
                 all_paths = m.get_all_traj()
                 
                 for path in all_paths:
-                    # filters = m.get_filters(path)
                     trajs = m.get_traj_dicts(path)
-                    # stitched_trajectory_queue.put(path[::-1])
                     stitched_trajectory_queue.put(trajs[::-1])
-                    
-                    # stitcher_logger.info("Flushing out final trajectories in graph")
-                    stitcher_logger.debug("** Flushing out {} fragments".format(len(path)),extra = None)
-                    # dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
+
+                    input_obj += len(path)
+                    output_obj += 1
                 
                 # stitcher_logger.info("fragment_queue is empty, exit.")
+                stitcher_logger.info("Flushing {} raw fragments --> {} stitched fragments".format(input_obj, output_obj),extra = None)
                 break
             
-            # fgmt_id = getattr(fgmt, ATTR_NAME)
+            except SIGINTException:
+                stitcher_logger.warning("SIGINT detected when trying to get from queue. Exit")
+                break
+
             fgmt_id = fgmt[ATTR_NAME]
-            # fgmt = calc_fit(fgmt, RES_THRESH_X, RES_THRESH_Y)
-            
-            # RANSAC fit to determine the fit coef if it's a good track, otherwise reject
-            # try:
-            #     if len(fgmt["filter"]) == 0:
-            #         # stitched_trajectory_queue.put(([fgmt_id], []))
-            #         stitcher_logger.info("* skip {} - LOW CONF".format(fgmt_id))
-            #         continue # skip this fgmt
-            # except:
-            #     pass
+
             t1 = time.time()
             m.add_node(fgmt)
             cum_t1 += time.time()-t1
             
-            # print("* add ", fgmt_id)
-            # print("**", m.G.edges(data=True))
-            
-            # run MCF
+            # Path augment
             t2 = time.time()
             m.augment_path(fgmt_id)
             cum_t2 += time.time()-t2
             
-            # pop path if a path is ready
-            # print("**", m.G.edges(data=True))
+            # Pop path if a path is ready
             t3 = time.time()
             all_paths = m.pop_path(time_thresh = fgmt["first_timestamp"] - TIME_WIN)  
             
             for path in all_paths:
-                # filters = m.get_filters(path)
-                # if not m.verify_path(path[::-1], cost_thresh = 15):
-                #     stitcher_logger.info("** Stitched result not verified. Proceed anyways.")
                    
                 trajs = m.get_traj_dicts(path)
-                # stitched_trajectory_queue.put(path[::-1])
                 stitched_trajectory_queue.put(trajs[::-1])
-                
-                
-                # dbw.write_one_trajectory(thread=True, fragment_ids = [ObjectId(o) for o in path[::-1]])
                 m.clean_graph(path)
-                stitcher_logger.debug("** Stitched {} fragments".format(len(path)),extra = None)
+                # stitcher_logger.info("last timestamp: {:.2f}".format(trajs[0]["last_timestamp"]))
+        
+                input_obj += len(path)
+                output_obj += 1
+                # stitcher_logger.debug("** Stitched {} fragments".format(len(path)),extra = None)
+                
+                
              
             cum_t3 += time.time()-t3
             
-            if counter % 100 == 0:
-                stitcher_logger.debug("MCF graph # nodes: {}, # edges: {}, deque: {}, cache: {}".format(m.G.number_of_nodes(), m.G.number_of_edges(), len(m.in_graph_deque), len(m.cache)),extra = None)
-                stitcher_logger.debug("Cumulative runtime add:{:.2f}, augment:{:.2f}, pop:{:.2f}".format(cum_t1, cum_t2, cum_t3), extra=None)
-                # stitcher_logger.debug(f"raw queue: {fragment_queue.qsize()}, stitched queue: {stitched_trajectory_queue.qsize()}")
-                counter = 0
-            counter += 1
+            # heartbeat log
+            now = time.time()
+            if now - begin > HB:
+                stitcher_logger.info("MCF graph # nodes: {}, # edges: {}, deque: {}, cache: {}".format(m.G.number_of_nodes(), m.G.number_of_edges(), len(m.in_graph_deque), len(m.cache)),extra = None)
+                # stitcher_logger.info("Elapsed add:{:.2f}, augment:{:.2f}, pop:{:.2f}, total:{:.2f}".format(cum_t1, cum_t2, cum_t3, now-start), extra=None)
+                stitcher_logger.info("{} raw fragments --> {} stitched fragments".format(input_obj, output_obj),extra = None)
+                begin = time.time()
+
         
         except SIGINTException:  # SIGINT detected
             stitcher_logger.warning("SIGINT detected. Exit")
             break
             
-        # except Exception as e:   
-        #     stitcher_logger.error("Unexpected exception: {}".format(e))
-        #     break
-            
-        
+        except (ConnectionResetError, BrokenPipeError, EOFError) as e:   
+            stitcher_logger.warning("Connection error: {}".format(e))
+            break
+                 
     stitcher_logger.info("Exit stitcher")
-    # stitcher_logger.info("Final count in stitched collection {}: {}".format(dbw.collection_name, dbw.count()))
-    # del dbw
-    # stitcher_logger.info("DBWriter closed. Exit.")
-    # sys.exit()
+    sys.exit()
         
     return   
-    
-    
-def dummy_stitcher(direction, fragment_queue, stitched_trajectory_queue, parameters):
-    '''
-    directly put fragments into stitched_queue
-    '''
  
+
+    
+def stitch_rolling(direction, fragment_queue_prev, fragment_queue_curr, next_queue, stitched_trajectory_queue, parameters, node_idx):
+    """
+    same with online_alt_path, but for consecutively stitch two adjacent nodes
+    :param direction
+    :param fragment_queue_prev: from the last transition stitcher
+    :param fragment_queue_curr: from local stitcher. this queue should be consumed first
+    :param next_queue
+    :param stitched_trajectory_queue
+    :param parameters
+    :param node_idx: 0-indexed
+    
+    1. reorder fragments from fragment_queue_prev, fragment_queue_curr in a heap
+    2. pop from heap and build MCF if last_timestamp condition is met (*)
+    3. update parameters["transition_last_timestamp"][direction][node_idx]
+    
+    """
+    signal.signal(signal.SIGINT, soft_stop_hdlr)
+    
     # Initiate a logger
     stitcher_logger = log_writer.logger
-    stitcher_logger.set_name("stitcher_"+direction)
-    stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
+    name = "stitch_"+str(node_idx+1)+str(node_idx+2)+"_"+direction
+    stitcher_logger.set_name(name)
+    stitcher_logger.info("** stitch_rolling starts", extra = None)
     setattr(stitcher_logger, "_default_logger_extra",  {})
 
-    sig_hdlr = SignalHandler()
-
-    GET_TIMEOUT = parameters["stitcher_timeout"]
-    while sig_hdlr.run:
+    # Get parameters
+    ATTR_NAME = parameters["fragment_attr_name"]
+    TIME_WIN = parameters["time_win"]
+    
+    # Initialize tracking graph
+    m = MOTGraphSingle(ATTR_NAME, parameters)
+    
+    # counter = 0 # iterations for log
+    cum_t1 = 0
+    cum_t2 = 0
+    cum_t3 = 0
+    
+    # GET_TIMEOUT = parameters["stitcher_timeout"]
+    HB = parameters["log_heartbeat"]
+    DELAY = parameters["delay"]
+   
+    # TODO: ASSUMPTION!!! local queue do not change size anymore, and should be consumed first
+    h = []
+    while not fragment_queue_curr.empty():
+        traj_docs = fragment_queue_curr.get(block=False)
+        combined_trajectory = combine_fragments(traj_docs)
+        resampled_trajectory = resample(combined_trajectory, dt=0.1, fillnan=True)
+        heapq.heappush(h, (resampled_trajectory["last_timestamp"],resampled_trajectory["_id"], resampled_trajectory)) # orderd by last_timestamp but it may not be unique
+    stitcher_logger.info("Heap size after emptying fragment_queue_curr: {}".format(len(h)))
+    
+    begin = time.time()
+    start = begin
+    input_obj = 0
+    output_obj = 0
+    ready = True if node_idx == 0 else False
+    
+    
+    while True:
         try:
             try:
-                fgmt = fragment_queue.get(timeout = GET_TIMEOUT)
-                # stitcher_logger.debug("get fragment id: {}".format(raw_fgmt["_id"]))
-                # fgmt = Fragment(raw_fgmt)
-                stitched_trajectory_queue.put([fgmt])
+                traj_doc = fragment_queue_prev.get(timeout = (node_idx+1)*DELAY)
+                combined_trajectory = combine_fragments(traj_doc)
+                resampled_trajectory = resample(combined_trajectory, dt=0.1, fillnan=True)
+                heapq.heappush(h, (resampled_trajectory["last_timestamp"],resampled_trajectory["_id"], resampled_trajectory)) # orderd by last_timestamp but it may not be unique
                 
             except queue.Empty: # queue is empty
-                stitcher_logger.info("Stitcher timed out after {} sec.".format(GET_TIMEOUT))
- 
+                stitcher_logger.info("Getting from fragment_queue timed out after {} sec.".format((node_idx+1)*DELAY))
+                while h:
+                    _,fgmt_id, fgmt = heapq.heappop(h)        
+                    m.add_node(fgmt)
+                    m.augment_path(fgmt_id)  
+                
+                # Path augment
+                all_paths = m.get_all_traj()
+                
+                for path in all_paths:
+                    trajs = m.get_traj_dicts(path)
+                    input_obj += len(path)
+                    output_obj += 1
+                    with lock:
+                        parameters["transition_last_timestamp_"+direction][node_idx] = trajs[0]["last_timestamp"]
+                        print(parameters["transition_last_timestamp_"+direction][node_idx] )
+                    # determine where to put the result
+                    last_compute_node = max([traj["compute_node_id"] for traj in trajs])
+                    # stitcher_logger.info(last_compute_node)
+                    
+                    if int(last_compute_node[-1]) == node_idx+1:  
+                        # print("put to curent queue")
+                        stitched_trajectory_queue.put(trajs[::-1])
+                    elif int(last_compute_node[-1]) == node_idx+2:
+                        # print("put to the next transition queue")
+                        next_queue.put(trajs[::-1])
+                    else:
+                        print(last_compute_node, " somthing's wrong")
 
-        except Exception as e: 
-            if sig_hdlr.run:
-                raise e
-                # stitcher_logger.error("Unexpected exception: {}".format(e))
-            else:
-                stitcher_logger.warning("SIGINT detected. Exception:{}".format(e))
+                
+                # stitcher_logger.info("fragment_queue is empty, exit.")
+                stitcher_logger.info("Flushing {} raw fragments --> {} stitched fragments".format(input_obj, output_obj),extra = None)
+                break
+            
+            except SIGINTException:
+                stitcher_logger.warning("SIGINT detected when trying to get from queue. Exit")
+                break
+
+            # check if the earliest of h is ready to be processed
+            while ready or (len(h)>0 and h[0][2]["last_timestamp"] < parameters["transition_last_timestamp_"+direction][node_idx-1]-TIME_WIN):
+                
+                _,fgmt_id, fgmt = heapq.heappop(h)        
+                m.add_node(fgmt)
+                
+                # Path augment
+                m.augment_path(fgmt_id)  
+                
+                # Pop path if a path is ready
+                all_paths = m.pop_path(time_thresh = fgmt["first_timestamp"] - TIME_WIN)  
+                
+                for path in all_paths:
+                       
+                    trajs = m.get_traj_dicts(path)
+                    m.clean_graph(path)
+                    # stitcher_logger.info("last timestamp: {:.2f}".format(trajs[0]["last_timestamp"]))
+            
+                    input_obj += len(path)
+                    output_obj += 1
+                    with lock:
+                        parameters["transition_last_timestamp_"+direction][node_idx] = trajs[0]["last_timestamp"]
+                    
+                    # determine where to put the result
+                    last_compute_node = max([traj["compute_node_id"] for traj in trajs])
+                    if int(last_compute_node[-1]) == node_idx+1:  
+                        print("put to curent queue")
+                        stitched_trajectory_queue.put(trajs[::-1])
+                    elif int(last_compute_node[-1]) == node_idx+2:
+                        # print("put to the next transition queue")
+                        next_queue.put(trajs[::-1])
+                    else:
+                        print(last_compute_node, " somthing's wrong")
+                
+                # heartbeat log
+                now = time.time()
+                if now - start > HB:
+                    stitcher_logger.info("MCF graph # nodes: {}, # edges: {}, deque: {}, cache: {}".format(m.G.number_of_nodes(), m.G.number_of_edges(), len(m.in_graph_deque), len(m.cache)),extra = None)
+                    # stitcher_logger.info("Elapsed add:{:.2f}, augment:{:.2f}, pop:{:.2f}, total:{:.2f}".format(cum_t1, cum_t2, cum_t3, now-start), extra=None)
+                    stitcher_logger.info("{} raw fragments --> {} stitched fragments".format(input_obj, output_obj),extra = None)
+                    begin = time.time()
+    
+            
+        except SIGINTException:  # SIGINT detected
+            stitcher_logger.warning("SIGINT detected. Exit")
             break
             
-        
+        except (ConnectionResetError, BrokenPipeError, EOFError) as e:   
+            stitcher_logger.warning("Connection error: {}".format(e))
+            break
+                 
     stitcher_logger.info("Exit stitcher")
+    sys.exit()
         
     return   
- 
+    
 
 if __name__ == '__main__':
 

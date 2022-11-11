@@ -40,7 +40,7 @@ def soft_stop_hdlr(sig, action):
     # signal.signal(signal.SIGPIPE,signal.SIG_DFL) # reset SIGPIPE so that no BrokePipeError when SIGINT is received
     
 
-def apprentice(dir, queue_list, sorted_queue, mp_param, name):
+def apprentice(dir, queue_list, sorted_queue, name):
     """
     :param queue_list: a list of queues to store stitched fragment lists
     :param sorted_queue: queue with fragments sorted on last_timestamp
@@ -49,20 +49,82 @@ def apprentice(dir, queue_list, sorted_queue, mp_param, name):
     3. pop from heap to sorted_queue
     It is right now a batch process-> store everything in memory
     """
+    logger = log_writer.logger 
+    logger.set_name(name)
+    logger.info("Process starts.")
+    
     h = []
     
     for q in queue_list:
         while not q.empty():
-            traj_docs = queue.get(block=False)
+            traj_docs = q.get(block=False)
             combined_trajectory = combine_fragments(traj_docs)
-            resampled_trajectory = resample(combined_trajectory)
-            heapq.heappush(h, (resampled_trajectory["last_timestamp"], resampled_trajectory))
+            resampled_trajectory = resample(combined_trajectory, dt=0.1, fillnan=True)
+            # print(sum(resampled_trajectory["x_position"]))
+            heapq.heappush(h, (resampled_trajectory["last_timestamp"],resampled_trajectory["_id"], resampled_trajectory)) # orderd by last_timestamp but it may not be unique
             
     # pop from queue -> sorted in last_timestamp
-    while h:
-        sorted_queue.put(heapq.heappop(h))
-        
+    logger.info("Heap size: {}".format(len(h)))
+    while len(h)>0:
+        _, _, traj = heapq.heappop(h)
+        sorted_queue.put(traj)
+    
+    logger.info("sorted queue size: {}".format(sorted_queue.qsize()))
     return
+
+
+def write_queues_2_db(db_param, parameters, all_queues, name=None):
+    """
+    write all documents from all queues immediately to a temporary database
+    each document is a list of stitched trajectories
+    """
+    writer_logger = log_writer.logger 
+    if not name:
+        name = "temp_writer"
+    writer_logger.set_name(name)
+    setattr(writer_logger, "_default_logger_extra",  {})
+    
+    dbc = DBClient(**db_param, database_name = parameters["temp_database"], collection_name = parameters["reconciled_collection"])
+    dbc.collection.create_index("compute_node_id")
+    dbc.collection.create_index("direction")
+    dbc.collection.create_index("last_timestamp")
+    dbc.collection.create_index("first_timestamp")
+    
+    TIMEOUT = parameters["write_temp_timeout"] 
+    HB = parameters["log_heartbeat"]
+    
+    # Exit the while loop if all queues are empty for TIMEOUT seconds
+    start = time.time()
+    begin = start
+    
+    while time.time() - start < TIMEOUT:
+        
+        for q in all_queues:
+            if not q.empty():
+                traj_docs = q.get(block=False)
+                combined_trajectory = combine_fragments(traj_docs)
+                doc = resample(combined_trajectory, dt=0.1, fillnan=True)
+                # convert arrays to list
+                for key in ["timestamp", "x_position", "y_position"]:
+                    doc[key] = list(doc[key])
+                for key in ["length", "width", "height"]:
+                    doc[key] = float(doc[key])
+                    
+                dbc.thread_insert(doc)
+                start = time.time()
+            
+            now = time.time()
+            if now - begin > HB :
+                writer_logger.info("Est. count in temp collection {}: {}".format(dbc.collection_name, dbc.collection.estimated_document_count()))
+                begin = now
+    
+    writer_logger.info("Temp Writer timed out. Est. count in temp collection {}: {}".format(dbc.collection_name, dbc.collection.estimated_document_count()))
+    return
+    
+                
+    
+    
+    
 
     
 def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconciled_queue) -> None:
@@ -76,7 +138,7 @@ def reconcile_single_trajectory(reconciliation_args, combined_trajectory, reconc
     rec_worker_logger.set_name("rec_worker")
     setattr(rec_worker_logger, "_default_logger_extra",  {})
 
-    resampled_trajectory = resample(combined_trajectory)
+    resampled_trajectory = resample(combined_trajectory, dt=0.04)
     if "post_flag" in resampled_trajectory:
         # skip reconciliation
         rec_worker_logger.info("+++ Flag as low conf, skip reconciliation", extra = None)
@@ -123,8 +185,8 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
     
     rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(multiprocessing.cpu_count()), extra = None)
     TIMEOUT = parameters["reconciliation_pool_timeout"]
-
-
+    
+    
     cntr = 0
     while True:
         try:
@@ -139,8 +201,8 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
             combined_trajectory = combine_fragments(traj_docs)    
             worker_pool.apply_async(reconcile_single_trajectory, (reconciliation_args, combined_trajectory, reconciled_queue, ))
             
-            if cntr % 100 == 0:
-                rec_parent_logger.info("reconciled_queue size: {}".format(reconciled_queue.qsize()))
+            # if time.time()-begin > HB:
+            #     rec_parent_logger.info("reconciled_queue size: {}".format(reconciled_queue.qsize()))
 
         except SIGINTException: # handle SIGINT here
             rec_parent_logger.warning("SIGINT detected. Terminate pool.")
@@ -187,7 +249,10 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
     dbw = DBClient(**db_param, database_name = parameters["reconciled_database"], 
                    collection_name = parameters["reconciled_collection"], schema_file=reconciled_schema_path)
     TIMEOUT = parameters["reconciliation_writer_timeout"]
-    cntr = 0
+    # cntr = 0
+    HB = parameters["log_heartbeat"]
+    begin = time.time()
+    
     # Write to db
     while True:
         try:
@@ -198,8 +263,9 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
                 break
         
             dbw.write_one_trajectory(thread = True, **reconciled_traj)
-            cntr += 1
-            if cntr % 100 == 0:
+            # cntr += 1
+            if time.time()-begin > HB:
+                begin = time.time()
                 reconciled_writer.info("Est. count in collection {}: {}".format(dbw.collection_name, dbw.collection.estimated_document_count()))
                 
         except SIGINTException: # handle SIGINT here 

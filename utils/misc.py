@@ -4,7 +4,6 @@ from sklearn import linear_model
 from scipy.stats import linregress
 
 
-
 def nan_helper(y):
     """Helper to handle indices and logical indices of NaNs.
 
@@ -227,6 +226,26 @@ def find_overlap_idx(x, y):
             
     return s1, e1, s2, e2
 
+
+# explicit function to flatten a
+# nested list
+def flattenList(nestedList):
+ 
+    # check if list is empty
+    if not(bool(nestedList)):
+        return nestedList
+ 
+     # to check instance of list is empty or not
+    if isinstance(nestedList[0], list):
+ 
+        # call function with sublist as argument
+        return flattenList(*nestedList[:1]) + flattenList(nestedList[1:])
+ 
+    # call function with sublist as argument
+    return nestedList[:1] + flattenList(nestedList[1:])
+ 
+ 
+ 
 
 class Node:
     '''

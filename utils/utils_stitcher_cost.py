@@ -95,8 +95,6 @@ def cost_3(track1, track2, TIME_WIN, VARX, VARY):
 
     # tdiff = meast - pt
     tdiff[tdiff<0] = 0 # cap non-negative
-
-    
     
     slope, intercept = fitx
     targetx = slope * meast + intercept
@@ -141,6 +139,7 @@ def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshol
     '''
     use bhattacharyya_distance
     vectorize bhattacharyya_distance
+    track t,x,y must not have nans!
     '''
 
     # filter1 = np.array(track1["filter"], dtype=bool) # convert fomr [1,0] to [True, False]
@@ -167,9 +166,12 @@ def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshol
     y1 = track1["y_position"]#[filter1]
     y2 = track2["y_position"]#[filter2]
 
-    n1 = min(len(t1), 30) # for track1
-    n2 = min(len(t2), 30) # for track2
+    n1 = min(len(t1), 10) # for track1
+    n2 = min(len(t2), 10) # for track2
 
+    # if TIME_WIN > 5:
+    #     print("here ", np.diff(t1), x1,y1)
+        
     # ONLY DEAL WITH NO-TIME-OVERLAPPED TRACKS!!!
     if len(t1) >= len(t2):
         # anchor = 1
@@ -205,6 +207,8 @@ def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshol
         measy = y1[-n1:]
         dir = -1 # use the fit of track2 to "predict" back in time
     
+    
+        
     # find where to start the cone
     try:
         tdiff = (meast - pt) * dir # tdiff should be positive
@@ -256,7 +260,11 @@ def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshol
     # print("id1: {}, id2: {}, cost:{:.2f}".format(str(track1['_id'])[-4:], str(track2['_id'])[-4:], nll+time_cost))
     # print("")
     
-    return nll + time_cost 
+    tot_cost = nll + time_cost 
+    # if TIME_WIN > 5:
+    #     print(tot_cost)
+        
+    return tot_cost
 
 
 
