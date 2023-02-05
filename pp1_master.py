@@ -1,5 +1,5 @@
 # -----------------------------
-__file__ = 'pp1_all_nodes.py'
+__file__ = 'pp1_master.py'
 __doc__ = """
 first pipeline: run postproc in trajectory-indexed documents, do not transform
 Parallelize on videonodes
@@ -84,7 +84,7 @@ def main(raw_collection = None, reconciled_collection = None):
     mp_param.update(parameters)
     
     # initialize some db collections
-    df.initialize(mp_param, db_param)
+    # df.initialize(mp_param, db_param)
     manager_logger.info("Post-processing manager initialized db collections. Creating shared data structures")
     
     # initialize queues and processes
@@ -194,88 +194,88 @@ def main(raw_collection = None, reconciled_collection = None):
    
     # add PID to PID_tracker
     pid_tracker = {} # mp_manager.dict()
-    for proc_name, proc_info in local_proc_map.items():
-        subsys_process = mp.Process(target=proc_info["command"], args=proc_info["args"], name=proc_name, daemon=False)
-        subsys_process.start()
-        pid_tracker[proc_name] = subsys_process.pid
-        local_proc_map[proc_name]["process"] = subsys_process # Process object cannot be pickled, thus local_proc_map cannot be a mp_manager.dict()
+    # for proc_name, proc_info in local_proc_map.items():
+    #     subsys_process = mp.Process(target=proc_info["command"], args=proc_info["args"], name=proc_name, daemon=False)
+    #     subsys_process.start()
+    #     pid_tracker[proc_name] = subsys_process.pid
+    #     local_proc_map[proc_name]["process"] = subsys_process # Process object cannot be pickled, thus local_proc_map cannot be a mp_manager.dict()
      
 
 #%% Run local processes until signals received  / all queues are empty
 # if SIGINT received: raise SIGINTException error, and break
 # if SIGUSR received: should still be in the while true loop try block. keep_alive flag will determine if a process should be kept alive      
     
-    start = time.time()
-    begin = time.time()
+    # start = time.time()
+    # begin = time.time()
     
-    while True:
-        try:
-            now = time.time()
+    # while True:
+    #     try:
+    #         now = time.time()
             
-            all_queue_empty = all([q.empty() for q_name, q in queue_map.items() if "stitch" not in q_name])
-            all_local_alive = [proc_info["process"].is_alive() for proc_name, proc_info in local_proc_map.items()]
+    #         all_queue_empty = all([q.empty() for q_name, q in queue_map.items() if "stitch" not in q_name])
+    #         all_local_alive = [proc_info["process"].is_alive() for proc_name, proc_info in local_proc_map.items()]
             
-            if now - begin > 20 and all_queue_empty and not any(all_local_alive): # all data are in stitched queues
-                print("***********************************************************************************")
-                manager_logger.info("Local processes are completed in {} sec. Proceed to master proceses.".format(now-begin))
-                print("***********************************************************************************")
-                break
+    #         if now - begin > 20 and all_queue_empty and not any(all_local_alive): # all data are in stitched queues
+    #             print("***********************************************************************************")
+    #             manager_logger.info("Local processes are completed in {} sec. Proceed to master proceses.".format(now-begin))
+    #             print("***********************************************************************************")
+    #             break
                 
                 
-            for proc_name, proc_info in local_proc_map.items():
+    #         for proc_name, proc_info in local_proc_map.items():
 
-                if not proc_info["process"].is_alive():
-                    pred_alive = [False] if not local_proc_map[proc_name]["predecessor"] else [local_proc_map[pred]["process"].is_alive() for pred in local_proc_map[proc_name]["predecessor"]]
-                    queue_empty = [True] if not local_proc_map[proc_name]["dependent_queue"] else [q.empty() for q in local_proc_map[proc_name]["dependent_queue"]]
+    #             if not proc_info["process"].is_alive():
+    #                 pred_alive = [False] if not local_proc_map[proc_name]["predecessor"] else [local_proc_map[pred]["process"].is_alive() for pred in local_proc_map[proc_name]["predecessor"]]
+    #                 queue_empty = [True] if not local_proc_map[proc_name]["dependent_queue"] else [q.empty() for q in local_proc_map[proc_name]["dependent_queue"]]
                     
-                    if not any(pred_alive) and all(queue_empty): # natural death
-                        proc_info["keep_alive"] = False
-                    else:
-                        # resurrect this process
-                        manager_logger.info(f" Resurrect {proc_name}")
-                        subsys_process = mp.Process(target=proc_info["command"], args=proc_info["args"], name=proc_name, daemon=False)
-                        subsys_process.start()
-                        pid_tracker[proc_name] = subsys_process.pid
-                        local_proc_map[proc_name]["process"] = subsys_process 
+    #                 if not any(pred_alive) and all(queue_empty): # natural death
+    #                     proc_info["keep_alive"] = False
+    #                 else:
+    #                     # resurrect this process
+    #                     manager_logger.info(f" Resurrect {proc_name}")
+    #                     subsys_process = mp.Process(target=proc_info["command"], args=proc_info["args"], name=proc_name, daemon=False)
+    #                     subsys_process.start()
+    #                     pid_tracker[proc_name] = subsys_process.pid
+    #                     local_proc_map[proc_name]["process"] = subsys_process 
                 
-            # Heartbeat queue sizes
-            now = time.time()
-            if now - start > 10:
-                for dir, q_list in raw_queues.items():
-                    manager_logger.info("RAW QUEUES {}: {}".format(dir, [q.qsize() for q in q_list]) )
-                for dir, q_list in merged_queues.items():
-                    manager_logger.info("MERGED QUEUES {}: {}".format(dir, [q.qsize() for q in q_list]) )
-                for dir, q_list in stitched_queues.items():
-                    manager_logger.info("STITCHED QUEUES {}: {}".format(dir, [q.qsize() for q in q_list]) )
-                # print([q.qsize() for _,q in queue_map.items()])
-                start = time.time()
+    #         # Heartbeat queue sizes
+    #         now = time.time()
+    #         if now - start > 10:
+    #             for dir, q_list in raw_queues.items():
+    #                 manager_logger.info("RAW QUEUES {}: {}".format(dir, [q.qsize() for q in q_list]) )
+    #             for dir, q_list in merged_queues.items():
+    #                 manager_logger.info("MERGED QUEUES {}: {}".format(dir, [q.qsize() for q in q_list]) )
+    #             for dir, q_list in stitched_queues.items():
+    #                 manager_logger.info("STITCHED QUEUES {}: {}".format(dir, [q.qsize() for q in q_list]) )
+    #             # print([q.qsize() for _,q in queue_map.items()])
+    #             start = time.time()
            
                 
-        except SIGINTException:
-            manager_logger.info("Postprocessing interrupted by SIGINT.")
+    #     except SIGINTException:
+    #         manager_logger.info("Postprocessing interrupted by SIGINT.")
             
-            for proc_name in local_proc_map:
-                try:
-                    # proc_info["keep_alive"] = False
-                    # print(proc_name, pid_tracker[proc_name])
-                    os.kill(pid_tracker[proc_name], signal.SIGKILL) # TODO: send SIGINT does not kill stitcher!!! why???
-                    manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_tracker[proc_name], proc_name))
-                    time.sleep(0.1)
-                except:
-                    pass
+    #         for proc_name in local_proc_map:
+    #             try:
+    #                 # proc_info["keep_alive"] = False
+    #                 # print(proc_name, pid_tracker[proc_name])
+    #                 os.kill(pid_tracker[proc_name], signal.SIGKILL) # TODO: send SIGINT does not kill stitcher!!! why???
+    #                 manager_logger.info("Sent SIGKILL to PID={} ({})".format(pid_tracker[proc_name], proc_name))
+    #                 time.sleep(0.1)
+    #             except:
+    #                 pass
                 
-            # THIS BLOCK q.qsize has EOF error
-            for q_name, q in queue_map.items():
-                if not q.empty():
-                    manager_logger.info("Queue size after process {}: {}".format(q_name, q.qsize()))   
-            break # break the while true loop
+    #         # THIS BLOCK q.qsize has EOF error
+    #         for q_name, q in queue_map.items():
+    #             if not q.empty():
+    #                 manager_logger.info("Queue size after process {}: {}".format(q_name, q.qsize()))   
+    #         break # break the while true loop
             
 
         
     #%% Master loop
     
     # add PID to PID_tracker
-    time.sleep(3)
+    # time.sleep(3)
     mp_param["time_win"] = mp_param["master_time_win"]
     mp_param["stitch_thresh"] = mp_param["master_stitch_thresh"]
     mp_param["stitcher_mode"] = "master" # switch from local to master
@@ -292,6 +292,10 @@ def main(raw_collection = None, reconciled_collection = None):
     while True:
         try:
             now = time.time()
+            if now - begin > 14400 and all([q.empty() for _,q in master_queues_map.items()]): # 4hr
+                manager_logger.info("Master processes break because of inactivity")
+                break
+            
             if now - begin > 20 and all([q.empty() for _,q in master_queues_map.items()]) and not any([master_proc_map[proc]["process"].is_alive() for proc in master_proc_map]):
                 manager_logger.info("Master processes complete in {} sec.".format(now-begin))
                 break
@@ -340,7 +344,7 @@ def main(raw_collection = None, reconciled_collection = None):
             
 
     
-    manager_logger.info("Postprocessing Mischief Managed.")
+    manager_logger.info("MASTER Postprocessing Mischief Managed.")
     
     #%% start transform on postproc data
     if parameters["transform_postproc"]:

@@ -43,16 +43,14 @@ def initialize(parameters, db_param):
     2. create a new stitched collection
     3. create a new reconciled collection
     '''
-    # make a list based on num_video_nodes
-    parameters["transition_last_timestamp_eb"] = [-1] * (parameters["num_video_nodes"]-1)
-    parameters["transition_last_timestamp_wb"] = [-1] * (parameters["num_video_nodes"]-1)
-    # print("inside: ", parameters["transition_last_timestamp_eb"], parameters["transition_last_timestamp_eb"])
     
     # get the latest collection if raw_collection is empty
     dbc = DBClient(**db_param, database_name = parameters["raw_database"], 
                           collection_name = parameters["raw_collection"], latest_collection=True)
     parameters["raw_collection"] = dbc.collection_name # raw_collection should NOT be empty
       
+    # get all the unique values for compute_node_id field
+    
     dbc.collection.create_index("compute_node_id")
     rec_db = dbc.client[parameters["reconciled_database"]]
     existing_cols = rec_db.list_collection_names()
@@ -72,6 +70,7 @@ def initialize(parameters, db_param):
     else:
         reconciled_name = parameters["reconciled_collection"]
         print("reconciled_collection name is already provided: ", parameters["reconciled_collection"])
+    
     # save metadata
     dbc.client[parameters["meta_database"]]["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters._getvalue()},
                                   bypass_document_validation=True)

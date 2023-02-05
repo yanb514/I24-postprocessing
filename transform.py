@@ -16,8 +16,7 @@ def main(database_name="", collection_name=""):
         db_param = json.load(f)
         
     # TRANSFORM
-    dbc = DBClient(**db_param, database_name = database_name)
-    dbc.client["transformed_beta"][collection_name].drop()
+    dbc = DBClient(**db_param, database_name = database_name, collection_name = collection_name)
     dbc.transform2(read_collection_name = collection_name, chunk_size=50)
     del dbc
 

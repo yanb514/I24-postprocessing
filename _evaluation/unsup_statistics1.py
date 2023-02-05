@@ -8,6 +8,7 @@ Created on Mon Oct 31 21:45:29 2022
 2. update conflicts information to database
 3. _calc_feasibility for each trajectory
 4. aggreagate results and update feasibility to each trajectory
+5. save result to local as .pkl file
 """
 
 from i24_database_api import DBClient
@@ -21,6 +22,8 @@ from multiprocessing.pool import ThreadPool
 import time
 from pymongo import UpdateOne
 import os
+import _pickle as pickle
+from datetime import datetime
 
 
 # =================== CALCULATE PER TRAJECOTRY ====================      
@@ -99,7 +102,7 @@ def _calc_update_feasibility(traj, start_time=None, end_time=None, xmin=None, xm
         time_conflict = 0
     conflict = 1-time_conflict/duration
     
-    feasibility = [dist, backward, rotation, acceleration, conflict]
+    # feasibility = [dist, backward, rotation, acceleration, conflict]
     dist_tol = dist if dist < 0.8 else 1
     feasibility_tolerated  = np.array([dist_tol, backward, rotation, acceleration, conflict])
     
@@ -141,10 +144,6 @@ def _calc_update_feasibility(traj, start_time=None, end_time=None, xmin=None, xm
 
     return attr_vals
     
-    # return duration, x_dist, backward_id, avg_vx, avg_ax, vx, ax, theta, feasibility, residual, all_feasible_id, any_infeasible_id, score, query, update
-    
-
-    
 
     
 # =================== TIME-INDEXED CALCULATIONS ==================== 
@@ -174,7 +173,7 @@ def calc_space_gap(pts1, pts2):
 
 class UnsupervisedEvaluator():
     
-    def __init__(self, config, collection_name=None, num_threads=100):
+    def __init__(self, config, database_name, collection_name=None, num_threads=100):
         '''
         Parameters
         ----------
@@ -184,6 +183,7 @@ class UnsupervisedEvaluator():
             Collection name.
         '''
         # print(config)
+        self.database_name = database_name
         self.collection_name = collection_name
         
         client = DBClient(**config)
@@ -194,25 +194,22 @@ class UnsupervisedEvaluator():
         # this will create a new collection in the "transformed" database with the same collection name as in "trajectory" database
         if collection_name not in db_time.list_collection_names(): # always overwrite
             print("Transform to time-indexed collection first")
-            client.transform2(read_database_name=config["database_name"], 
+            client.transform2(read_database_name=database_name, 
                       read_collection_name=collection_name)
-           
-        # print("N collections after transformation: {} {} {}".format(len(db_raw.list_collection_names()),len(db_rec.list_collection_names()),len(db_time.list_collection_names())))
-        
+
         # print(config,collection_name)
-        self.dbr_v = DBClient(**config, collection_name = collection_name)
-        self.dbr_t = DBClient(host=config["host"], port=config["port"], username=config["username"], password=config["password"],
-                              database_name = "transformed_beta", collection_name = collection_name)
+        self.dbr_v = DBClient(**config, database_name = database_name, collection_name = collection_name)
+        self.dbr_t = DBClient(**config, database_name = "transformed_beta", collection_name = collection_name)
         print("connected to pymongo client")
         self.res = defaultdict(dict) # min, max, avg, stdev
         self.num_threads = num_threads
         
+        self.res["database"] = self.database_name
         self.res["collection"] = self.collection_name
         self.res["traj_count"] = self.dbr_v.est_count()
         self.res["timestamp_count"] = self.dbr_t.est_count()
-        
-        
-            
+    
+    
        
     def __del__(self):
         try:
@@ -221,28 +218,36 @@ class UnsupervisedEvaluator():
         except:
             pass
         
-    def thread_pool(self, func, iterable = None, kwargs=None):
+    def thread_pool(self, func, iterable = None, total=-1, kwargs=None):
+        
         if iterable is None:
             iterable = self.dbr_v.collection.find({})
         
+        count = 0
+        def progress(results):
+            if count % 100 == 0:
+                print("\r", f"..progress..: {count} / {total}", 
+                      end="", flush=True)
+    
         pool = ThreadPool(processes=self.num_threads)
         res = []
         if kwargs is not None:
             for item in iterable:
-                async_result = pool.apply_async(func, (item, ), kwargs) # tuple of args for foo
-                res.append(async_result) 
+                async_result = pool.apply_async(func, (item, ), kwargs, callback=progress) # tuple of args for foo
+                res.append(async_result)
+                count += 1
         else:
             for item in iterable:
-                async_result = pool.apply_async(func, (item, )) # tuple of args for foo
+                async_result = pool.apply_async(func, (item, ), callback=progress) # tuple of args for foo
                 res.append(async_result) 
+                count += 1
             
         pool.close()
         pool.join()
         res = [r.get() for r in res] # non-blocking
         return res
     
-    
-    def traj_evaluate(self):
+    def traj_evaluate(self, sample_rate=1):
         '''
         Results aggregated by evaluating each trajectories
         '''
@@ -252,11 +257,13 @@ class UnsupervisedEvaluator():
                                        } })
         
         # distributions - all the functions that return a single value
-        # TODO: put all functions in a separate script
+        
         print("Evaluating trajectories...")
-        traj_cursor = self.dbr_v.collection.find({})#.limit(10)
+        # traj_cursor = self.dbr_v.collection.find({})#.limit(10)
+        traj_cursor = self.dbr_v.collection.aggregate([{ "$match": {"$sampleRate": sample_rate } }])
         start_time = self.dbr_v.get_min("first_timestamp")
         end_time = self.dbr_v.get_max("last_timestamp")
+        # TODO: get the range of the testbed
         x_min = self.dbr_v.get_min("starting_x")
         x_max = self.dbr_v.get_max("ending_x")
         print("x_min: ", x_min, "x_max: ", x_max)
@@ -266,7 +273,7 @@ class UnsupervisedEvaluator():
                   "xmin": x_min,
                   "xmax": x_max}
 
-        res = self.thread_pool(_calc_update_feasibility, iterable=traj_cursor, kwargs=kwargs) # cursor cannot be reused
+        res = self.thread_pool(_calc_update_feasibility, iterable=traj_cursor, total=self.res["traj_count"], kwargs=kwargs) # cursor cannot be reused
         single_attrs = [ "avg_vx", "avg_ax",  "duration", "x_traveled", "residual" , "feasibility_score", 
                             "backward_score",
                             "distance_score",
@@ -294,8 +301,7 @@ class UnsupervisedEvaluator():
             for attr_name in ids_attrs:
                 if attr_vals[attr_name]:
                     self.res[attr_name].append(attr_vals[attr_name])
-
-            
+   
             bulk_update.append(attr_vals["update_cmd"])
             
         for attr_name in single_attrs+series_attrs:
@@ -306,14 +312,14 @@ class UnsupervisedEvaluator():
             self.res[attr_name]["stdev"] = np.nanstd(self.res[attr_name]["raw"]).item()
         
         # write feasibility to collection
-        print("writing feasibility to collection")
+        print("\nWriting feasibility to collection")
         self.dbr_v.collection.bulk_write(bulk_update, ordered=False)
         return 
         
     
     
    
-    def time_evaluate2(self, step=1):
+    def time_evaluate2(self, sample_rate):
         '''
         Evaluate using time-indexed collection from transformed_beta database
         step: (int) select every [step] timestamps to evaluate
@@ -396,26 +402,29 @@ class UnsupervisedEvaluator():
         functions = [_get_overlaps]
         # functions = [_get_min_spacing]
         for fcn in functions:
-            time_cursor = self.dbr_t.collection.find({})
+            time_cursor = self.dbr_t.collection.aggregate([{ "$match": {"$sampleRate": sample_rate } }])
             attr_name = fcn.__name__[5:]
             print(f"Evaluating {attr_name}...")
             if "overlap" in attr_name:
                 overlaps = defaultdict(int) # key: (conflict pair), val: num of timestamps
                 count = 0
                 for time_doc in time_cursor:
-                    if count % step == 0:
-                        overlap_t = _get_overlaps(time_doc)
-                        for pair in overlap_t:
-                            # overlaps.add(pair)
-                            overlaps[pair]+=1
+                    overlap_t = _get_overlaps(time_doc)
+                    for pair in overlap_t:
+                        # overlaps.add(pair)
+                        overlaps[pair]+=1
                     count += 1
+                    if count % 100 == 0:
+                        print("\r", f"..progress..: {count}/{self.res['timestamp_count']} timestamps", 
+                              end="")
+                        # sys.stdout.write("\033[K")
                 for pair, occurances in overlaps.items():
-                    overlaps[pair] = occurances * step /25 # convert to cumulative seconds
+                    overlaps[pair] = occurances / sample_rate /25 # convert to cumulative seconds
                 # pprint.pprint(overlaps, width = 1)
                 self.res[attr_name] = overlaps
                     
             else:
-                res = self.thread_pool(fcn, iterable=time_cursor) 
+                res = self.thread_pool(fcn, iterable=time_cursor, total=self.res["timestamp_count"]) 
                 self.res[attr_name]["min"] = np.nanmin(res).item()
                 self.res[attr_name]["max"] = np.nanmax(res).item()
                 self.res[attr_name]["median"] = np.nanmedian(res).item()
@@ -441,7 +450,7 @@ class UnsupervisedEvaluator():
             update_cmd= UpdateOne(filter=query, update=update, upsert=True)
             bulk_update.append(update_cmd)
             
-        print("writing conflicts to collection")
+        print("\n Writing conflicts to collection")
         self.dbr_v.collection.bulk_write(bulk_update, ordered=False)
         
         return
@@ -450,8 +459,24 @@ class UnsupervisedEvaluator():
     
     def print_res(self):
         pprint.pprint(self.res, width = 1)
-    
-    
+        
+    def write_evaluation(self):
+        """
+        write self.res to database [evaluation], collection [unsupervised]
+        """
+        eval_db_name = "evaluation"
+        # res = convert_2_dict_mongodb(self.res)
+        
+        # res = json.dumps(res,cls=CustomEncoder)
+        res = json.dumps(self.res, cls=NumpyArrayEncoder) 
+        eval_col = self.dbr_v.client[eval_db_name]["unsupervised"]
+        eval_col.insert_one(res)
+        
+        return
+ 
+
+
+
     
 def plot_histogram(data, title="", ):
     bins = min(int(len(data)/10), 300)
@@ -461,24 +486,50 @@ def plot_histogram(data, title="", ):
     plt.show()
     
     
-def call(db_param,collection,step=5): 
+
+def main():
+    with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
+        db_param = json.load(f)   
+    with open("evaluation_config.json") as f:
+        eval_param = json.load(f)   
     
-    ue = UnsupervisedEvaluator(db_param, collection_name=collection, num_threads=200)
-    # t1 = time.time()
-    # ue.time_evaluate2(step=step)
-    # t2 = time.time()
-    # print("Time-evaluate takes: ", t2-t1)
+    # check if eval result already exists
+    if "MacBook" in os.uname()[1]:
+        dir = eval_param["local_directory"]
+    else:
+        dir = eval_param["cluster_directory"]
+    
+    file_path = os.path.join(dir, f'{eval_param["database"]}_{eval_param["collection"]}.pkl')
+    if os.path.exists(file_path):
+        ans = input(f"Result already exists in /{dir}. Rewrite? [Y/N]")
+        if ans not in ["y", "Y"]:
+            return
+    
+    print(f"Evaluating {eval_param['collection']}...")
+    ue = UnsupervisedEvaluator(db_param, 
+                               database_name=eval_param["database"], 
+                               collection_name=eval_param["collection"], 
+                               num_threads=200)
     
     t1 = time.time()
-    ue.traj_evaluate()
+    ue.time_evaluate2(sample_rate=eval_param["time_sr"])
+    t2 = time.time()
+    print("Time-evaluate takes: ", t2-t1)
+    
+    t1 = time.time()
+    ue.traj_evaluate(sample_rate=eval_param["traj_sr"])
     t2 = time.time()
     print("Traj-evaluate takes: ", t2-t1)
     
-    #ue.print_res()
-    #ue.save_res()
+    # save
+    # now = datetime.now()
+    # now = now.strftime("%Y-%m-%d_%H-%M-%S")
+    # f_name = now+"_"+self.collection_name
     
-    return ue.res
+    with open(f'{dir}/{ue.database_name}_{ue.collection_name}.pkl', 'wb') as handle:
+        pickle.dump(ue.res, handle)
     
+    # ue.write_evaluation()
 
 def conflict_graph(collection):
     '''
@@ -578,31 +629,6 @@ def conflict_graph(collection):
     
     
 if __name__ == '__main__':
+    main()
 
-    database_name = "trajectories"
-    collection = "635997ddc8d071a13a9e5293"
-    # collection = "634ef772f8f31a6d48eab58e"
-    
-    with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
-        db_param = json.load(f)
-    db_param["database_name"] = database_name    
-
-    res = call(db_param, collection, step=5) # based on 25hz data, step=5 means downsample to 5hz
-    
-    # ue = UnsupervisedEvaluator(db_param, collection_name=collection, num_threads=200)
-    # ue.time_evaluate(step = 1)
-    # ue.traj_evaluate()
-    
-    # print("all_feasible: ", len(res["all_feasible"]))
-    # print("any_infeasible: ", len(res["any_infeasible"]))
-        
-    # %% plot 
-    # plot_histogram(ue.res["feasibility_score"]["raw"], "conflict_score")
-    # plot_histogram(ue.res["distance_score"]["raw"], "distance_score")
-    
-    # dbc = DBClient(**db_param, collection_name=collection)
-    # conflict_graph(dbc.collection)
-    
-    
-    
     

@@ -9,5 +9,7 @@
 *.mp4
 *.sh
 *.sh.swp
+data/
+
 venv
 __pycache__

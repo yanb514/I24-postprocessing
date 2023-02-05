@@ -1,0 +1,8 @@
+{
+     "local_directory":"data",
+     "cluster_directory":"/remote/home/wangy79/eval_res",
+     "database": "trajectories",
+     "collection": "636de38d1ab11803c9d732f3",
+     "time_sr": 1,
+     "traj_sr": 1
+ }

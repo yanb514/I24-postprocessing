@@ -6,14 +6,14 @@ Created on Fri Oct 28 14:44:19 2022
 @author: yanbing_wang
 """
 import sys
-import pp1
+import pp1_all_nodes
 
 
 
 
 def __process_entry__(trackID='', postID=''):
     
-    pp1.main(raw_collection = trackID, reconciled_collection = postID)
+    pp1_all_nodes.main(raw_collection = trackID, reconciled_collection = postID)
     
     return
 

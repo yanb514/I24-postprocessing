@@ -72,7 +72,7 @@ class MOTGraphSingle:
         self.residual_threshold_y = parameters["residual_threshold_y"]
         self.stitch_cost_thresh = parameters["stitch_thresh"]
         self.stitcher_mode = parameters["stitcher_mode"]
-        # print("stitch_cost_thresh: ", self.stitch_cost_thresh)
+        self.compute_node_pos_map = {key:val for val,key in enumerate(parameters["compute_node_list"])}
         self.cache = {}
           
     @catch_critical(errors = (Exception))
@@ -92,15 +92,15 @@ class MOTGraphSingle:
         self.cache[new_id] = fragment
 
         nc = len(self.in_graph_deque)
-        node_id = fragment["compute_node_id"][-1]
+        node_id = fragment["compute_node_id"]
         
         for i in range(nc):
             fgmt = self.in_graph_deque[nc-1-i]
-            fgmt_node_id = fgmt["compute_node_id"][-1]
+            fgmt_node_id = fgmt["compute_node_id"]
             
             if self.stitcher_mode == "local" and fgmt_node_id == node_id:
                 cost = stitch_cost(fgmt, fragment, self.TIME_WIN, self.residual_threshold_x, self.residual_threshold_y)
-            elif self.stitcher_mode == "master" and abs(int(fgmt_node_id)-int(node_id)) == 1:
+            elif self.stitcher_mode == "master" and abs(self.compute_node_pos_map[node_id]-self.compute_node_pos_map[fgmt_node_id]) == 1:
                 cost = stitch_cost(fgmt, fragment, self.TIME_WIN, self.residual_threshold_x, self.residual_threshold_y)
             else:
                 cost = 1e5

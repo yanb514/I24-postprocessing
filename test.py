@@ -6,45 +6,46 @@ Created on Thu Aug 18 11:38:44 2022
 @author: yanbing_wang
 """
 from i24_database_api import DBClient
-import os
-import json
-import time
-import numpy as np
-
+from bson.objectid import ObjectId
+import matplotlib.pyplot as plt
 
 
 if __name__ == '__main__':
-    with open(os.environ["USER_CONFIG_DIRECTORY"]+"/db_param.json") as f:
-        db_param = json.load(f)
-        
+    
+    db_param= {
+        "host": "10.80.4.91",
+        "port": 27017,
+        "username": "readonly",
+        "password": "mongodb@i24",
+    }    
+    
+    #%% get id of long trajectories
+    
+    # dbc = DBClient(**db_param, database_name="reconciled", collection_name = "6371a86bf0cfb3de3928f51a__firstcronjob")
+    # # 637d8ea678f0cb97981425dd__post3
+    # # 6371a86bf0cfb3de3928f51a__firstcronjob
+    # # 637b023440527bf2daa5932f__post1
+    
+    # duration = 0 # min
+    # duration_ts = duration * 60 # sec
+    # x_range = 0.7 # mile
+    # x_range_ft = x_range * 5280 # ft
+    
+    # # select long-range trajectories
+    # cursor = dbc.collection.find({})
+    # for traj in cursor:
+    #     t_span = traj["timestamp"][-1]-traj["timestamp"][0]
+    #     x_span = abs(traj["x_position"][-1]-traj["x_position"][0])
+    #     if (t_span>duration_ts) and (x_span>x_range_ft):
+    #         print(traj["_id"], round(t_span,1), round(x_span,1))
+            
+    #%% plot trajectories
+    dbc = DBClient(**db_param, database_name="trajectories", collection_name="6380728cdd50d54aa5af0cf5")
+    # traj = dbc.collection.find_one({"_id": ObjectId("63732b74e1fa5a45ae0c2fdd")})
+    
+    # fig = plt.figure()
+    # ax = fig.add_subplot(projection='3d')
+    # ax.scatter(traj["x_position"], traj["y_position"], traj["timestamp"], marker="o")
     
     
-    # dbc.transform()
-    
-    #%% BASIC INFO
-    # collection_name = "6362b1057c61e6427c5ad504__testallnodes"
-    # print("collection name: ", collection_name)
-    # dbr = DBClient(**db_param, database_name = "reconciled", collection_name = collection_name)
-    # print("number of traj: ", dbr.count())
-
-    # # print("min ID: ", dbr.get_min("ID"))
-    # # print("max ID: ", dbr.get_max("ID"))
-
-    # print("min start time: ", dbr.get_min("first_timestamp"))
-    # print("max start time: ", dbr.get_max("first_timestamp"))
-
-    # print("min end time: ", dbr.get_min("last_timestamp"))
-    # print("max end time: ", dbr.get_max("last_timestamp"))
-
-    # print("min start x: ", dbr.get_min("starting_x"))
-    # print("max start x: ", dbr.get_max("starting_x"))
-
-    # print("min ending x: ", dbr.get_min("ending_x"))
-    # print("max ending x: ", dbr.get_max("ending_x"))
-    
-    
-    #%% TRANSFORM
-    dbc = DBClient(**db_param, database_name = "reconciled")
-    dbc.transform2(read_collection_name = "636332547c61e6427c5ad508_short__testallnodes2", chunk_size=50)
-    del dbc
     

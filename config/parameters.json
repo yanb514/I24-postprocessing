@@ -1,14 +1,17 @@
 {
     "description": "try new pp1 with signal handling",
-    "num_video_nodes": 9,
     "raw_database": "trajectories",
     "reconciled_database": "reconciled",
     "temp_database": "temp",
     "transformed_database": "transformed_beta",
 	"meta_database": "meta",
 	
-    "raw_collection": "63643fafd11ece4cb356b2ed",
-	"reconciled_collection": "63643fafd11ece4cb356b2ed__testallnodes4",
+	"transform_postproc": 1,
+    "raw_collection": "637c399add50d54aa5af0cf4",
+	"reconciled_collection": "637c399add50d54aa5af0cf4__post2",
+	
+	"compute_node_list":["videonode1", "videonode2", "videonode3", "videonode4","videonode5",
+                        	"videonode6", "videonode7", "videonode8", "videonode9","devvideo1"],
 	
 	"log_heartbeat": 10,
 	"merger_timeout": 5,
@@ -44,6 +47,7 @@
     "residual_threshold_y": 1,
     "conf_threshold": 0.5,
     "remain_threshold": 5,
+    "worker_size": 64,
 
     "reconciliation_args":{
         "lam2_x": 0,

@@ -166,7 +166,8 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
     """
     # Signal handling: https://stackoverflow.com/questions/11312525/catch-ctrlc-sigint-and-exit-multiprocesses-gracefully-in-python/35134329#35134329
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    worker_pool = Pool(processes=multiprocessing.cpu_count())
+    n_proc = min(multiprocessing.cpu_count(), parameters["worker_size"])
+    worker_pool = Pool(processes= n_proc)
     # signal.signal(signal.SIGINT, original_sigint_handler)
     signal.signal(signal.SIGINT, soft_stop_hdlr)
     
@@ -183,9 +184,8 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
     while parameters["raw_collection"]=="":
         time.sleep(1)
     
-    rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(multiprocessing.cpu_count()), extra = None)
+    rec_parent_logger.info("** Reconciliation pool starts. Pool size: {}".format(n_proc), extra = None)
     TIMEOUT = parameters["reconciliation_pool_timeout"]
-    
     
     cntr = 0
     while True:
@@ -227,7 +227,6 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
 def write_reconciled_to_db(parameters, db_param, reconciled_queue):
     
     signal.signal(signal.SIGINT, soft_stop_hdlr)
-    
     reconciled_writer = log_writer.logger
     reconciled_writer.set_name("reconciliation_writer")
     

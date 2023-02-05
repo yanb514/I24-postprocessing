@@ -104,7 +104,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     else:
         stitcher_logger.set_name("stitcher_"+direction)
     stitcher_logger.info("** min_cost_flow_online_alt_path starts", extra = None)
-    setattr(stitcher_logger, "_default_logger_extra",  {})
+    # setattr(stitcher_logger, "_default_logger_extra",  {})
 
     # Get parameters
     ATTR_NAME = parameters["fragment_attr_name"]
@@ -121,7 +121,6 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     GET_TIMEOUT = parameters["stitcher_timeout"]
     HB = parameters["log_heartbeat"]
     begin = time.time()
-    start = begin
     input_obj = 0
     output_obj = 0
     

@@ -100,33 +100,33 @@ def merge_resample(traj, conf_threshold):
 import warnings
 warnings.filterwarnings('error')
         
-@catch_critical(errors = (Exception))
+# @catch_critical(errors = (Exception))
 def merge_cost(track1, track2):
     '''
     track1 and 2 have to be resmplaed first
-    only deals with two tracks that have time overlap (in the general case by separation of axis)
+    only deals with two tracks that have time AND space(x) overlap (in the general case by separation of axis)
     speeded up bhartt cost
     '''
     t1 = track1["timestamp"]#[filter1]
     t2 = track2["timestamp"]#[filter2]
-    
-    # tt1 = time.time()
-    if t2[0]>=t1[-1] or t2[-1]<=t1[0]: # separation of axis
-        # if no time overlap, don't merge -> stitcher's job
-        return 1e6
-    
-    s1, e1, s2, e2 = find_overlap_idx(t1, t2)
     x1,x2,y1,y2 = track1["x_position"], track2["x_position"], track1["y_position"], track2["y_position"]
+    
+    # Only proceed if both time and space have overlaps
+    sx1, ex1 = min(x1[0], x1[-1]), max(x1[0], x1[-1])
+    sx2, ex2 = min(x2[0], x2[-1]), max(x2[0], x2[-1])
+    
+    if t1[-1]<=t2[0] or t2[-1]<=t1[0] or sx1>ex2 or sx2>ex1: # if no time&space overlap, don't merge -> stitcher's job
+    # if t2[0]>=t1[-1] or t2[-1]<=t1[0]: # separation of axis
+        return 1e6
+
+    s1, e1, s2, e2 = find_overlap_idx(t1, t2)
+    
     
     # check if the overalpped position deviates too much
     # try:
     if np.nanmean(np.abs(x1[s1:e1] - x2[s2:e2])) > 30 or np.nanmean(np.abs(y1[s1:e1] - y2[s2:e2])) > 6:
         return 1e6
-    # except:
-    #     print(track1["_id"], track2["_id"])
-    #     print(s1, e1,s2,e2)
-    #     print("t1", [t-1.628083e9 for t in t1])
-    #     print("t2", [t-1.628083e9 for t in t2])
+
         
     # tt2 = time.time()
     
@@ -315,7 +315,7 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
     
     DIST_THRESH = parameters["merge_thresh"] # bhattar distance distance threshold
     TIMEWIN = parameters["time_win"]
-    # merge_logger.info("** time_win: {}".format(TIMEWIN), extra = None)
+
     CONF_THRESH = parameters["conf_threshold"]
     TIMEOUT = parameters["merger_timeout"]
     
@@ -334,6 +334,7 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
     input_obj = 0
     output_obj = 0
     low_conf_cnt = 0
+    # local = True if "master" not in name else False
     
     while True:
         try:
@@ -343,9 +344,8 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
             except queue.Empty:
                 merge_logger.warning("merger timed out after {} sec.".format(TIMEOUT))
                 comps = nx.connected_components(G)
+                
                 for comp in comps:
-                    # if len(comp) > 1:
-                    #     merge_logger.debug("Merged {}".format(comp))
                     input_obj += len(comp)
                     output_obj += 1
                     unmerged = [ G.nodes[v]["data"] for v in list(comp)]
@@ -384,10 +384,6 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
                 # print(str(node_id)[-4:], str(curr_id)[-4:], dist)
                 if dist <= DIST_THRESH:
                     G.add_edge(node_id, curr_id, weight = dist)
-                    # lru[node_id] = curr_time # TODO: reset to the larger last-tiemstamp of the two
-                    # lru.move_to_end(node_id, last=True) # move node_id to last of lru
-                    # larger = max([G.nodes[node_id]["data"]["last_timestamp"], G.nodes[curr_id]["data"]["last_timetsamp"]])
-                    # sdll.update(key=fragment["_id"], attr_val=larger)
                     sdll.update(key=curr_id, attr_val=curr_time)
                     sdll.update(key=node_id, attr_val=curr_time)
                     
