@@ -15,6 +15,52 @@ import json
 import os
 from collections import OrderedDict
 import random
+import pandas as pd
+
+def resample(car, dt=0.04, fillnan=False):
+    # resample timestamps to 30hz, leave nans for missing data
+    '''
+    resample the original time-series to uniformly sampled time series in 1/dt Hz
+    car: document
+    leave empty slop as nan
+    '''
+
+    # Select time series only
+    time_series_field = ["timestamp", "x_position", "y_position"]
+    data = {key: car[key] for key in time_series_field}
+    
+    # Read to dataframe and resample
+    df = pd.DataFrame(data, columns=data.keys()) 
+    index = pd.to_timedelta(df["timestamp"], unit='s')
+    df = df.set_index(index)
+    df = df.drop(columns = "timestamp")
+    
+    freq = str(dt)+"S"
+    df = df.resample(freq).mean() # leave nans
+    if fillnan:
+        df = df.interpolate(method='linear')
+    df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
+
+    # resample to 25hz
+    # df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq()
+    # df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
+    # df = df.interpolate(method='linear')
+    # df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq() # resample to 25Hz snaps to the closest integer
+    
+    # do not extrapolate for more than 1 sec
+    first_valid_time = pd.Series.first_valid_index(df['x_position'])
+    last_valid_time = pd.Series.last_valid_index(df['x_position'])
+    first_time = max(min(car['timestamp']), first_valid_time-1)
+    last_time = min(max(car['timestamp']), last_valid_time+1)
+    df=df[first_time:last_time]
+    
+    car['x_position'] = df['x_position'].values
+    car['y_position'] = df['y_position'].values
+    car['timestamp'] = df.index.values
+        
+    return car
+
+
 
 
 def write_csv_to_db(db_param, write_db, write_col, GTFilePath):
@@ -84,6 +130,7 @@ def write_csv_to_db(db_param, write_db, write_col, GTFilePath):
                     
                 while lru[next(iter(lru))]["timestamp"][-1] < curr_time - idle_time:
                     ID, traj = lru.popitem(last=False) #FIFO
+                    traj = resample(traj)
                     traj['first_timestamp']=traj['timestamp'][0]
                     traj['last_timestamp']=traj['timestamp'][-1]
                     traj['starting_x']=traj['x_position'][0]
@@ -172,7 +219,7 @@ if __name__ == "__main__":
     # df = pd.read_csv(GTFilePath, nrows=100)
 
     write_csv_to_db(db_param, "transmodeler", "raw_23_34", GTFilePath)
-    
+    # 
     
     
     

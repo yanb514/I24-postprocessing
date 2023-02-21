@@ -99,7 +99,7 @@ def combine_fragments(all_fragment):
 def resample(car, dt=0.04, fillnan=False):
     # resample timestamps to 30hz, leave nans for missing data
     '''
-    resample the original time-series to uniformly sampled time series in 30Hz
+    resample the original time-series to uniformly sampled time series in 1/dt Hz
     car: document
     leave empty slop as nan
     '''

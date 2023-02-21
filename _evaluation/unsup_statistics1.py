@@ -76,18 +76,18 @@ def _calc_update_feasibility(traj, start_time=None, end_time=None, xmin=None, xm
     
     # scores
     # -- x distance traveled (with forgiveness on boundaries)
-    end = end_time if traj["last_timestamp"] >= end_time-buffer else traj["last_timestamp"]  
-    if traj['direction'] == 1:
-        start = xmin if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
-        end = xmax if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
-    else:
-        # xmax, xmin = xmin, xmax
-        start = xmax if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
-        end = xmin if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
+    # end = end_time if traj["last_timestamp"] >= end_time-buffer else traj["last_timestamp"]  
+    # if traj['direction'] == 1:
+    #     start = xmin if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
+    #     end = xmax if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
+    # else:
+    #     # xmax, xmin = xmin, xmax
+    #     start = xmax if traj["first_timestamp"] <= start_time + buffer else traj["starting_x"]
+    #     end = xmin if traj["last_timestamp"] >= end_time - buffer else traj["ending_x"]
         
     # # x distance traveled (no forgiveness)
-    # start = traj["starting_x"]
-    # end = traj["ending_x"]
+    start = traj["starting_x"]
+    end = traj["ending_x"]
     dist = min(1, abs(end-start)/(xmax-xmin))
     # backward occurances
     backward = 1-np.sum(np.array(dx) < 0)/len(dx)
@@ -131,7 +131,7 @@ def _calc_update_feasibility(traj, start_time=None, end_time=None, xmin=None, xm
                }}
     update_cmd= UpdateOne(filter=query, update=update, upsert=True)
     
-    attr_vals = {"duration": duration, "x_traveled":x_traveled, "avg_vx":avg_vx, "avg_ax":avg_ax, 
+    attr_vals = {"id": traj["_id"], "duration": duration, "x_traveled":x_traveled, "avg_vx":avg_vx, "avg_ax":avg_ax, 
                     "vx":vx, "ax":ax, "theta":theta, "feasibility":feasibility_tolerated, 
                     "residual": residual, "all_feasible_id":all_feasible_id, "any_infeasible_id":any_infeasible_id, "backward_id": backward_id,
                     "feasibility_score": score, 
@@ -263,6 +263,7 @@ class UnsupervisedEvaluator():
         traj_cursor = self.dbr_v.collection.aggregate([{ "$match": {"$sampleRate": sample_rate } }])
         start_time = self.dbr_v.get_min("first_timestamp")
         end_time = self.dbr_v.get_max("last_timestamp")
+        
         # TODO: get the range of the testbed
         x_min = self.dbr_v.get_min("starting_x")
         x_max = self.dbr_v.get_max("ending_x")
@@ -281,7 +282,7 @@ class UnsupervisedEvaluator():
                             "acceleration_score",
                             "conflict_score"]
         series_attrs = ["vx", "ax", "theta"]
-        ids_attrs =  ["backward_id", "all_feasible_id", "any_infeasible_id"]
+        ids_attrs =  ["id", "backward_id", "all_feasible_id", "any_infeasible_id"]
         
         # initialize empty lists
         for attr_name in ids_attrs:
@@ -460,20 +461,7 @@ class UnsupervisedEvaluator():
     def print_res(self):
         pprint.pprint(self.res, width = 1)
         
-    def write_evaluation(self):
-        """
-        write self.res to database [evaluation], collection [unsupervised]
-        """
-        eval_db_name = "evaluation"
-        # res = convert_2_dict_mongodb(self.res)
-        
-        # res = json.dumps(res,cls=CustomEncoder)
-        res = json.dumps(self.res, cls=NumpyArrayEncoder) 
-        eval_col = self.dbr_v.client[eval_db_name]["unsupervised"]
-        eval_col.insert_one(res)
-        
-        return
- 
+    
 
 
 
