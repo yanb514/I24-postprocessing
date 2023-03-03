@@ -158,14 +158,19 @@ def combine_merged_dict(unmerged):
     '''
     if len(unmerged) == 1:
         traj = unmerged[0]
-        traj["merged_ids"] = [traj["_id"]]
+        if "merged_ids" not in traj:
+            traj["merged_ids"] = [traj["_id"]]
+        
         return traj
     
     time_series_field = ["timestamp", "x_position", "y_position", "length", "width", "height"]
     dfs = []
     merged_ids = []
     for traj in unmerged:
-        merged_ids.append(traj["_id"])
+        if "merged_ids" not in traj:
+            merged_ids.append(traj["_id"])
+        else:
+            merged_ids.extend(traj["merged_ids"])
         data = {key: traj[key] for key in time_series_field} 
         df = pd.DataFrame(data, columns=data.keys()) 
         index = pd.to_timedelta(df["timestamp"], unit='s')
@@ -186,8 +191,7 @@ def combine_merged_dict(unmerged):
     traj["last_timestamp"] = traj["timestamp"][-1]
     traj["starting_x"] = traj["x_position"][0]
     traj["ending_x"] = traj["x_position"][-1]
-    
-    # print(len(traj["timestamp"]), len(traj["x_position"]))
+
     return traj
 
 
@@ -261,20 +265,20 @@ def combine_merged(unmerged):
         traj["last_timestamp"] = traj["timestamp"][-1]
         traj["starting_x"] = merged["x_position"][0]
         traj["ending_x"] = merged["x_position"][-1]
-        traj["merged_ids"] = [traj["_id"]]
+        if "merged_ids" not in traj:
+            traj["merged_ids"] = [traj["_id"]]
         
-        # print(len(traj["timestamp"]), len(traj["x_position"]))   
         return traj
     
     dfs = []
     merged_ids = []
     for traj, df in unmerged:
-        merged_ids.append(traj["_id"])
+        if "merged_ids" not in traj:
+            merged_ids.append(traj["_id"])
+        else:
+            merged_ids.extend(traj["merged_ids"])
         dfs.append(df)
 
-    
-    # df_merged = reduce(lambda  left,right: pd.merge(left,right, left_index=True, right_index=True,
-    #                                         how='outer'), dfs).mean()
     df_merged = pd.concat(dfs).groupby(level=0, as_index=True, sort=True).mean()
     merged = df_merged.to_dict('list')
     # overwrite traj with merged values
@@ -289,7 +293,6 @@ def combine_merged(unmerged):
     traj["starting_x"] = merged["x_position"][0]
     traj["ending_x"] = merged["x_position"][-1]
     
-    # print(len(traj["timestamp"]), len(traj["x_position"]))
     return traj
 
 

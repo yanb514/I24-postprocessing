@@ -475,37 +475,35 @@ def plot_histogram(data, title="", ):
     
     
 
-def main():
+def main(database_name="", collection_name="", time_sr=1, traj_sr=1):
     with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)   
-    with open("evaluation_config.json") as f:
-        eval_param = json.load(f)   
     
     # check if eval result already exists
     if "MacBook" in os.uname()[1]:
-        dir = eval_param["local_directory"]
+        dir = "data"
     else:
-        dir = eval_param["cluster_directory"]
+        dir = "/remote/home/wangy79/eval_res"
     
-    file_path = os.path.join(dir, f'{eval_param["database"]}_{eval_param["collection"]}.pkl')
+    file_path = os.path.join(dir, f'{database_name}_{collection_name}.pkl')
     if os.path.exists(file_path):
         ans = input(f"Result already exists in /{dir}. Rewrite? [Y/N]")
         if ans not in ["y", "Y"]:
             return
     
-    print(f"Evaluating {eval_param['collection']}...")
+    print(f"Evaluating {collection_name}...")
     ue = UnsupervisedEvaluator(db_param, 
-                               database_name=eval_param["database"], 
-                               collection_name=eval_param["collection"], 
+                               database_name=database_name, 
+                               collection_name=collection_name, 
                                num_threads=200)
     
     t1 = time.time()
-    ue.time_evaluate2(sample_rate=eval_param["time_sr"])
+    ue.time_evaluate2(sample_rate=time_sr)
     t2 = time.time()
     print("Time-evaluate takes: ", t2-t1)
     
     t1 = time.time()
-    ue.traj_evaluate(sample_rate=eval_param["traj_sr"])
+    ue.traj_evaluate(sample_rate=traj_sr)
     t2 = time.time()
     print("Traj-evaluate takes: ", t2-t1)
     
@@ -514,7 +512,7 @@ def main():
     # now = now.strftime("%Y-%m-%d_%H-%M-%S")
     # f_name = now+"_"+self.collection_name
     
-    with open(f'{dir}/{ue.database_name}_{ue.collection_name}.pkl', 'wb') as handle:
+    with open(f'{dir}/{database_name}_{collection_name}.pkl', 'wb') as handle:
         pickle.dump(ue.res, handle)
     
     # ue.write_evaluation()

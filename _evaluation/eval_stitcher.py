@@ -12,8 +12,14 @@ import numpy as np
 from itertools import islice
 from datetime import datetime
 import matplotlib.dates as md
+import json
+from bson.objectid import ObjectId
+import os
 
 def convert_2_dict_mongodb(obj):
+    '''
+    convert nested dictionary to "dot" type accepted by mongodb schema
+    '''
     result = {}
     for key, val in obj.items():
         if not isinstance(val, dict):
@@ -72,7 +78,7 @@ def plot_traj(veh_ids, dbr, axs = None):
     rec_id: ObjectID (optional)
     '''
     if axs is None:
-        fig, axs = plt.subplots(1, 4, figsize=(12, 3))
+        fig, axs = plt.subplots(1, 3, figsize=(12, 3))
     
     for f_id in veh_ids: 
         f = dbr.find_one({"_id": f_id})
@@ -89,7 +95,7 @@ def plot_traj(veh_ids, dbr, axs = None):
         axs[0].scatter(dates[filter], x[filter], s=5, marker = "o", label=l)
         axs[1].scatter(dates[filter], y[filter], s=5, marker = "X", label=l)
         axs[2].scatter(x[filter], y[filter], s=5, marker = "X", label=l)
-        axs[3].scatter(dates, f["detection_confidence"], s=5, marker = "X", label=l)
+        # axs[3].scatter(dates, f["detection_confidence"], s=5, marker = "X", label=l)
         axs[0].scatter(dates[~filter], x[~filter], s=5, c="lightgrey")
         axs[1].scatter(dates[~filter], y[~filter], s=5, c="lightgrey")
         axs[2].scatter(x[~filter], y[~filter], s=5, c="lightgrey")
@@ -98,7 +104,7 @@ def plot_traj(veh_ids, dbr, axs = None):
     axs[0].set_title("time v x")
     axs[1].set_title("time v y")
     axs[2].set_title("x v y")
-    axs[3].set_title("time v confidence")
+    # axs[3].set_title("time v confidence")
     axs[0].legend()
     
     return axs
@@ -116,7 +122,7 @@ def plot_stitched(rec_ids, rec, raw):
             print("post_flag: ", rec_traj["post_flag"])
         dates = [datetime.utcfromtimestamp(t) for t in rec_traj["timestamp"]]
         dates=md.date2num(dates)
-        axs = plot_traj(rec_traj["fragment_ids"], raw, axs=axs)
+        # axs = plot_traj(rec_traj["fragment_ids"], raw, axs=axs)
         # plt.xticks( rotation=25 )
         axs[0].scatter(dates, rec_traj["x_position"], s=1)
         axs[1].scatter(dates, rec_traj["y_position"],  s=1)
@@ -155,12 +161,12 @@ def test_fragments(raw, stitched, eval=None):
         for f_id in st_doc["fragment_ids"]:
             f = raw.find_one({"_id": f_id}) # ObjectId(f_id)
             # TODO: what if f has multiple corresponding gt_ids?
-            if len(f["gt_ids"]) == 0:
+            if len(f["gt_id"]) == 0:
                 no_gt_count+=1
             else:
-                if len(f["gt_ids"]) > 1:
+                if len(f["gt_id"]) > 1:
                     mul_gt_count+=1
-                for gt_id in f["gt_ids"]:
+                for gt_id in f["gt_id"]:
                     st_gt[st_doc["_id"]].add(gt_id)
                     gt_st[gt_id].add(st_doc["_id"])
 
@@ -183,7 +189,7 @@ def test_fragments(raw, stitched, eval=None):
         fgmt[key] = list(val)
     for key, val in ids.items():
         ids[key] = list(val)
-    print(f"raw_count: {raw.count_documents({})}, rec_count: {rec.count_documents({})}")
+    print(f"raw_count: {raw.count_documents({})}, rec_count: {stitched.count_documents({})}")
     print(f"no_gt_count: {no_gt_count}, mul_gt_count: {mul_gt_count}")
     print(f"gt_count: {len(gt_st)}, stitched_count: {len(st_gt)}")
     print(f"ids_count: {ids_count}, fgmt_count: {fgmt_count}")
@@ -200,26 +206,41 @@ def test_fragments(raw, stitched, eval=None):
     return
 
 
+def main(raw_db="transmodeler", rec_db="reconciled", raw_collection=None, rec_collection=None):
+    with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
+        db_param = json.load(f)
+        
+    # raw_collection = "tm_900_raw_v4" # collection name is the same in both databases
+    # rec_collection = "tm_900_raw_v4__1"
+    
+    dbc = DBClient(**db_param)
+    raw = dbc.client[raw_db][raw_collection]
+    rec = dbc.client[rec_db][rec_collection]
+    eval = dbc.client[rec_db]["evaluation"]
+    
+    # clean_raw(raw)
+    test_fragments(raw, rec, eval)
+    return
+
+
 #%%
 
 if __name__ == '__main__':
-    
-    import json
-    from bson.objectid import ObjectId
-    import os
-     
-    with open(os.environ["USER_CONFIG_DIRECTORY"]+"db_param.json") as f:
-        db_param = json.load(f)
+    main()
 
-    raw_collection = "zonked_cnidarian--RAW_GT2" # collection name is the same in both databases
-    rec_collection = "zonked_cnidarian--RAW_GT2__articulates"
+    #%%
+    # with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
+    #     db_param = json.load(f)
+
+    # raw_collection = "tm_900_raw_v4" # collection name is the same in both databases
+    # rec_collection = "tm_900_raw_v4__1"
     
-    dbc = DBClient(**db_param)
-    raw = dbc.client["trajectories"][raw_collection]
-    rec = dbc.client["reconciled"][rec_collection]
-    eval = dbc.client["reconciled"]["evaluation"]
+    # dbc = DBClient(**db_param)
+    # raw = dbc.client["transmodeler"][raw_collection]
+    # rec = dbc.client["reconciled"][rec_collection]
+    # eval = dbc.client["reconciled"]["evaluation"]
     
-    # clean_raw(raw)
+    # # clean_raw(raw)
     # test_fragments(raw, rec, eval)
     
     #%%
@@ -228,7 +249,7 @@ if __name__ == '__main__':
 
     #%% 
     # rec_ids = [ObjectId('62fd9e4b95f077c66b4d946e'), ObjectId('62fd9e4c95f077c66b4d9471')] # 
-    rec_ids = [ObjectId('6306de96e0c5c896a2a2eec6')]
-    # rec_ids = [ObjectId('62fd9e4b95f077c66b4d9460'), ObjectId('62fd9e4a95f077c66b4d945b')]
-    plot_stitched(rec_ids, rec, raw)
+    # rec_ids = [ObjectId('6306de96e0c5c896a2a2eec6')]
+    # rec_ids = [ObjectId('63fbe697330767fc6c90b084'), ObjectId('63fbe697330767fc6c90b083')]
+    # plot_stitched(rec_ids, rec, raw)
     

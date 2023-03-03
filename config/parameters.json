@@ -1,5 +1,5 @@
 {
-    "description": "try new pp1 with signal handling",
+    "description": "try ICCV",
     "raw_database": "trajectories",
     "reconciled_database": "reconciled",
     "temp_database": "temp",
@@ -7,11 +7,10 @@
 	"meta_database": "meta",
 	
 	"transform_postproc": 1,
-    "raw_collection": "637c399add50d54aa5af0cf4",
-	"reconciled_collection": "637c399add50d54aa5af0cf4__post2",
+    "raw_collection": "ICCV_prism_3D_NMS_scene1_meek_anteater",
+	"reconciled_collection": "",
 	
-	"compute_node_list":["videonode1", "videonode2", "videonode3", "videonode4","videonode5",
-                        	"videonode6", "videonode7", "videonode8", "videonode9","devvideo1"],
+	"compute_node_list":[],
 	
 	"log_heartbeat": 10,
 	"merger_timeout": 5,

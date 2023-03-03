@@ -19,12 +19,13 @@ import numpy as np
 from collections import defaultdict
 
 
-# CSV schema: (ordered in time)
+# CSV schema: (ordered in real id and then in ID)
+# https://docs.google.com/document/d/1bSTX5_71Vi6R7S76FkaJclePxT888xHEg63JVEbbnII/edit#heading=h.nh02g8sndr9j
 # 1,id
 # 2,vehicle_class
 # 3,timestamp
-# 4,x_position
-# 5,y_position
+# 4,x_position (Front bumper)
+# 5,y_position (center)
 # 6,length
 # 7,width
 # 8,height
@@ -32,6 +33,8 @@ from collections import defaultdict
 # 10,configuration_ID
 # 11,mask
 # 12,real_id
+
+idle_time = 0.3
 
 def resample(car, dt=0.04, fillnan=False):
     # resample timestamps to 30hz, leave nans for missing data
@@ -42,7 +45,7 @@ def resample(car, dt=0.04, fillnan=False):
     '''
 
     # Select time series only
-    time_series_field = ["timestamp", "x_position", "y_position"]
+    time_series_field = ["timestamp", "x_position", "y_position","length","width","height"]
     data = {key: car[key] for key in time_series_field}
     
     # Read to dataframe and resample
@@ -55,7 +58,11 @@ def resample(car, dt=0.04, fillnan=False):
     freq = str(dt)+"S"
     df = df.resample(freq).mean() # leave nans
     if fillnan:
-        df = df.interpolate(method=fillnan)
+        try:
+            df = df.interpolate(method='polynomial', order=3)
+        except:
+            print(len(df))
+            df = df.interpolate(method='polynomial', order=2)
     df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
 
     # resample to 25hz, fill nans
@@ -73,11 +80,24 @@ def resample(car, dt=0.04, fillnan=False):
     
     car['x_position'] = df['x_position'].values
     car['y_position'] = df['y_position'].values
+    car['length'] = df['length'].values
+    car['width'] = df['width'].values
+    car['height'] = df['height'].values
     car['timestamp'] = df.index.values
         
     return car
 
 def add_noise(traj):
+    N = len(traj["timestamp"])
+    x = np.array(traj["x_position"])+np.random.normal(0,0,N)
+    y = np.array(traj["y_position"])+np.random.normal(0,0,N)
+    # l = np.array(traj["length"])+np.random.normal(0,2,N)
+    # w = np.array(traj["width"])+np.random.normal(0,0.5,N)
+    
+    traj["x_position"] = list(x)
+    traj["y_position"] = list(y)
+    # traj["length"] = list(l)
+    # traj["width"] = list(w)
     return traj
 
 def write_csv_to_db(db_param, write_db, write_col, GTFilePath, mode):
@@ -85,8 +105,8 @@ def write_csv_to_db(db_param, write_db, write_col, GTFilePath, mode):
     dbc = DBClient(**db_param, database_name=write_db, collection_name=write_col)
     dbc.collection.drop()
     
-    lru = OrderedDict()
-    idle_time = 1.1
+    traj = {}
+    prev_id = -999
     
     line = 0
     if mode == "gt":
@@ -108,26 +128,52 @@ def write_csv_to_db(db_param, write_db, write_col, GTFilePath, mode):
             if not (row):
                 print("empty row")
                 continue
+            if mode == "raw" and int(float(row[11])) == 0: # masked for fragment
+                continue
             line += 1
             ID = int(float(row[idx_id]))
             curr_time = float(row[3])
-            curr_x = float(row[idx_x])
+            curr_x = float(row[idx_x]) - float(row[6])
             
             if line % 1000 == 0:
-                print("line: {}, curr_time: {:.2f}, x:{:.2f},  lru size: {} ".format(line, curr_time, curr_x, len(lru)))
+                print("line: {}, curr_time: {:.2f}, x:{:.2f},  ID: {} ".format(line, curr_time, curr_x, ID))
             
-            if ID not in lru: # create new
+            if ID != prev_id: # create new
+                # first write old
+                if traj:
+                    if len(traj["timestamp"])<4:
+                        print(f"skip ID {ID} because too short")
+                        continue
+                        
+                    # resample to 25hz
+                    traj = resample(traj, fillnan=True)
+                    if mode == "raw":
+                        traj = add_noise(traj)
+                    for key, val in traj.items():
+                        if isinstance(val,np.ndarray):
+                            traj[key] = list(val)
+                            
+                    traj['first_timestamp']=traj['timestamp'][0]
+                    traj['last_timestamp']=traj['timestamp'][-1]
+                    traj['starting_x']=traj['x_position'][0]
+                    traj['ending_x']=traj['x_position'][-1]
+                    traj['flags'] = ['none']
+                    dbc.write_one_trajectory(thread=True, **traj)
+                    
+                # then create new   
                 traj = {}
                 traj['configuration_id']=9
                 traj['compute_node_id']=1
-                traj['coarse_vehicle_class']=int(row[2])
-                traj['fine_vehicle_class']=int(row[2])
+                traj['road_segment_ids'] = [-1]
+                traj['fine_vehicle_class'] = -1
+                traj['local_fragment_id'] = -1
+                traj['coarse_vehicle_class']=int(float(row[2]))
+                traj['fine_vehicle_class']=int(float(row[2]))
                 traj['timestamp']=[float(row[3])]
-
-                traj['x_position']=[float(row[idx_x])]
+                traj['x_position']=[float(row[idx_x])- float(row[6])]
                 traj['y_position']=[float(row[idx_y])]
                 
-                traj['ID']=float(row[idx_id])
+                traj['ID']= ID
                 
                 if mode != "gt":
                     traj['length']=[float(row[6])]
@@ -139,13 +185,13 @@ def write_csv_to_db(db_param, write_db, write_col, GTFilePath, mode):
                     traj['height']=float(row[8])
                 
                 
-                lru[ID] = traj
+                # lru[ID] = traj
                 
             else:
-                traj = lru[ID]
+                # traj = lru[ID]
                 traj['timestamp'].extend([float(row[3])])
                 traj['direction'] = np.sign(curr_x - traj['x_position'][-1])
-                traj['x_position'].extend([float(row[idx_x])])
+                traj['x_position'].extend([float(row[idx_x])- float(row[6])])
                 traj['y_position'].extend([float(row[idx_y])])
                 
                 
@@ -153,65 +199,33 @@ def write_csv_to_db(db_param, write_db, write_col, GTFilePath, mode):
                     traj['length'].extend([float(row[6])])
                     traj['width'].extend([float(row[7])])
                     traj['height'].extend([float(row[8])])
-                
-                lru.move_to_end(ID)
-                
-        
-            while lru[next(iter(lru))]["timestamp"][-1] < curr_time - idle_time:
-                ID, traj = lru.popitem(last=False) #FIFO
-                if len(traj["timestamp"])==1:
-                    print(f"skip ID {ID} because it only has 1 time sample")
-                    continue
-                    
-                # resample to 25hz
-                try:
-                    traj = resample(traj, fillnan="cubic")
-                except ValueError:
-                    traj = resample(traj, fillnan="linear")
-                if mode == "raw":
-                    traj = add_noise(traj)
-                for key, val in traj.items():
-                    if isinstance(val,np.ndarray):
-                        traj[key] = list(val)
-                        
-                traj['first_timestamp']=traj['timestamp'][0]
-                traj['last_timestamp']=traj['timestamp'][-1]
-                traj['starting_x']=traj['x_position'][0]
-                traj['ending_x']=traj['x_position'][-1]
-                traj['flags'] = ['none']
-                dbc.write_one_trajectory(thread=True, **traj)
-        
+            prev_id = ID
+            
     f.close()
         
-    # except Exception as e:
-    #     print("get to exception {}".format(str(e)))
-    #     pass
-    
-    
-    
-    print("flush out all the rest of LRU of size {}. current time: {}".format(len(lru), curr_time))
-    while lru:
-        ID, traj = lru.popitem(last=False) #FIFO
-        try:
-            traj = resample(traj, fillnan="cubic")
-        except ValueError:
-            traj = resample(traj, fillnan="linear")
-        if mode == "raw":
-            traj = add_noise(traj)
-        for key, val in traj.items():
-            if isinstance(val,np.ndarray):
-                traj[key] = list(val)
-        traj['first_timestamp']=traj['timestamp'][0]
-        traj['last_timestamp']=traj['timestamp'][-1]
-        traj['starting_x']=traj['x_position'][0]
-        traj['ending_x']=traj['x_position'][-1]
-        traj['flags'] = ['none']
-        
-        # if random.random() < write_probability:
-        # col.insert_one(traj)
-        dbc.write_one_trajectory(thread=True, **traj)
+
+    if traj:
+        if len(traj["timestamp"])<4:
+            print(f"skip ID {ID} because too short")
+        else:
+            
+            # resample to 25hz
+            traj = resample(traj, fillnan=True)
+            if mode == "raw":
+                traj = add_noise(traj)
+            for key, val in traj.items():
+                if isinstance(val,np.ndarray):
+                    traj[key] = list(val)
+                    
+            traj['first_timestamp']=traj['timestamp'][0]
+            traj['last_timestamp']=traj['timestamp'][-1]
+            traj['starting_x']=traj['x_position'][0]
+            traj['ending_x']=traj['x_position'][-1]
+            traj['flags'] = ['none']
+            dbc.write_one_trajectory(thread=True, **traj)
     
     print("complete")
+    
     return
     
 
@@ -224,7 +238,7 @@ def add_fragment_ids(db_param, gt_database, gt_collection,
     find all raw-> check ID-> get correponding gt ID-> update the gt document from gt_collection
     '''
     # check if raw_collection has any data
-    dbc = DBClient(**db_param)
+    dbc = DBClient(**db_param).client
     if raw_collection not in dbc[raw_database].list_collection_names() or dbc[raw_database][raw_collection].count_documents({}) == 0:
         print("raw collection has to be written first to invoke add_fragment_ids function")
         return
@@ -233,40 +247,94 @@ def add_fragment_ids(db_param, gt_database, gt_collection,
         return
     
     print("Adding fragment IDs")
-    
-    # read csv files to save correspondence in a dictionary
-    id_map = defaultdict(list) # key: gt_ID, val: a list of fragment ids
-    
-    with open (csv_file,'r') as f:
-        reader=csv.reader(f)
-        next(reader) # skip the header
-        
-        for row in reader:
-            gt_id = row[12]
-            raw_id = row[1]
-            id_map[gt_id].append(raw_id)
-    
     colraw = dbc[raw_database][raw_collection]
     colgt = dbc[gt_database][gt_collection]
-    
     indices = ["_id", "ID"]
     for index in indices:
         colraw.create_index(index)
         colgt.create_index(index)
         
-    cnt = 0
-    for rawdoc in colraw.find({}): # loop through all raw fragments
-        _id = rawdoc.get('_id')
-        raw_ID=rawdoc.get('ID')
-        gt_ID=raw_ID//100000
-        cnt += 1
+    colraw.update_many({},{"$unset": {
+                           "gt_ID": "",
+                           "fragment_IDs": "",
+                           "gt_id": "",
+                           "fragment_ids": "",
+                                   } })
+    colgt.update_many({},{"$unset": {
+                            "gt_ID": "",
+                           "fragment_IDs": "",
+                           "gt_id": "",
+                           "fragment_ids": "",
+                                   } })
+    # read csv files to save correspondence in a dictionary
+    curr_set = set()
+    prev_id = -1
+    with open (csv_file,'r') as f:
+        reader=csv.reader(f)
+        next(reader) # skip the header
         
-        if colgt.count_documents({ 'ID': gt_ID }, limit = 1) != 0: # if gt_ID exists in colgt
-            # update
-            colgt.update_one({'ID':gt_ID},{'$push':{'fragment_ids':_id}},upsert=True)
-            if cnt % 100 == 0:
-                print(f"Updated {cnt} documents")
+        for row in reader:
+            if int(float(row[11])) == 0: # masked
+                continue
+            gt_id = int(float(row[12]))
+            raw_id = int(float(row[1]))
+            
+            # if still processing this gt_id
+            if gt_id == prev_id:
+                curr_set.add(raw_id)
+    
+            else: #pop
+                # write everything in curr set to database
+                if len(curr_set)!= 0:
+                    curr_gt_id = prev_id
+                    # select the curr_raw_ids that exist in db
+                    for curr_raw_id in curr_set.copy():
+                        query = {"ID":{"$eq": curr_raw_id}}
+                        if colraw.count_documents(query)==0:
+                            curr_set.remove(curr_raw_id)
+                            
+                    curr_raw_ids = list(curr_set)   
+                    query = colraw.find({'ID':{"$in":curr_raw_ids}},{"_id": 1})
+                    curr_raw_obj_ids = [doc["_id"] for doc in query]
+                    query = colgt.find({'ID':curr_gt_id},{"_id": 1})
+                    curr_gt_obj_id = [doc["_id"] for doc in query]
+                    assert len(curr_gt_obj_id) == 1
+                    print(curr_gt_id, curr_raw_ids)
+                    colgt.update_one({'ID':curr_gt_id},
+                                     {'$set':{'fragment_IDs':curr_raw_ids,
+                                              "fragment_ids":curr_raw_obj_ids}},upsert=False)
+                    
+                    colraw.update_many({'ID':{"$in":curr_raw_ids}},
+                                       {'$set':{'gt_ID':curr_gt_id,
+                                                "gt_id":curr_gt_obj_id},},upsert=False)
                 
+                # reinitialize current set
+                curr_set = set()
+                curr_set.add(raw_id)
+            prev_id =  gt_id
+
+    if len(curr_set) != 0:
+        curr_gt_id = prev_id
+        for curr_raw_id in curr_set.copy():
+            query = {"ID":{"$eq": curr_raw_id}}
+            if colraw.count_documents(query)==0:
+                curr_set.remove(curr_raw_id)
+
+        curr_raw_ids = list(curr_set)   
+        query = colraw.find({'ID':{"$in":curr_raw_ids}},{"_id": 1})
+        curr_raw_obj_ids = [doc["_id"] for doc in query]
+        query = colgt.find({'ID':curr_gt_id},{"_id": 1})
+        curr_gt_obj_id = [doc["_id"] for doc in query]
+        assert len(curr_gt_obj_id) <= 1
+        print(curr_gt_id, curr_raw_ids)
+        colgt.update_one({'ID':curr_gt_id},
+                         {'$set':{'fragment_IDs':curr_raw_ids,
+                                  "fragment_ids":curr_raw_obj_ids}},upsert=False)
+        
+        colraw.update_many({'ID':{"$in":curr_raw_ids}},
+                           {'$set':{'gt_ID':curr_gt_id,
+                                    "gt_id":curr_gt_obj_id},},upsert=False)
+    
     print("Complete updating fragment ids.")
     return
 
@@ -275,9 +343,16 @@ if __name__ == "__main__":
     with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)
 
-    FilePath = "falsified_data_v2.csv"
-    write_csv_to_db(db_param, "transmodeler", "raw_tm_900", FilePath, "raw")
-    
+    FilePath = "falsified_data_v4.1.csv"
+    write_csv_to_db(db_param, "transmodeler", "tm_900_gt_v4.1", FilePath, "gt")
+    write_csv_to_db(db_param, "transmodeler", "tm_900_raw_v4.1", FilePath, "raw")
+
+    add_fragment_ids(db_param=db_param, 
+                      gt_database="transmodeler", 
+                      gt_collection="tm_900_gt_v4.1", 
+                      raw_database="transmodeler", 
+                      raw_collection="tm_900_raw_v4.1",
+                      csv_file=FilePath)
     
     
     

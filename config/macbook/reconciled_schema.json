@@ -83,7 +83,7 @@
                 "description": "vehicle height in feet"
                 },
             "direction": {
-                "bsonType": "int",
+                "bsonType": ["int", "double"],
                 "description": "-1 if westbound, 1 if eastbound"
                 },
             "fragment_ids": {

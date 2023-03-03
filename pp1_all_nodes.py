@@ -100,7 +100,7 @@ def main(raw_collection = None, reconciled_collection = None):
     local_proc_map = defaultdict(dict) #mp_manager.dict() #
     
     # -- local processes (run on each videonode)
-    for n, node in enumerate(parameters["compute_node_list"]):
+    for n, node in enumerate(mp_param["compute_node_list"]):
         # node = "videonode"+str(int(n+1))
         
         for dir in ["eb", "wb"]:
@@ -344,7 +344,7 @@ def main(raw_collection = None, reconciled_collection = None):
     
     #%% start transform on postproc data
     if parameters["transform_postproc"]:
-        transform(database_name = parameters["reconciled_database"], collection_name = parameters["reconciled_collection"])
+        transform(database_name = mp_param["reconciled_database"], collection_name = mp_param["reconciled_collection"])
     
     
 if __name__ == '__main__':

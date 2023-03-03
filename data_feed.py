@@ -42,6 +42,7 @@ def initialize(parameters, db_param):
     1. get the latest raw collection if parameters["raw_collection"] == ""
     2. create a new stitched collection
     3. create a new reconciled collection
+    4. list all unique compute nodes and update "compute_node_list"
     '''
     
     # get the latest collection if raw_collection is empty
@@ -71,6 +72,10 @@ def initialize(parameters, db_param):
         reconciled_name = parameters["reconciled_collection"]
         print("reconciled_collection name is already provided: ", parameters["reconciled_collection"])
     
+    if not parameters["compute_node_list"]:
+        compute_node_list = dbc.collection.distinct("compute_node_id")
+        parameters["compute_node_list"] = compute_node_list
+        
     # save metadata
     dbc.client[parameters["meta_database"]]["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters._getvalue()},
                                   bypass_document_validation=True)

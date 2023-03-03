@@ -13,6 +13,17 @@ logger.set_name("reconciliation_module")
 solvers.options['show_progress'] = False
 dt = 1/30
 
+def flattenList(nestedList):
+ 
+    # check if list is empty
+    if not(bool(nestedList)):
+        return nestedList
+     # to check instance of list is empty or not
+    if isinstance(nestedList[0], list):
+        # call function with sublist as argument
+        return flattenList(*nestedList[:1]) + flattenList(nestedList[1:])
+    # call function with sublist as argument
+    return nestedList[:1] + flattenList(nestedList[1:])
 
 @catch_critical(errors = (Exception))
 def combine_fragments(all_fragment):
@@ -34,7 +45,6 @@ def combine_fragments(all_fragment):
         stacked["timestamp"].extend(fragment["timestamp"])
         stacked["x_position"].extend(fragment["x_position"])
         stacked["y_position"].extend(fragment["y_position"])
-        stacked["road_segment_ids"].extend(fragment["road_segment_ids"])
         stacked["flags"].extend(fragment["flags"])
         try:
             stacked["length"].extend(fragment["length"])
@@ -44,13 +54,19 @@ def combine_fragments(all_fragment):
             stacked["length"].append(fragment["length"])
             stacked["width"].append(fragment["width"])
             stacked["height"].append(fragment["height"])
-        try:
+        try: # other optional fields
             stacked["merged_ids"].append(fragment["merged_ids"]) # should be nested lists
+            stacked["road_segment_ids"].extend(fragment["road_segment_ids"])
         except KeyError:
             pass
         
         # stacked["detection_confidence"].extend(fragment["detection_confidence"])
-        stacked["fragment_ids"].append(fragment["_id"])
+        # if "fragment_ids" in fragment:
+        #     stacked["fragment_ids"].extend(fragment["fragment_ids"])
+        # else:
+        #     stacked["fragment_ids"].append(fragment["_id"])
+        stacked["fragment_ids"] = flattenList(stacked["merged_ids"])
+        
         stacked["coarse_vehicle_class"].append(fragment["coarse_vehicle_class"])
         stacked["fine_vehicle_class"].append(fragment["fine_vehicle_class"])
         stacked["direction"].append(fragment["direction"])

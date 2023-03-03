@@ -153,11 +153,11 @@ def main(raw_collection = None, reconciled_collection = None, node=None):
     processes_to_spawn["stitcher_w"] = (mcf.min_cost_flow_online_alt_path,
                       ("wb", merged_queue_w, stitched_trajectory_queue, mp_param, ))
 
-    # processes_to_spawn["reconciliation"] = (rec.reconciliation_pool,
-    #                   (mp_param, db_param, stitched_trajectory_queue, reconciled_queue,))
+    processes_to_spawn["reconciliation"] = (rec.reconciliation_pool,
+                      (mp_param, db_param, stitched_trajectory_queue, reconciled_queue,))
 
-    # processes_to_spawn["reconciliation_writer"] = (rec.write_reconciled_to_db,
-    #                   (mp_param, db_param, reconciled_queue,))
+    processes_to_spawn["reconciliation_writer"] = (rec.write_reconciled_to_db,
+                      (mp_param, db_param, reconciled_queue,))
     
 
     # Specify dependencies amongst subprocesses 
