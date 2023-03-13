@@ -72,8 +72,10 @@ class MOTGraphSingle:
         self.residual_threshold_y = parameters["residual_threshold_y"]
         self.stitch_cost_thresh = parameters["stitch_thresh"]
         self.stitcher_mode = parameters["stitcher_mode"]
-        self.compute_node_pos_map = {key:val for val,key in enumerate(parameters["compute_node_list"])}
+        self.compute_node_pos_map = {key:val for val,key in enumerate(parameters["compute_node_list"])}    
         self.cache = {}
+
+        print(f"************** {self.stitcher_mode}")
           
     @catch_critical(errors = (Exception))
     def add_node(self, fragment):
@@ -100,7 +102,7 @@ class MOTGraphSingle:
             
             if self.stitcher_mode == "local" and fgmt_node_id == node_id:
                 cost = stitch_cost(fgmt, fragment, self.TIME_WIN, self.residual_threshold_x, self.residual_threshold_y)
-            elif self.stitcher_mode == "master" and abs(self.compute_node_pos_map[node_id]-self.compute_node_pos_map[fgmt_node_id]) == 1:
+            elif self.stitcher_mode == "master" and abs(self.compute_node_pos_map[node_id]-self.compute_node_pos_map[fgmt_node_id]) <= 1:
                 cost = stitch_cost(fgmt, fragment, self.TIME_WIN, self.residual_threshold_x, self.residual_threshold_y)
             else:
                 cost = 1e5

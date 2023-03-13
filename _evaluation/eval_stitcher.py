@@ -226,29 +226,30 @@ def main(raw_db="transmodeler", rec_db="reconciled", raw_collection=None, rec_co
 #%%
 
 if __name__ == '__main__':
-    main()
+    # main()
 
     #%%
-    # with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
-    #     db_param = json.load(f)
+    with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
+        db_param = json.load(f)
 
-    # raw_collection = "tm_900_raw_v4" # collection name is the same in both databases
-    # rec_collection = "tm_900_raw_v4__1"
+    raw_collection = "ICCV_2023_scene2_TRACKLETS" # collection name is the same in both databases
+    rec_collection = "ICCV_2023_scene2_TRACKLETS__1"
     
-    # dbc = DBClient(**db_param)
-    # raw = dbc.client["transmodeler"][raw_collection]
-    # rec = dbc.client["reconciled"][rec_collection]
-    # eval = dbc.client["reconciled"]["evaluation"]
+    dbc = DBClient(**db_param)
+    raw = dbc.client["trajectories"][raw_collection]
+    rec = dbc.client["reconciled"][rec_collection]
+    eval = dbc.client["reconciled"]["evaluation"]
     
     # # clean_raw(raw)
     # test_fragments(raw, rec, eval)
     
     #%%
-    # f_ids = [ObjectId('62fd0dc446a150340fcd2195'), ObjectId('62fd0daf46a150340fcd2170'), ObjectId('62fd0dc546a150340fcd2198')]
-    # plot_traj(f_ids, raw)
+    f_ids = [ObjectId("640632178d52059af4c89136"), ObjectId("640632178d52059af4c89119"),ObjectId("640632178d52059af4c8919f"),
+             ObjectId("640632178d52059af4c89101"),ObjectId("640632178d52059af4c89116"),ObjectId("640632178d52059af4c8917c")]
+    plot_traj(f_ids, raw)
 
     #%% 
-    # rec_ids = [ObjectId('62fd9e4b95f077c66b4d946e'), ObjectId('62fd9e4c95f077c66b4d9471')] # 
+    # rec_ids = [ObjectId('63fe78ca4ba74a0cb404e8bc')]
     # rec_ids = [ObjectId('6306de96e0c5c896a2a2eec6')]
     # rec_ids = [ObjectId('63fbe697330767fc6c90b084'), ObjectId('63fbe697330767fc6c90b083')]
     # plot_stitched(rec_ids, rec, raw)

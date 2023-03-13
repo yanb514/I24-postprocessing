@@ -141,7 +141,7 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
                     output_obj += 1
                 
                 # stitcher_logger.info("fragment_queue is empty, exit.")
-                stitcher_logger.info("Flushing {} raw fragments --> {} stitched fragments".format(input_obj, output_obj),extra = None)
+                stitcher_logger.info("Final flushing {} raw fragments --> {} stitched fragments".format(input_obj, output_obj),extra = None)
                 break
             
             except SIGINTException:

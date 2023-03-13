@@ -21,6 +21,7 @@ from functools import reduce
 import time
 import signal
 import sys
+from bson.objectid import ObjectId
 
 # from i24_database_api import DBClient
 from utils.misc import calc_fit_select, find_overlap_idx
@@ -78,7 +79,7 @@ def merge_resample(traj, conf_threshold):
     df = df.drop(columns = "timestamp")
     
     # resample to 10hz
-    df=df.groupby(df.index.floor('0.1S')).mean().resample('0.1S').asfreq()
+    df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq()
     df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
     df = df.interpolate(method='linear')
     
@@ -117,7 +118,7 @@ def merge_cost(track1, track2):
     
     if t1[-1]<=t2[0] or t2[-1]<=t1[0] or sx1>ex2 or sx2>ex1: # if no time&space overlap, don't merge -> stitcher's job
     # if t2[0]>=t1[-1] or t2[-1]<=t1[0]: # separation of axis
-        return 1e6
+        return 1e5
 
     s1, e1, s2, e2 = find_overlap_idx(t1, t2)
     
@@ -144,7 +145,7 @@ def merge_cost(track1, track2):
     nll = 0.125 * np.sum((mu.T@inv_cov@mu).diagonal())/(e1-s1+1) + 0.5 * np.log(det/np.sqrt(det1 * det2))
     
     # tt3 = time.time()
-    # print("id1: {}, id2: {}, cost:{:.2f}".format(str(track1['_id'])[-4:], str(track2['_id'])[-4:], nll))
+    # print("id1: {}, id2: {}, cost:{:.4f}".format(str(track1['_id']), str(track2['_id']), nll))
     # print("")
     # print("other: {:.4f}, cost: {:.4f}, shape: {}".format(tt2-tt1, tt3-tt2, mu.shape))
     
@@ -354,7 +355,7 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
                     unmerged = [ G.nodes[v]["data"] for v in list(comp)]
                     merged = combine_merged_dict(unmerged)
                     merged_queue.put(merged) 
-                merge_logger.info("Flushing {} raw fragments --> {} merged fragments".format(input_obj, output_obj),extra = None)
+                merge_logger.info("Final flushing {} raw fragments --> {} merged fragments".format(input_obj, output_obj),extra = None)
                 break
             
             except SIGINTException:
@@ -374,23 +375,26 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
             curr_time = resampled["last_timestamp"]
             curr_id = resampled["_id"]
             
+                
             # lru[fragment["_id"]] = curr_time # TODO DF LAST
             sdll.append({"id": curr_id, "tail_time": curr_time})
             
             curr_nodes = list(G.nodes(data=True)) # current nodes in G
             G.add_node(curr_id, data=resampled) 
             
+                
             t1 = time.time()
             for node_id, node in curr_nodes:
                 # if they have time overlaps
                 dist = merge_cost(node["data"], resampled) # TODO: these two are not ordered in time,check time overlap within
-                # print(str(node_id)[-4:], str(curr_id)[-4:], dist)
+                # merge_logger.info("{} and {}, cost={:.4f}".format(node_id, fragment["_id"], dist))
+        
                 if dist <= DIST_THRESH:
                     G.add_edge(node_id, curr_id, weight = dist)
                     sdll.update(key=curr_id, attr_val=curr_time)
                     sdll.update(key=node_id, attr_val=curr_time)
                     
-                    # merge_logger.info("Merged {} and {}".format(node_id, fragment["_id"]))
+                    # merge_logger.info("Merged {} and {}, cost={:.4f}".format(node_id, fragment["_id"], dist))
             
             t2 = time.time()
             ct2 += t2-t1
@@ -403,10 +407,10 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
                 first = sdll.first_node()
                 first_id = first.id
                 first_tail = first.tail_time
-                if first_tail < curr_time - TIMEWIN:
+                if first_tail < curr_time - TIMEWIN:                
                     comp = nx.node_connected_component(G, first_id)
-                    # if len(comp) > 1:
-                    #     merge_logger.debug("Merged {}".format(comp), extra=None)
+                    # if aa in comp or bb in comp:
+                    # merge_logger.info("Time out Merged {}, {:.2f}, {:.2f}, {:.2f}".format(comp, first_tail, curr_time, TIMEWIN), extra=None)
                     input_obj += len(comp)
                     output_obj += 1
                     unmerged = [G.nodes[v]["data"] for v in list(comp)]
@@ -415,9 +419,13 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
                     to_remove = to_remove.union(comp)
                     # [lru.pop(v) for v in comp]
                     [sdll.delete(v) for v in comp]
+
                 else:
                     break # no need to check lru further
             # clean up graph and lru
+            # if len(to_remove)>0:
+            #     print(f"remove {len(to_remove)}")
+            
             G.remove_nodes_from(to_remove)
             t2 = time.time()
             ct3 += t2-t1
@@ -449,51 +457,51 @@ if __name__ == '__main__':
     
     import json
     import os
+    # from _evaluation.eval_stitcher import plot_traj, plot_stitched
+    # from merge import merge_fragments
     from i24_database_api import DBClient
     from bson.objectid import ObjectId
-    import multiprocessing as mp
-    mp_manager = mp.Manager()
-    
+    from itertools import combinations
+
     with open("config/parameters.json") as f:
         parameters = json.load(f)
+    parameters["raw_trajectory_queue_get_timeout"] = 0.1
     with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)  
-    parameters["merger_timeout"] = 0.01
-
-    rec_collection = "funny_squirrel--RAW_GT2"
-    raw_collection = "funny_squirrel--RAW_GT2" 
+        
+    rec_collection = "tm_900_raw_v4.1__2"
+    raw_collection = "tm_900_raw_v4.1"
     
     dbc = DBClient(**db_param)
-    raw = dbc.client["trajectories"][raw_collection]
-    # rec = dbc.client["reconciled"][rec_collection]        
+    raw = dbc.client["transmodeler"][raw_collection]
+    rec = dbc.client["reconciled"][rec_collection]
+    temp = dbc.client["temp"][rec_collection]
+    
+    RES_THRESH_X = parameters["residual_threshold_x"]
+    RES_THRESH_Y = parameters["residual_threshold_y"]
+    TIME_WIN = parameters["time_win"]
+    CONF_THRESH = parameters["conf_threshold"]
+    parameters["merger_timeout"] = 0.1
+    
+    f_ids = [ObjectId('63fe78c24ba74a0cb404e479'), ObjectId('63fe78c24ba74a0cb404e477')]
+    
+    fragment_queue = queue.Queue()
+    merged_queue = queue.Queue()
+    fragments = [fragment_queue.put(traj) for traj in temp.find({"_id": {"$in": f_ids}}).sort( "last_timestamp", 1 )]
+    
         
-    fragment_queue = mp_manager.Queue() 
-    merged_queue = mp_manager.Queue() 
-    # funny_squirrel gt2
-    # f_ids = [ObjectId('6320f56babd7d7253149373c'), ObjectId('6320f587abd7d725314937c7')] # low cost, but not merged
-    # f_ids = [ObjectId('6320f576abd7d72531493774'), ObjectId('6320f579abd7d7253149378a')] #Y
-    f_ids = [ObjectId('6320f578abd7d72531493781'), ObjectId('6320f592abd7d725314937fe'), ObjectId('6320f56babd7d7253149373c'), ObjectId('6320f587abd7d725314937c7')]# low cost, but not merged
+    # for fgmt1, fgmt2 in combinations(fragments, 2):
+    #     fgmt1 = merge_resample(fgmt1, CONF_THRESH)
+    #     fgmt2 = merge_resample(fgmt2, CONF_THRESH)
+    #     cost = merge_cost( fgmt1, fgmt2)
+    #     print(fgmt1["_id"], fgmt2["_id"], cost)
     
-    # merge solution
-    # f_ids = [ObjectId('6320f575abd7d72531493772'), ObjectId('6320f56fabd7d7253149375a')] # Y
-    # f_ids = [ObjectId('6320f587abd7d725314937cc'), ObjectId('6320f589abd7d725314937d2')] # Y
-    # f_ids = [ObjectId('6320f5a7abd7d72531493857'), ObjectId('6320f5a2abd7d72531493838')] # y
-    # f_ids = [ObjectId('6320f5acabd7d725314938df'), ObjectId('6320f5a7abd7d72531493852')] #maybe
-    # f_ids = [ObjectId('6320f5acabd7d725314938ad'), ObjectId('6320f5aaabd7d72531493864')] # Y
-    # f_ids = [ObjectId('6320f5acabd7d725314938a5'), ObjectId('6320f5acabd7d7253149386c')]
-    trajs = []
-    resampled = []
-    
-    for traj in raw.find({"_id": {"$in": f_ids}}).sort( "last_timestamp", 1 ):
-        fragment_queue.put(traj)
-        trajs.append(traj)
-        # d = merge_resample(traj, parameters["conf_threshold"])
-        # resampled.append(d)
 
-    # nll = merge_cost(resampled[0], resampled[1])
-    # print(nll)
-    merge_fragments("west", fragment_queue, merged_queue, parameters)
+    
+    merge_fragments("east", fragment_queue, merged_queue, parameters)
     print("merged to ", merged_queue.qsize())
     # dummy_merge("west", fragment_queue, merged_queue, parameters)
     # from multi_opt import plot_track
     # plot_track(trajs)
+    
+    

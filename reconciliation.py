@@ -102,8 +102,11 @@ def write_queues_2_db(db_param, parameters, all_queues, name=None):
         for q in all_queues:
             if not q.empty():
                 traj_docs = q.get(block=False)
-                combined_trajectory = combine_fragments(traj_docs)
-                doc = resample(combined_trajectory, dt=0.1, fillnan=True)
+                if isinstance(traj_docs, list):
+                    combined_trajectory = combine_fragments(traj_docs)
+                else:
+                    combined_trajectory = combine_fragments([traj_docs])
+                doc = resample(combined_trajectory, dt=0.1, fillnan=False)
                 # convert arrays to list
                 for key in ["timestamp", "x_position", "y_position"]:
                     doc[key] = list(doc[key])

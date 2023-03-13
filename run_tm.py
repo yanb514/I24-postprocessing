@@ -8,6 +8,7 @@ This is the postprocessing pipeline for running synthetic data (junyi's)
 1. before running this script, ground truth and polluted data has to be written to db
 2. parameters.json has to be modified                                                         
 """
+from pp1_all_nodes import main as pp1_all_nodes
 from pp1_local import main as pp1_local
 from pp1_master import main as pp1_master
 from _evaluation.eval_stitcher import main as eval_stitcher
@@ -29,18 +30,33 @@ def pipeline(raw_collection="", reconciled_collection=""):
     
     if reconciled_collection:
         parameters["reconciled_collection"] = reconciled_collection
-        
+
+    #=== run 
+    pp1_all_nodes(raw_collection=parameters["raw_collection"], 
+              reconciled_collection=parameters["reconciled_collection"])
+
+    #=== local compute node processing
+    # pp1_local(raw_collection=parameters["raw_collection"], 
+    #           reconciled_collection=parameters["reconciled_collection"])
+    
+    #=== master (cross compute node) processing
+    # pp1_master(raw_collection=parameters["raw_collection"], 
+    #           reconciled_collection=parameters["reconciled_collection"])
+    
+
     #=== transform raw
     # transform(database_name=parameters["raw_database"], 
     #           collection_name=parameters["raw_collection"])
+
+    #=== transform rec
+    transform(database_name=parameters["reconciled_database"], 
+              collection_name=parameters["reconciled_collection"])
     
-    #=== local compute node processing
-    pp1_local(raw_collection=parameters["raw_collection"], 
-              reconciled_collection=parameters["reconciled_collection"])
+    #=== transform temp
+    # transform(database_name=parameters["temp_database"], 
+    #           collection_name=parameters["reconciled_collection"],
+    #           write_collection_name=parameters["reconciled_collection"]+"_temp")
     
-    #=== master (cross compute node) processing
-    pp1_master(raw_collection=parameters["raw_collection"], 
-              reconciled_collection=parameters["reconciled_collection"])
     
     #=== evaluate stitcher
     # eval_stitcher(raw_db=parameters["raw_database"], 
@@ -55,22 +71,28 @@ def pipeline(raw_collection="", reconciled_collection=""):
     #             save_path="../figures/")
     
     #=== time space raw
-    # time_space(database_name=parameters["transformed_database"], 
-    #            collection_name=parameters["raw_collection"], 
-    #            save_path="../figures/")
+    time_space(database_name=parameters["transformed_database"], 
+               collection_name=parameters["raw_collection"], 
+               save_path="../figures/")
     
     #=== time space reconciled
+    time_space(database_name=parameters["transformed_database"], 
+                collection_name=parameters["reconciled_collection"], 
+                save_path="../figures/")
+
+    #=== time space temp
     # time_space(database_name=parameters["transformed_database"], 
-    #             collection_name=parameters["reconciled_collection"], 
+    #             collection_name=parameters["reconciled_collection"]+"_temp", 
     #             save_path="../figures/")
     
     #=== unsupervised statistics for raw
-    unsup(database_name=parameters["raw_database"], 
-          collection_name=parameters["raw_collection"])
+    # unsup(database_name=parameters["raw_database"], 
+    #       collection_name=parameters["raw_collection"])
     
     #=== unsupervised statistics for rec
-    unsup(database_name=parameters["reconciled_database"], 
-          collection_name=parameters["reconciled_collection"])
+    # unsup(database_name=parameters["reconciled_database"], 
+    #       collection_name=parameters["reconciled_collection"])
+
     return
     
 if __name__ == '__main__':

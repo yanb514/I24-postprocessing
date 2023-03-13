@@ -1,5 +1,5 @@
 {
-    "description": "try ICCV",
+    "description": "try pp1_all_nodes",
     "raw_database": "trajectories",
     "reconciled_database": "reconciled",
     "temp_database": "temp",
@@ -7,8 +7,8 @@
 	"meta_database": "meta",
 	
 	"transform_postproc": 1,
-    "raw_collection": "ICCV_prism_3D_NMS_scene1_meek_anteater",
-	"reconciled_collection": "",
+    "raw_collection": "ICCV_2023_scene3_TRACKLETS",
+	"reconciled_collection": "ICCV_2023_scene3_TRACKLETS__v1",
 	
 	"compute_node_list":[],
 	

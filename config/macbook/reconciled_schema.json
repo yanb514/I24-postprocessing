@@ -4,7 +4,7 @@
         "required": ["timestamp", "x_position", "y_position"],
         "properties": {
             "configuration_id": {
-                "bsonType": "int",
+                "bsonType": ["int", "string"],
                 "description": "A unique ID that identifies what configuration was run. It links to a metadata document that defines all the settings that were used system-wide to generate this trajectory fragment"
                 },
             "coarse_vehicle_class": {

@@ -147,28 +147,32 @@ def static_data_reader(default_param, db_param, raw_queue, query_filter, name=No
     # rri._reader.range_iter_stop = rri._reader.range_iter_start + 60
     min_queue_size = default_param["min_queue_size"]
     discard = 0 # counter for short (<3) tracks
+    cntr = 0
+    next_batch = []
+
     
     while True: 
         
         try:
-            logger.debug("* current lower: {}, upper: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, rri._reader.range_iter_start, rri._reader.range_iter_stop))
-            
             # keep filling the queues so that they are not low in stock
             while raw_queue.qsize() <= min_queue_size :#or west_queue.qsize() <= min_queue_size:
-           
+                logger.debug("* current lower: {}, upper: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, rri._reader.range_iter_start, rri._reader.range_iter_stop))
                 next_batch = next(rri)  
-    
                 for doc in next_batch:
+                    cntr += 1
+
                     if len(doc["timestamp"]) > 3: 
                         doc = misc.interpolate(doc)
                         raw_queue.put(doc)          
                     else:
+                        print("****** discard ",doc["_id"])
                         discard += 1
                         # logger.info("Discard a fragment with length less than 3")
     
                 # logger.info("** qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
                 logger.debug("** qsize for raw_data_queue:{}".format(raw_queue.qsize()))
-                            
+                
+
             # if queue has sufficient number of items, then wait before the next iteration (throttle)
             logger.info("** queue size is sufficient. wait")     
             time.sleep(2)

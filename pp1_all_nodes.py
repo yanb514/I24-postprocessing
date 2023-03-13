@@ -31,6 +31,8 @@ class SIGINTException(Exception):
 
 def main(raw_collection = None, reconciled_collection = None):
     
+    directions = ["eb","wb"]
+
     def soft_stop_hdlr(sig, action):
         # send SIGINT to all subprocesses
         manager_logger.info("Manager received SIGINT")
@@ -96,14 +98,13 @@ def main(raw_collection = None, reconciled_collection = None):
     raw_queues = defaultdict(list)
     merged_queues = defaultdict(list)
     stitched_queues = defaultdict(list)
-    
     local_proc_map = defaultdict(dict) #mp_manager.dict() #
     
     # -- local processes (run on each videonode)
     for n, node in enumerate(mp_param["compute_node_list"]):
         # node = "videonode"+str(int(n+1))
         
-        for dir in ["eb", "wb"]:
+        for dir in directions:
             for i, proc in enumerate(proc_per_node):
                 key = str(node)+"_"+dir+"_"+proc
                 if i >=1:
@@ -138,12 +139,20 @@ def main(raw_collection = None, reconciled_collection = None):
             
             # -- non node-specific jobs
             temp_writer = "temp_writer_"+dir
-            # local_proc_map[temp_writer] = {}
             local_proc_map[temp_writer]["command"] = rec.write_queues_2_db
-            local_proc_map[temp_writer]["args"] = (db_param, mp_param, stitched_queues[dir], temp_writer, )
-            local_proc_map[temp_writer]["predecessor"] = [proc_name for proc_name in local_proc_map if dir+"_stitch" in proc_name]
-            local_proc_map[temp_writer]["dependent_queue"] = stitched_queues[dir]
-            
+            if "merge" in proc_per_node[-1]:
+                local_proc_map[temp_writer]["args"] = (db_param, mp_param, merged_queues[dir], temp_writer, )
+                local_proc_map[temp_writer]["predecessor"] = [proc_name for proc_name in local_proc_map if dir+"_merge" in proc_name]
+                local_proc_map[temp_writer]["dependent_queue"] = merged_queues[dir]
+            elif "stitch" in proc_per_node[-1]:
+                local_proc_map[temp_writer]["args"] = (db_param, mp_param, stitched_queues[dir], temp_writer, )
+                local_proc_map[temp_writer]["predecessor"] = [proc_name for proc_name in local_proc_map if dir+"_stitch" in proc_name]
+                local_proc_map[temp_writer]["dependent_queue"] = stitched_queues[dir]
+            elif "feed" in proc_per_node[-1]:
+                local_proc_map[temp_writer]["args"] = (db_param, mp_param, raw_queues[dir], temp_writer, )
+                local_proc_map[temp_writer]["predecessor"] = [proc_name for proc_name in local_proc_map if dir+"_feed" in proc_name]
+                local_proc_map[temp_writer]["dependent_queue"] = raw_queues[dir]
+           
     
     # -- master processes (not videonode specific) START AFTER ALL THE LOCAL PROCESSES DIE
     master_queues_map = {} # key:proc_name, val:queue that this process writes to
@@ -156,7 +165,7 @@ def main(raw_collection = None, reconciled_collection = None):
     
     master_proc_map = defaultdict(dict)
     
-    for dir in ["eb", "wb"]:
+    for dir in directions:
         
         # feed
         key1 = "master_"+dir+"_feed"
