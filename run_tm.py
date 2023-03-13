@@ -49,8 +49,8 @@ def pipeline(raw_collection="", reconciled_collection=""):
     #           collection_name=parameters["raw_collection"])
 
     #=== transform rec
-    transform(database_name=parameters["reconciled_database"], 
-              collection_name=parameters["reconciled_collection"])
+    # transform(database_name=parameters["reconciled_database"], 
+    #           collection_name=parameters["reconciled_collection"])
     
     #=== transform temp
     # transform(database_name=parameters["temp_database"], 
@@ -71,9 +71,9 @@ def pipeline(raw_collection="", reconciled_collection=""):
     #             save_path="../figures/")
     
     #=== time space raw
-    time_space(database_name=parameters["transformed_database"], 
-               collection_name=parameters["raw_collection"], 
-               save_path="../figures/")
+    # time_space(database_name=parameters["transformed_database"], 
+    #            collection_name=parameters["raw_collection"], 
+    #            save_path="../figures/")
     
     #=== time space reconciled
     time_space(database_name=parameters["transformed_database"], 

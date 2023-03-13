@@ -24,8 +24,8 @@ if __name__ == '__main__':
     username = urllib.parse.quote_plus('readonly')
     password = urllib.parse.quote_plus('mongodb@i24')
     client = MongoClient('mongodb://%s:%s@10.80.4.91' % (username, password))
-    db = client["trajectories"] # put database name here
-    col = db["ICCV_2023_scene2_TRACKLETS"] # put collection name here
+    db = client["reconciled"] # put database name here
+    col = db["groundtruth_scene_1__yawns"] # put collection name here
     
     # print the id of the first 5 documents
     # col.find({}) returns a running cursor of the collection

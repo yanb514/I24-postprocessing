@@ -8,10 +8,7 @@ import numpy as np
 # import torch
 # from scipy import stats
 from i24_logger.log_writer import catch_critical
-try:
-    from utils.misc import calc_fit_select, calc_fit_select_ransac
-except:
-    pass
+from utils.misc import calc_fit_select, calc_fit_select_ransac
 import warnings
 warnings.filterwarnings('error')
 
@@ -268,41 +265,6 @@ def stitch_cost(track1, track2, TIME_WIN,residual_threshold_x, residual_threshol
     #     print(tot_cost)
         
     return tot_cost
-
-if __name__ == "__main__":
-    import json
-    import os
-    # from _evaluation.eval_stitcher import plot_traj, plot_stitched
-    # from merge import merge_fragments
-    from i24_database_api import DBClient
-    from bson.objectid import ObjectId
-    from itertools import combinations
-
-    with open("../config/parameters.json") as f:
-        parameters = json.load(f)
-    parameters["raw_trajectory_queue_get_timeout"] = 0.1
-    with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
-        db_param = json.load(f)  
-        
-    rec_collection = "tm_900_raw_v4.1__2"
-    raw_collection = "tm_900_raw_v4.1"
-    
-    dbc = DBClient(**db_param)
-    raw = dbc.client["transmodeler"][raw_collection]
-    rec = dbc.client["reconciled"][rec_collection]
-    
-    RES_THRESH_X = parameters["residual_threshold_x"]
-    RES_THRESH_Y = parameters["residual_threshold_y"]
-    TIME_WIN = parameters["time_win"]
-    
-    f_ids = [ObjectId('63fe78c24ba74a0cb404e473'), ObjectId('63fe78c24ba74a0cb404e474')]
-    fragments = [traj for traj in rec.find({"_id": {"$in": f_ids}}).sort( "last_timestamp", 1 )]
-    
-        
-    for fgmt1, fgmt2 in combinations(fragments, 2):
-        cost = stitch_cost(fgmt1, fgmt2, TIME_WIN, RES_THRESH_X, RES_THRESH_Y)
-        print(fgmt1["_id"], fgmt2["_id"], cost)
-    
 
 
 
