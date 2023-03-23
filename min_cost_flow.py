@@ -109,9 +109,10 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
     # Get parameters
     ATTR_NAME = parameters["fragment_attr_name"]
     TIME_WIN = parameters["time_win"]
+    DIST_WIN = parameters["dist_win"]
     
     # Initialize tracking graph
-    m = MOTGraphSingle(ATTR_NAME, parameters)
+    m = MOTGraphSingle(direction=direction, attr=ATTR_NAME, parameters=parameters)
     
     # counter = 0 # iterations for log
     cum_t1 = 0
@@ -161,7 +162,10 @@ def min_cost_flow_online_alt_path(direction, fragment_queue, stitched_trajectory
             
             # Pop path if a path is ready
             t3 = time.time()
-            all_paths = m.pop_path(time_thresh = fgmt["first_timestamp"] - TIME_WIN)  
+            # TODO: double check direction when have wb data
+            dist_thresh = fgmt["ending_x"]-DIST_WIN if direction=="eb" else fgmt["ending_x"]+DIST_WIN
+            all_paths = m.pop_path(time_thresh = fgmt["first_timestamp"] - TIME_WIN,
+                                   dist_thresh = dist_thresh)  
             
             for path in all_paths:
                    
@@ -308,7 +312,6 @@ def stitch_rolling(direction, fragment_queue_prev, fragment_queue_curr, next_que
 
             # check if the earliest of h is ready to be processed
             while ready or (len(h)>0 and h[0][2]["last_timestamp"] < parameters["transition_last_timestamp_"+direction][node_idx-1]-TIME_WIN):
-                
                 _,fgmt_id, fgmt = heapq.heappop(h)        
                 m.add_node(fgmt)
                 
@@ -368,7 +371,7 @@ if __name__ == '__main__':
     
     import json
     import os
-    from multi_opt import plot_track
+    # from multi_opt import plot_track
     from merge import merge_fragments
     
     with open("config/parameters.json") as f:
@@ -377,11 +380,12 @@ if __name__ == '__main__':
     with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)  
     # raw_collection = "morose_caribou--RAW_GT1" # collection name is the same in both databases
-    rec_collection = "funny_squirrel--RAW_GT2__giggles"
-    raw_collection = "funny_squirrel--RAW_GT2" 
+    raw_collection = "tm_200_raw_v4.3" # collection name is the same in both databases
+    rec_collection = "tm_200_raw_v4.3__0"
+    
     
     dbc = DBClient(**db_param)
-    raw = dbc.client["trajectories"][raw_collection]
+    raw = dbc.client["transmodeler"][raw_collection]
     rec = dbc.client["reconciled"][rec_collection]
     # gt = DBClient(**parameters["db_param"], database_name = trajectory_database, collection_name="groundtruth_scene_1")
     
@@ -389,20 +393,10 @@ if __name__ == '__main__':
     fragment_queue = queue.Queue()
     merged_queue = queue.Queue() 
     
-    #funny_squirrel--RAW_GT2
-    # f_ids = [ObjectId('6320f56babd7d7253149373c'), ObjectId('6320f587abd7d725314937c7')]
-    # f_ids = [ObjectId('6320f576abd7d72531493774'), ObjectId('6320f579abd7d7253149378a')]
-    # f_ids = [ObjectId('6320f578abd7d72531493781'), ObjectId('6320f592abd7d725314937fe')]
-    # f_ids = [ObjectId('6320f575abd7d72531493772'), ObjectId('6320f56fabd7d7253149375a')]
     
-    # giggles
-    f_ids = [ObjectId('6320f56cabd7d72531493747'), ObjectId('6320f5a3abd7d7253149383e'),
-             ObjectId('6320f56babd7d72531493741'), ObjectId('6320f5a1abd7d72531493836'),
-             ObjectId('6320f56fabd7d7253149375b'), ObjectId('6320f577abd7d72531493780'),
-             ObjectId('6320f573abd7d72531493769'), ObjectId('6320f5a4abd7d72531493844'),
-             ObjectId('6320f57aabd7d7253149378d'), ObjectId('6320f5aaabd7d72531493863'),
-             ObjectId('6320f579abd7d72531493789'), ObjectId('6320f5a0abd7d72531493833')]  
-    
+    f_ids = [ObjectId("64173679e7de4a0b772b8299"), 
+             ObjectId("64173679e7de4a0b772b8298"),
+            ]
     # get parameters for fitting
     RES_THRESH_X = parameters["residual_threshold_x"]
     RES_THRESH_Y = parameters["residual_threshold_y"]
@@ -423,12 +417,12 @@ if __name__ == '__main__':
     parameters["stitcher_timeout"] = 0.1
     parameters["merger_timeout"] = 0.01
     
-    merge_fragments("west", fragment_queue, merged_queue, parameters)
+    # merge_fragments("eb", fragment_queue, merged_queue, parameters)
     
     # fragment_queue,actual_gt_ids,_ = read_to_queue(gt_ids=gt_ids, gt_val=gt_val, lt_val=lt_val, parameters=parameters)
     stitched_trajectory_queue = queue.Queue()
     t1 = time.time()
-    min_cost_flow_online_alt_path("west", merged_queue, stitched_trajectory_queue, parameters)
+    min_cost_flow_online_alt_path("eb", fragment_queue, stitched_trajectory_queue, parameters)
     online = list(stitched_trajectory_queue.queue)
     s2 = stitched_trajectory_queue.qsize()
     t2 = time.time()

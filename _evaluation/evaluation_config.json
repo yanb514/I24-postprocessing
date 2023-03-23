@@ -1,0 +1,6 @@
+{
+     "local_directory":"data",
+     "cluster_directory":"/remote/home/wangy79/eval_res",
+     "time_sr": 1,
+     "traj_sr": 1
+ }

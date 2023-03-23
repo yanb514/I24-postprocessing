@@ -13,6 +13,7 @@ from pp1_local import main as pp1_local
 from pp1_master import main as pp1_master
 from _evaluation.eval_stitcher import main as eval_stitcher
 from _evaluation.unsup_statistics1 import main as unsup
+from _evaluation.unsup_statistics1 import print_res
 from transform import main as transform
 import sys
 sys.path.insert(0,'../i24_overhead_visualizer')
@@ -43,6 +44,9 @@ def pipeline(raw_collection="", reconciled_collection=""):
     # pp1_master(raw_collection=parameters["raw_collection"], 
     #           reconciled_collection=parameters["reconciled_collection"])
     
+    #=== transform gt
+    # transform(database_name=parameters["raw_database"], 
+    #           collection_name=parameters["gt_collection"])
 
     #=== transform raw
     # transform(database_name=parameters["raw_database"], 
@@ -57,41 +61,70 @@ def pipeline(raw_collection="", reconciled_collection=""):
     #           collection_name=parameters["reconciled_collection"],
     #           write_collection_name=parameters["reconciled_collection"]+"_temp")
     
+    #=== evaluate stitcher raw
+    # eval_stitcher(raw_db=parameters["raw_database"], 
+    #               rec_db=parameters["raw_database"], 
+    #               raw_collection=parameters["raw_collection"], 
+    #               rec_collection=parameters["raw_collection"]   
+    #               )
     
-    #=== evaluate stitcher
+    #=== evaluate stitcher temp
+    # eval_stitcher(raw_db=parameters["raw_database"], 
+    #               rec_db=parameters["temp_database"], 
+    #               raw_collection=parameters["raw_collection"], 
+    #               rec_collection=parameters["reconciled_collection"] 
+    #               # rec_collection=parameters["raw_collection"]   
+    #               )
+    #=== evaluate stitcher rec
     # eval_stitcher(raw_db=parameters["raw_database"], 
     #               rec_db=parameters["reconciled_database"], 
     #               raw_collection=parameters["raw_collection"], 
-    #               rec_collection=parameters["reconciled_collection"])
-    
+    #               rec_collection=parameters["reconciled_collection"] 
+    #               # rec_collection=parameters["raw_collection"]   
+    #               )
     
     #=== time space ground truth
-    # time_space(database_name=parameters["transformed_database"], 
-    #             collection_name="tm_900_gt_v4", 
+    # time_space(
+    #             # database_name=parameters["transformed_database"], 
+    #             database_name=parameters["raw_database"], 
+    #             collection_name=parameters["gt_collection"], 
     #             save_path="../figures/")
     
     #=== time space raw
-    # time_space(database_name=parameters["transformed_database"], 
+    # time_space(
+    #             # database_name=parameters["transformed_database"], 
+    #             database_name=parameters["raw_database"], 
     #            collection_name=parameters["raw_collection"], 
     #            save_path="../figures/")
     
-    #=== time space reconciled
-    # time_space(database_name=parameters["transformed_database"], 
+    # === time space reconciled
+    # time_space(
+    #     # database_name=parameters["transformed_database"], 
+    #             database_name=parameters["reconciled_database"], 
     #             collection_name=parameters["reconciled_collection"], 
     #             save_path="../figures/")
 
     #=== time space temp
-    # time_space(database_name=parameters["transformed_database"], 
-    #             collection_name=parameters["reconciled_collection"]+"_temp", 
+    # time_space(
+    #     # database_name=parameters["transformed_database"], 
+    #     database_name=parameters["temp_database"], 
+    #             collection_name=parameters["reconciled_collection"],
     #             save_path="../figures/")
     
+    #=== unsupervised statistics for GT
+    # res = unsup(database_name=parameters["raw_database"], 
+    #       collection_name=parameters["gt_collection"])
+    # print_res(res)
+
     #=== unsupervised statistics for raw
-    # unsup(database_name=parameters["raw_database"], 
+    # res = unsup(database_name=parameters["raw_database"], 
     #       collection_name=parameters["raw_collection"])
+    # print_res(res)
     
     #=== unsupervised statistics for rec
-    # unsup(database_name=parameters["reconciled_database"], 
+    # res = unsup(database_name=parameters["reconciled_database"], 
     #       collection_name=parameters["reconciled_collection"])
+    # print_res(res)
 
     return
     

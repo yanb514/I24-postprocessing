@@ -141,16 +141,15 @@ def test_fragments(raw, stitched, eval=None):
     raw, stitched are collections that follow raw and stitched schema 
     write results to collection (eval) in evaluation database
     '''   
-    if eval is not None:
-        d = eval.find_one({"collection": stitched._Collection__name})
-        if d and "fragments" in d and "id_switches" in d:
-            print("already evaluated.")
-            fgmt = d["fragments"]
-            ids = d["id_switches"]
-            print(f"ids_count: {len(ids)}, fgmt_count: {len(fgmt)}")
-            return
+    # if eval is not None:
+    #     d = eval.find_one({"collection": stitched._Collection__name})
+    #     if d and "fragments" in d and "id_switches" in d:
+    #         print("already evaluated.")
+    #         fgmt = d["fragments"]
+    #         ids = d["id_switches"]
+    #         print(f"ids_count: {len(ids)}, fgmt_count: {len(fgmt)}")
+    #         return
     
-    print("evaluating stitcher results...")    
     st_gt = defaultdict(set) # key: st_id, val (set): gt_ids that correspond to the stitched fragments
     gt_st = defaultdict(set) # key: gt_id, val (set): st_ids that correspond to the gt associated fragments
     no_gt_count = 0
@@ -158,7 +157,11 @@ def test_fragments(raw, stitched, eval=None):
     # save associated st_ids and gt_ids in dictionaries
     for st_doc in stitched.find():
         # corr_gt_ids = set()
-        for f_id in st_doc["fragment_ids"]:
+        if "fragment_ids" not in st_doc:
+            f_ids = [st_doc["_id"]]
+        else:
+            f_ids = st_doc["fragment_ids"]
+        for f_id in f_ids:
             f = raw.find_one({"_id": f_id}) # ObjectId(f_id)
             # TODO: what if f has multiple corresponding gt_ids?
             if len(f["gt_id"]) == 0:
@@ -209,7 +212,8 @@ def test_fragments(raw, stitched, eval=None):
 def main(raw_db="transmodeler", rec_db="reconciled", raw_collection=None, rec_collection=None):
     with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)
-        
+      
+    print(f"evaluating stitcher db:{rec_db}, col:{rec_collection}...")      
     # raw_collection = "tm_900_raw_v4" # collection name is the same in both databases
     # rec_collection = "tm_900_raw_v4__1"
     

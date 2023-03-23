@@ -7,8 +7,9 @@
 	"meta_database": "meta",
 	
 	"transform_postproc": 1,
-    "raw_collection": "ICCV_2023_scene3_TRACKLETS",
-	"reconciled_collection": "ICCV_2023_scene3_TRACKLETS__v1",
+    "gt_collection": "",
+    "raw_collection": "ICCV_scene3_prism_3D_kiou_noNMS_important_wallaby",
+	"reconciled_collection": "",
 	
 	"compute_node_list":[],
 	
@@ -36,8 +37,10 @@
     "master_stitch_thresh": 4,
     
     "stitcher_mode":"local",
-    "time_win": 5,
+    "time_win": 20,
+    "dist_win": 20000,
     "master_time_win": 5,
+    "master_dist_win": 20000,
     "varx": 2,
     "vary": 0.5,
     "inclusion": 0,

@@ -2,7 +2,7 @@ import numpy as np
 import networkx as nx
 import queue
 from collections import deque
-from utils.utils_stitcher_cost import cost_3, stitch_cost
+from utils.utils_stitcher_cost import stitch_cost
 # from scipy import stats
 from i24_logger.log_writer import catch_critical
 import itertools
@@ -15,30 +15,9 @@ class Fragment():
         just a simple object that keeps all the important information from a trajectory document for tracking
         - id, timestamp, x_position, y_position, length, width, last_timsetamp, first_timestamp, direction
         '''
-
-        # # delete the unnucessary fields in traj_doc
-        # field_names = ["_id", "ID","timestamp","x_position","y_position","direction","last_timestamp", "first_timestamp", "length","width","height","filter","fitx","fity"]
-        # attr_names = ["id","ID","t","x","y","dir","last_timestamp","first_timestamp","length","width","height","filter","fitx","fity"]
         
-        # for i in range(len(field_names)): # set as many attributes as possible
-        #     try: 
-        #         if field_names[i] in {"_id", "ID"}: # cast bson ObjectId type to str
-        #             setattr(self, attr_names[i], str(traj_doc[field_names[i]]))
-        #         else:
-        #             setattr(self, attr_names[i], traj_doc[field_names[i]])
-        #     except: pass
-        
-
-        # try: # cast to np array
-        #     setattr(self, "x", np.array(self.x))#*0.3048)
-        #     setattr(self, "y", np.array(self.y))#*0.3048)
-        #     setattr(self, "t", np.array(self.t))
-
-        # except:
-        #     pass
         self.data = traj_doc
             
-        
     def __repr__(self):
         try:
             return 'Fragment({!r})'.format(self.data["ID"])
@@ -54,7 +33,7 @@ class MOTGraphSingle:
     same as MOT_Graph except that every fragment is represented as a single node. this is equivalent to say that the inclusion cost for each fragment is 0, or the false positive rate is 0
     a fragment must be included in the trajectories
     '''
-    def __init__(self, attr = "ID", parameters = None):
+    def __init__(self, direction=None, attr = "ID", parameters = None):
         # self.parameters = parameters
         self.G = nx.DiGraph()
         self.G.add_nodes_from(["s","t"])
@@ -62,7 +41,6 @@ class MOTGraphSingle:
         self.G.nodes["t"]["subpath"] = []
         self.all_paths = []
         self.attr = attr
-        # self.fragment_dict = {}
         self.in_graph_deque = deque() # keep track of fragments that are currently in graph, ordered by last_timestamp
                         
         self.TIME_WIN = parameters["time_win"]
@@ -74,6 +52,7 @@ class MOTGraphSingle:
         self.stitcher_mode = parameters["stitcher_mode"]
         self.compute_node_pos_map = {key:val for val,key in enumerate(parameters["compute_node_list"])}    
         self.cache = {}
+        self.direction = direction
 
         print(f"************** {self.stitcher_mode}")
           
@@ -84,12 +63,14 @@ class MOTGraphSingle:
         add edge t->i, mark the edge as match = True
         update distance from t
         add all incident edges from i to other possible nodes, mark edges as match = False
+        earlier fgmt are removed, information rolls towrads the end (in time) in graph path
         '''
         # new_id = getattr(fragment, self.attr)
         new_id = fragment[self.attr]
         self.G.add_edge("t", new_id, weight=0, match=True)
         self.G.nodes[new_id]["subpath"] = [new_id] # list of ids
         self.G.nodes[new_id]["last_timestamp"] = fragment["last_timestamp"]
+        self.G.nodes[new_id]["ending_x"] = fragment["ending_x"]
         # self.G.nodes[new_id]["filters"] = [fragment["filter"]] # list of lists
         self.cache[new_id] = fragment
 
@@ -106,6 +87,7 @@ class MOTGraphSingle:
                 cost = stitch_cost(fgmt, fragment, self.TIME_WIN, self.residual_threshold_x, self.residual_threshold_y)
             else:
                 cost = 1e5
+            # print(str(fgmt["_id"])[-4:], str(fragment["_id"])[-4:], cost)
             if cost <= self.stitch_cost_thresh:  # new edge points from new_id to existing nodes, with postive cost
                 fgmt_id = fgmt[self.attr]
                 self.G.add_edge(new_id, fgmt_id, weight = self.stitch_cost_thresh-cost, match = False)
@@ -140,7 +122,7 @@ class MOTGraphSingle:
         for id1, id2 in comb:
             f1 = self.cache[id1]
             f2 = self.cache[id2]
-            cost = cost_3(f1, f2, self.TIME_WIN, self.VARX, self.VARY)
+            cost = stitch_cost(f1, f2, self.TIME_WIN, self.VARX, self.VARY)
             # print(cost)
             if cost > cost_thresh:
                 return False # detect high cost
@@ -276,9 +258,9 @@ class MOTGraphSingle:
             
         
     @catch_critical(errors = (Exception))
-    def pop_path(self, time_thresh):
+    def pop_path(self, time_thresh, dist_thresh):
         '''
-        examine tail and pop if timeout (last_timestamp < time_thresh)
+        examine tail and pop if timeout (last_timestamp < time_thresh) AND (ending_x < dist_thresh)
         remove the paths from G
         return paths
         '''
@@ -296,9 +278,14 @@ class MOTGraphSingle:
             return dfs(next, path)
             
         tails =  self.G.adj["t"]
+        
         for tail in tails:
-            if tail in self.G.nodes and self.G["t"][tail]["match"] and self.G.nodes[tail]["last_timestamp"] < time_thresh:
-                one_path = dfs(tail, [])
+            if tail in self.G.nodes and self.G["t"][tail]["match"] \
+            and self.G.nodes[tail]["last_timestamp"] < time_thresh:
+                if (self.direction == "eb" and self.G.nodes[tail]["ending_x"] <= dist_thresh) \
+                    or (self.direction == "wb" and self.G.nodes[tail]["ending_x"] > dist_thresh):
+                    one_path = dfs(tail, [])
+                
                 # print("*** tail: ", tail, one_path)
                 # self.clean_graph(one_path)
                 

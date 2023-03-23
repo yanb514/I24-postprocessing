@@ -324,27 +324,18 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
     TIMEOUT = parameters["merger_timeout"]
     
     G = nx.Graph() # merge graph, two nodes are connected if they can be merged
-    cntr = 0
-    # TODO: keep a heap
-    # lru = OrderedDict() # order connected components by last_timestamp
-    sdll = SortedDLL()
+    sdll = SortedDLL() # a data structure to ensure trajectories are ordered in last_timestamp
     
     HB = parameters["log_heartbeat"]
-    begin = time.time()
+    begin = time.time() # to time for log messages
     start = begin
-    ct1 = 0
-    ct2 = 0
-    ct3 = 0
-    input_obj = 0
-    output_obj = 0
-    low_conf_cnt = 0
-    # local = True if "master" not in name else False
+    cntr, ct1, ct2, ct3, input_obj, output_obj, low_conf_cnt = 0,0,0,0,0,0,0
     
     while True:
         try:
             try:
                 fragment = fragment_queue.get(timeout = TIMEOUT) # fragments are ordered in last_timestamp
-                cntr += 1
+                cntr += 1 # TODO: could over flow
             except queue.Empty:
                 merge_logger.warning("merger timed out after {} sec.".format(TIMEOUT))
                 comps = nx.connected_components(G)
@@ -368,15 +359,13 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
             ct1 += t2-t1
             
             if resampled is None:
-                low_conf_cnt += 1
+                low_conf_cnt += 1 
                 continue
             
             
             curr_time = resampled["last_timestamp"]
             curr_id = resampled["_id"]
-            
-                
-            # lru[fragment["_id"]] = curr_time # TODO DF LAST
+        
             sdll.append({"id": curr_id, "tail_time": curr_time})
             
             curr_nodes = list(G.nodes(data=True)) # current nodes in G

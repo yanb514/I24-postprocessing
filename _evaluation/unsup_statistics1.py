@@ -66,6 +66,8 @@ def _calc_update_feasibility(traj, start_time=None, end_time=None, xmin=None, xm
     
     # point-wise ax
     ax = ddx/(dt[:-1]**2)
+    if ax.shape[0]==0:
+        print("short traj: ", traj["_id"])
 
     # point-wise vy
     dy = np.diff(traj["y_position"])
@@ -452,14 +454,21 @@ class UnsupervisedEvaluator():
             bulk_update.append(update_cmd)
             
         print("\n Writing conflicts to collection")
-        self.dbr_v.collection.bulk_write(bulk_update, ordered=False)
+        if len(bulk_update) > 0:
+            self.dbr_v.collection.bulk_write(bulk_update, ordered=False)
         
         return
     
     
     
-    def print_res(self):
-        pprint.pprint(self.res, width = 1)
+def print_res(res):
+    keys = ["vx", "ax", "x_traveled"]
+    temp_res = {key:res[key] for key in keys}
+    for key,val in temp_res.items():
+        if "raw" in val:
+            temp_res[key].pop("raw")
+    pprint.pprint(temp_res, width = 5, compact=True, depth=1)
+    
         
     
 
@@ -489,7 +498,9 @@ def main(database_name="", collection_name="", time_sr=1, traj_sr=1):
     if os.path.exists(file_path):
         ans = input(f"Result already exists in /{dir}. Rewrite? [Y/N]")
         if ans not in ["y", "Y"]:
-            return
+            with open(file_path, "rb") as f:
+                res = pickle.load(f)
+            return res
     
     print(f"Evaluating {collection_name}...")
     ue = UnsupervisedEvaluator(db_param, 
@@ -497,10 +508,10 @@ def main(database_name="", collection_name="", time_sr=1, traj_sr=1):
                                collection_name=collection_name, 
                                num_threads=200)
     
-    t1 = time.time()
-    ue.time_evaluate2(sample_rate=time_sr)
-    t2 = time.time()
-    print("Time-evaluate takes: ", t2-t1)
+    # t1 = time.time()
+    # ue.time_evaluate2(sample_rate=time_sr)
+    # t2 = time.time()
+    # print("Time-evaluate takes: ", t2-t1)
     
     t1 = time.time()
     ue.traj_evaluate(sample_rate=traj_sr)
@@ -514,8 +525,10 @@ def main(database_name="", collection_name="", time_sr=1, traj_sr=1):
     
     with open(f'{dir}/{database_name}_{collection_name}.pkl', 'wb') as handle:
         pickle.dump(ue.res, handle)
+        print(f"saved results in {dir} as {database_name}_{collection_name}.pkl")
     
     # ue.write_evaluation()
+    return ue.res
 
 def conflict_graph(collection):
     '''
@@ -615,6 +628,8 @@ def conflict_graph(collection):
     
     
 if __name__ == '__main__':
-    main()
+    ue = main(database_name="transmodeler",
+              collection_name="tm_900_raw_v4.1",
+              )
 
     
