@@ -94,7 +94,7 @@ def main(raw_collection = None, reconciled_collection = None):
     queue_map = {} #{"stitched_queue":stitched_queue, "reconciled_queue": reconciled_queue} # master object -> [1/.../9] -> [EB/WB] -> [raw_q/merged_q/stitched_q]
     q_sizes = [parameters["raw_queue_size"], parameters["merged_queue_size"], parameters["stitched_queue_size"]]
     
-    proc_per_node = ["feed", "merge", "stitch"]
+    proc_per_node = ["feed","merge", "stitch"]
     raw_queues = defaultdict(list)
     merged_queues = defaultdict(list)
     stitched_queues = defaultdict(list)
@@ -187,8 +187,6 @@ def main(raw_collection = None, reconciled_collection = None):
         master_proc_map[key3]["args"] = (dir, master_queues_map[key2], master_queues_map["master_stitch"], mp_param, key3,)
         master_proc_map[key3]["predecessor"] = [key2]
         master_proc_map[key3]["dependent_queue"] = [master_queues_map[key2]]
-    
-    
     
     master_proc_map["reconciliation"] = {"command": rec.reconciliation_pool,
                                       "args": (mp_param, db_param, master_queues_map["master_stitch"], master_queues_map["master_reconcile"] ,),
@@ -286,7 +284,7 @@ def main(raw_collection = None, reconciled_collection = None):
     # add PID to PID_tracker
     time.sleep(3)
     mp_param["time_win"] = mp_param["master_time_win"]
-    mp_param["stitch_thresh"] = mp_param["master_stitch_thresh"]
+    mp_param["stitcher_args"]["stitch_thresh"] = mp_param["stitcher_args"]["master_stitch_thresh"]
     mp_param["stitcher_mode"] = "master" # switch from local to master
     
     for proc_name, proc_info in master_proc_map.items():        
@@ -301,28 +299,31 @@ def main(raw_collection = None, reconciled_collection = None):
     while True:
         try:
             now = time.time()
+            # Master processes are complete if timeout has reached AND no master processes are alive
             if now - begin > 20 and all([q.empty() for _,q in master_queues_map.items()]) and not any([master_proc_map[proc]["process"].is_alive() for proc in master_proc_map]):
                 manager_logger.info("Master processes complete in {} sec.".format(now-begin))
                 break
-                
+
+            # Continue to check the status of each process
             for proc_name, proc_info in master_proc_map.items():
 
                 if not proc_info["process"].is_alive():
                     pred_alive = [False] if not proc_info["predecessor"] else [master_proc_map[pred]["process"].is_alive() for pred in proc_info["predecessor"]]
-                    queue_empty = [True] if not proc_info["dependent_queue"] else [q.empty() for q in proc_info["dependent_queue"]]
+                    queue_empty = [True] if not proc_info["dependent_queue"] else [q.empty() for q in proc_info["dependent_queue"]] 
                     
-                    
+                    # if no predecessor processes are alive and all queues are empty, then we let this process rest in peace
                     if not any(pred_alive) and all(queue_empty): # natural death
                         proc_info["keep_alive"] = False
+
+                    # otherwise, if this process dies prematurally, we resurrect it
                     else:
-                        # resurrect this process
                         manager_logger.info(f" Resurrect {proc_name}")
                         subsys_process = mp.Process(target=proc_info["command"], args=proc_info["args"], name=proc_name, daemon=False)
                         subsys_process.start()
                         pid_tracker[proc_name] = subsys_process.pid
                         master_proc_map[proc_name]["process"] = subsys_process 
                 
-            # Heartbeat queue sizes
+            # Heartbeat print queue sizes
             now = time.time()
             if now - start > HB:
                 for proc_name, q in master_queues_map.items():

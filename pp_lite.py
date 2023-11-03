@@ -1,12 +1,8 @@
 # -----------------------------
-__file__ = 'pp1_master.py'
+__file__ = 'pp_lite.py'
 __doc__ = """
-first pipeline: run postproc in trajectory-indexed documents, do not transform
-Parallelize on videonodes
-
-TODOs
-1. try to keep all processes alive except for SIGINT
-2. signal handling for finish_processing. if soft_kill=True, then 
+run only 1 pass, no parallel compute
+1 data reader, 1 merge, 1 mcc, for each direction, and 1 reconciliation in total
 """
 # -----------------------------
 
@@ -85,10 +81,10 @@ def main(raw_collection = None, reconciled_collection = None):
     mp_param.update(parameters)
     mp_param["time_win"] = mp_param["master_time_win"]
     mp_param["stitcher_args"]["stitch_thresh"] = mp_param["stitcher_args"]["master_stitch_thresh"]
-    mp_param["stitcher_mode"] = "master" # switch from local to master
+    # mp_param["stitcher_mode"] = "master" # switch from local to master
     
     # initialize some db collections
-    df.initialize_master(mp_param, db_param)
+    df.initialize(mp_param, db_param) # read from raw collection
     manager_logger.info("Post-processing manager initialized db collections. Creating shared data structures")
     directions = ["eb", "wb"]
             
@@ -109,7 +105,7 @@ def main(raw_collection = None, reconciled_collection = None):
         key1 = "master_"+dir+"_feed"
         master_proc_map[key1]["command"] = df.static_data_reader # TODO: modify data_feed
         master_proc_map[key1]["args"] = (mp_param, db_param, master_queues_map[key1], 
-                                         {"direction":1 if dir=="eb" else -1}, key1,) # qeury all nodes #TODO should query from temp database
+                                         {"direction":1 if dir=="eb" else -1},) # qeury from raw collection
         master_proc_map[key1]["predecessor"] = None
         master_proc_map[key1]["dependent_queue"] = None
         

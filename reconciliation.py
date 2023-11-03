@@ -107,6 +107,7 @@ def write_queues_2_db(db_param, parameters, all_queues, name=None):
                 else:
                     combined_trajectory = combine_fragments([traj_docs])
                 doc = resample(combined_trajectory, dt=0.04, fillnan=False)
+#                 doc = combined_trajectory
                 # convert arrays to list
                 for key in ["timestamp", "x_position", "y_position"]:
                     doc[key] = list(doc[key])
@@ -118,7 +119,7 @@ def write_queues_2_db(db_param, parameters, all_queues, name=None):
             
             now = time.time()
             if now - begin > HB :
-                writer_logger.info("Est. count in temp collection {}: {}".format(dbc.collection_name, dbc.collection.estimated_document_count()))
+                writer_logger.info("Est. count in [temp] {}: {}".format(dbc.collection_name, dbc.collection.estimated_document_count()))
                 begin = now
     
     writer_logger.info("Temp Writer timed out. Est. count in temp collection {}: {}".format(dbc.collection_name, dbc.collection.estimated_document_count()))
@@ -200,8 +201,11 @@ def reconciliation_pool(parameters, db_param, stitched_trajectory_queue: multipr
                 rec_parent_logger.warning("Reconciliation pool is timed out after {}s. Close the reconciliation pool.".format(TIMEOUT))
                 worker_pool.close()
                 break
-        
-            combined_trajectory = combine_fragments(traj_docs)    
+            if isinstance(traj_docs, list):
+                combined_trajectory = combine_fragments(traj_docs)
+            else:
+                combined_trajectory = combine_fragments([traj_docs])
+            # combined_trajectory = combine_fragments(traj_docs)  
             worker_pool.apply_async(reconcile_single_trajectory, (reconciliation_args, combined_trajectory, reconciled_queue, ))
             
             # if time.time()-begin > HB:
@@ -254,6 +258,8 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
     # cntr = 0
     HB = parameters["log_heartbeat"]
     begin = time.time()
+    t_max, t_min = parameters["t_max"], parameters["t_min"]
+    t_curr_eb, t_curr_wb = t_min, t_min
     
     # Write to db
     while True:
@@ -263,20 +269,38 @@ def write_reconciled_to_db(parameters, db_param, reconciled_queue):
             except queue.Empty:
                 reconciled_writer.warning("Getting from reconciled_queue reaches timeout {} sec.".format(TIMEOUT))
                 break
-        
+            # add this if statement when doing pp_lite_reverse
+            # if isinstance(reconciled_traj, list):
+            #     reconciled_traj = combine_fragments(reconciled_traj)
+            #     reconciled_traj = resample(reconciled_traj, dt=0.04, fillnan=True)
+            #     reconciled_traj["timestamp"] = reconciled_traj["timestamp"].tolist()
+            #     reconciled_traj["x_position"] = reconciled_traj["x_position"].tolist()
+            #     reconciled_traj["y_position"] = reconciled_traj["y_position"].tolist()
+            
             dbw.write_one_trajectory(thread = True, **reconciled_traj)
+            if reconciled_traj["direction"] == 1:
+                t_curr_eb = reconciled_traj["last_timestamp"]
+            else:
+                t_curr_wb = reconciled_traj["last_timestamp"]
             # cntr += 1
             if time.time()-begin > HB:
                 begin = time.time()
-                reconciled_writer.info("Est. count in collection {}: {}".format(dbw.collection_name, dbw.collection.estimated_document_count()))
+                # log progress
+                progress_eb = (t_curr_eb-t_min)/(t_max-t_min)*100
+                progress_wb = (t_curr_wb-t_min)/(t_max-t_min)*100
+                reconciled_writer.info(
+                    "Est. count in [reconciled] {}: {} | EB: {:.2f}% | WB: {:.2f}%".format(dbw.collection_name, 
+                                                             dbw.collection.estimated_document_count(), 
+                                                             progress_eb, progress_wb))
                 
         except SIGINTException: # handle SIGINT here 
             reconciled_writer.warning("SIGINT detected. Exit reconciled writer")
             break
     
     
-    reconciled_writer.info("Est. count in reconciled collection {}: {}".format(dbw.collection_name, dbw.collection.estimated_document_count()))
-    
+    reconciled_writer.info(
+                    "Est. count in [reconciled] {}: {}".format(dbw.collection_name, 
+                                                             dbw.collection.estimated_document_count()))
     
     # Safely close the mongodb client connection
     del dbw

@@ -1,12 +1,8 @@
 # -----------------------------
-__file__ = 'pp1_master.py'
+__file__ = 'pp_lite_reverse.py'
 __doc__ = """
-first pipeline: run postproc in trajectory-indexed documents, do not transform
-Parallelize on videonodes
-
-TODOs
-1. try to keep all processes alive except for SIGINT
-2. signal handling for finish_processing. if soft_kill=True, then 
+run only 1 pass, no parallel compute
+first smooth, then merge, finally stitch
 """
 # -----------------------------
 
@@ -85,10 +81,10 @@ def main(raw_collection = None, reconciled_collection = None):
     mp_param.update(parameters)
     mp_param["time_win"] = mp_param["master_time_win"]
     mp_param["stitcher_args"]["stitch_thresh"] = mp_param["stitcher_args"]["master_stitch_thresh"]
-    mp_param["stitcher_mode"] = "master" # switch from local to master
+    # mp_param["stitcher_mode"] = "master" # switch from local to master
     
     # initialize some db collections
-    df.initialize_master(mp_param, db_param)
+    df.initialize(mp_param, db_param) # read from raw collection
     manager_logger.info("Post-processing manager initialized db collections. Creating shared data structures")
     directions = ["eb", "wb"]
             
@@ -97,9 +93,10 @@ def main(raw_collection = None, reconciled_collection = None):
     master_queues_map = {} # key:proc_name, val:queue that this process writes to
     for dir in directions:
         master_queues_map[f"master_{dir}_feed"] = mp_manager.Queue() 
+        master_queues_map[f"master_{dir}_rectify"] = mp_manager.Queue() 
         master_queues_map[f"master_{dir}_merge"] = mp_manager.Queue() 
     master_queues_map["master_stitch"] = mp_manager.Queue() 
-    master_queues_map["master_reconcile"] = mp_manager.Queue() 
+    # master_queues_map["master_writer"] = mp_manager.Queue() 
     
     master_proc_map = defaultdict(dict)
     
@@ -109,37 +106,37 @@ def main(raw_collection = None, reconciled_collection = None):
         key1 = "master_"+dir+"_feed"
         master_proc_map[key1]["command"] = df.static_data_reader # TODO: modify data_feed
         master_proc_map[key1]["args"] = (mp_param, db_param, master_queues_map[key1], 
-                                         {"direction":1 if dir=="eb" else -1}, key1,) # qeury all nodes #TODO should query from temp database
+                                         {"direction":1 if dir=="eb" else -1},) # qeury from raw collection
         master_proc_map[key1]["predecessor"] = None
         master_proc_map[key1]["dependent_queue"] = None
         
+        # rectify
+        key2 = "master_"+dir+"_rectify"
+        master_proc_map[key2] = {"command": rec.reconciliation_pool,
+                                "args": (mp_param, db_param, 
+                                        master_queues_map[key1],
+                                        master_queues_map[key2],),
+                                "predecessor": [key1],
+                                "dependent_queue": [master_queues_map[key1]]}
+    
         # merge
-        key2 =  "master_"+dir+"_merge"
-        master_proc_map[key2]["command"] = merge.merge_fragments 
-        master_proc_map[key2]["args"] = (dir, master_queues_map[key1], master_queues_map[key2] , mp_param, key2, ) 
-        master_proc_map[key2]["predecessor"] = [key1]
-        master_proc_map[key2]["dependent_queue"] = [master_queues_map[key1]]
-        
-        # stitch
-        key3 = "master_"+dir+"_stitch"
-        master_proc_map[key3]["command"] = mcf.min_cost_flow_online_alt_path
-        master_proc_map[key3]["args"] = (dir, master_queues_map[key2], master_queues_map["master_stitch"], mp_param, key3,)
+        key3 =  "master_"+dir+"_merge"
+        master_proc_map[key3]["command"] = merge.merge_fragments 
+        master_proc_map[key3]["args"] = (dir, master_queues_map[key2], master_queues_map[key3] , mp_param, key3, ) 
         master_proc_map[key3]["predecessor"] = [key2]
         master_proc_map[key3]["dependent_queue"] = [master_queues_map[key2]]
-    
-    
-    
-    master_proc_map["reconciliation"] = {"command": rec.reconciliation_pool,
-                                      "args": (mp_param, db_param, 
-                                               master_queues_map["master_stitch"],
-                                               master_queues_map["master_reconcile"] ,),
-                                      "predecessor": [f"master_{dir}_stitch" for dir in directions],
-                                      "dependent_queue": [master_queues_map["master_stitch"]]}
+        
+        # stitch
+        key4 = "master_"+dir+"_stitch"
+        master_proc_map[key4]["command"] = mcf.min_cost_flow_online_alt_path
+        master_proc_map[key4]["args"] = (dir, master_queues_map[key3], master_queues_map["master_stitch"], mp_param, key4,)
+        master_proc_map[key4]["predecessor"] = [key3]
+        master_proc_map[key4]["dependent_queue"] = [master_queues_map[key3]]
     
     master_proc_map["reconciliation_writer"] = {"command": rec.write_reconciled_to_db,
-                                      "args": (mp_param, db_param, master_queues_map["master_reconcile"],),
-                                      "predecessor": ["reconciliation"],
-                                      "dependent_queue": [master_queues_map["master_reconcile"]]}
+                                      "args": (mp_param, db_param, master_queues_map["master_stitch"],),
+                                      "predecessor": ["master_eb_stitch", "master_wb_stitch"],
+                                      "dependent_queue": [master_queues_map["master_stitch"]]}
 
     # add PID to PID_tracker
     pid_tracker = {} # mp_manager.dict()

@@ -51,7 +51,6 @@ def initialize(parameters, db_param):
     parameters["raw_collection"] = dbc.collection_name # raw_collection should NOT be empty
       
     # get all the unique values for compute_node_id field
-    
     dbc.collection.create_index("compute_node_id")
     rec_db = dbc.client[parameters["reconciled_database"]]
     existing_cols = rec_db.list_collection_names()
@@ -74,20 +73,63 @@ def initialize(parameters, db_param):
     
     if not parameters["compute_node_list"]:
         compute_node_list = dbc.collection.distinct("compute_node_id")
-        parameters["compute_node_list"] = compute_node_list
+        # sort compute_node_list based on starting_x
+        reference_x = [dbc.collection.find_one({"compute_node_id": node})["starting_x"] for node in compute_node_list]
+        _, sorted_compute_node_list = zip(*sorted(zip(reference_x, compute_node_list)))
+        parameters["compute_node_list"] = sorted_compute_node_list
         
+    # get collection t_min and t_max (for static only)
+    t_min = dbc.get_min("last_timestamp")
+    t_max = dbc.get_max("last_timestamp")
+    parameters["t_min"] = t_min
+    parameters["t_max"] = t_max
+    
     # save metadata
     dbc.client[parameters["meta_database"]]["metadata"].insert_one(document = {"collection_name": reconciled_name, "parameters": parameters._getvalue()},
                                   bypass_document_validation=True)
     
     # drop the temp collection
-    dbc.client[parameters["temp_database"]][parameters["reconciled_collection"]].drop()
-    
+    if parameters["reconciled_collection"] in dbc.client[parameters["temp_database"]].list_collection_names():
+        inp = input("About to drop {} from temp database, proceed? [y/n]".format(parameters["reconciled_collection"]))
+        if inp in ["y", "Y"]:
+            dbc.client[parameters["temp_database"]][parameters["reconciled_collection"]].drop()
+
     del dbc
     return
 
 
+def initialize_master(parameters, db_param):
+    """
+    same as initialize(), but called only during master process
+    1. read raw trajectories from temp collection, specified in parameters["temp_collection"]
+    """
+    if not parameters["reconciled_collection"]:
+        raise Exception("reconciled_collection has to be specified before calling initialize_master")
+        
+    # initialize compute_node_id
+    if "temp_collection" in parameters and parameters["temp_collection"]:
+        read_collection = parameters["temp_collection"]
+    else:
+        read_collection = parameters["reconciled_collection"]
+
+    dbc = DBClient(**db_param, database_name = parameters["temp_database"], 
+                          collection_name = read_collection, latest_collection=True)
+    dbc.collection.create_index("compute_node_id")
+    if not parameters["compute_node_list"]:
+        compute_node_list = dbc.collection.distinct("compute_node_id")
+        reference_x = [dbc.collection.find_one({"compute_node_id": node})["starting_x"] for node in compute_node_list]
+        _, sorted_compute_node_list = zip(*sorted(zip(reference_x, compute_node_list)))
+        parameters["compute_node_list"] = sorted_compute_node_list
+    print(f"************** initialize_master {parameters['compute_node_list']}")
     
+    # get time range
+    t_min = dbc.get_min("last_timestamp")
+    t_max = dbc.get_max("last_timestamp")
+    parameters["t_min"] = t_min
+    parameters["t_max"] = t_max
+    
+    return
+
 def thread_update_one(raw, _id, filter, fitx, fity):
     filter = [1 if i else 0 for i in filter]
     raw.update_one({"_id": _id}, {"$set": {"filter": filter,
@@ -128,7 +170,11 @@ def static_data_reader(default_param, db_param, raw_queue, query_filter, name=No
         while default_param["reconciled_collection"] == "":
             time.sleep(1)
         read_database = default_param["temp_database"]
-        read_collection = default_param["reconciled_collection"]
+        # initialize read/write collections
+        if "temp_collection" in default_param and default_param["temp_collection"]:
+            read_collection = default_param["temp_collection"]
+        else:
+            read_collection = default_param["reconciled_collection"]
     else:
         while default_param["raw_collection"] == "":
             time.sleep(1)
@@ -156,7 +202,7 @@ def static_data_reader(default_param, db_param, raw_queue, query_filter, name=No
         try:
             # keep filling the queues so that they are not low in stock
             while raw_queue.qsize() <= min_queue_size :#or west_queue.qsize() <= min_queue_size:
-                logger.debug("* current lower: {}, upper: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, rri._reader.range_iter_start, rri._reader.range_iter_stop))
+#                 logger.debug("* current lower: {}, upper: {}, start: {}, stop: {}".format(rri._current_lower_value, rri._current_upper_value, rri._reader.range_iter_start, rri._reader.range_iter_stop))
                 next_batch = next(rri)  
                 for doc in next_batch:
                     cntr += 1
@@ -170,7 +216,7 @@ def static_data_reader(default_param, db_param, raw_queue, query_filter, name=No
                         # logger.info("Discard a fragment with length less than 3")
     
                 # logger.info("** qsize for raw_data_queue: east {}, west {}".format(east_queue.qsize(), west_queue.qsize()))
-                logger.debug("** qsize for raw_data_queue:{}".format(raw_queue.qsize()))
+#                 logger.debug("** qsize for raw_data_queue:{}".format(raw_queue.qsize()))
                 
 
             # if queue has sufficient number of items, then wait before the next iteration (throttle)
@@ -188,7 +234,7 @@ def static_data_reader(default_param, db_param, raw_queue, query_filter, name=No
             break
         
         except Exception as e:
-            logger.warning("Other exceptions occured. Exit. Exception:{}".format(e))
+            logger.warning("Other exceptions occured. Exit. Exception:{}".format(str(e)))
             break
 
         

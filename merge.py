@@ -78,10 +78,15 @@ def merge_resample(traj, conf_threshold):
     df = df.set_index(index)
     df = df.drop(columns = "timestamp")
     
-    # resample to 10hz
-    df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq()
+    # resample to 100hz
+    # to avoid the bias introduced by "floor" resample..., first upsample to 10ms, and then downsample to 25hz,
+    # this method does not "snap" the timestamps to floor
+    df=df.resample('10L').mean().interpolate(method="linear").resample('40L').asfreq()#.resample('0.04S')#.asfreq()#.interpolate(method="linear")
+    # df=df.groupby(df.index.floor('0.04S')).mean().resample('0.04S').asfreq()
+
+
     df.index = df.index.values.astype('datetime64[ns]').astype('int64')*1e-9
-    df = df.interpolate(method='linear')
+    # df = df.interpolate(method='linear')
     
     # write to dict
     # TODO: cast to np array instead
@@ -95,7 +100,6 @@ def merge_resample(traj, conf_threshold):
     traj["ending_x"] = traj["x_position"][-1]
 
     return traj
-
 
 
 import warnings
@@ -116,17 +120,23 @@ def merge_cost(track1, track2):
     sx1, ex1 = min(x1[0], x1[-1]), max(x1[0], x1[-1])
     sx2, ex2 = min(x2[0], x2[-1]), max(x2[0], x2[-1])
     
+    # Adjust based on length
+    l1, l2 = np.nanmean(track1["length"]), np.nanmean(track2["length"])
+    if track1["direction"] == 1:
+        ex1, ex2 = ex1 + l1, ex2 + l2
+    else:
+        sx1, sx2 = sx1 - l1, sx2 - l2
+    
     if t1[-1]<=t2[0] or t2[-1]<=t1[0] or sx1>ex2 or sx2>ex1: # if no time&space overlap, don't merge -> stitcher's job
-    # if t2[0]>=t1[-1] or t2[-1]<=t1[0]: # separation of axis
+        # print("no time space overlap")
         return 1e5
 
     s1, e1, s2, e2 = find_overlap_idx(t1, t2)
     
-    
     # check if the overalpped position deviates too much
     # try:
-    if np.nanmean(np.abs(x1[s1:e1] - x2[s2:e2])) > 30 or np.nanmean(np.abs(y1[s1:e1] - y2[s2:e2])) > 6:
-        return 1e6
+    # if np.nanmean(np.abs(x1[s1:e1] - x2[s2:e2])) > 30 or np.nanmean(np.abs(y1[s1:e1] - y2[s2:e2])) > 6:
+    #     return 1e6
 
         
     # tt2 = time.time()
@@ -148,8 +158,46 @@ def merge_cost(track1, track2):
     # print("id1: {}, id2: {}, cost:{:.4f}".format(str(track1['_id']), str(track2['_id']), nll))
     # print("")
     # print("other: {:.4f}, cost: {:.4f}, shape: {}".format(tt2-tt1, tt3-tt2, mu.shape))
-    
+    # print(nll)
     return nll
+
+
+def merge_cost_simple_distance(track1, track2):
+    """
+    track1 and 2 have to be resmplaed first
+    only deals with two tracks that have time AND space(x) overlap (in the general case by separation of axis)
+    speeded up bhartt cost
+    simple distance metric 1/(t_e^i-t_s^j) sum_t in[t_s^j, t_e^i]||pi(t)-pj(t)||_2
+    """
+    t1 = track1["timestamp"]#[filter1]
+    t2 = track2["timestamp"]#[filter2]
+    x1,x2,y1,y2 = track1["x_position"], track2["x_position"], track1["y_position"], track2["y_position"]
+    
+    # Only proceed if both time and space have overlaps
+    sx1, ex1 = min(x1[0], x1[-1]), max(x1[0], x1[-1])
+    sx2, ex2 = min(x2[0], x2[-1]), max(x2[0], x2[-1])
+    
+    # Adjust based on length
+    l1, l2 = np.nanmean(track1["length"]), np.nanmean(track2["length"])
+    if track1["direction"] == 1:
+        ex1, ex2 = ex1 + l1, ex2 + l2
+    else:
+        sx1, sx2 = sx1 - l1, sx2 - l2
+    
+    if t1[-1]<=t2[0] or t2[-1]<=t1[0] or sx1>ex2 or sx2>ex1: # if no time&space overlap, don't merge -> stitcher's job
+        # print("no time space overlap")
+        return 1e5
+
+    s1, e1, s2, e2 = find_overlap_idx(t1, t2)
+    
+    # try to vectorize
+    pi = np.array([x1[s1:e1], y1[s1:e1]]) # 2xK
+    pj = np.array([x2[s2:e2], y2[s2:e2]]) # 2xK
+    diff = pi-pj
+    distance = np.linalg.norm(diff)/(e1-s1)
+
+
+    return distance
 
 
 
@@ -157,12 +205,17 @@ def combine_merged_dict(unmerged):
     '''
     unmerged: a list of fragment-dicts
     '''
+    
     if len(unmerged) == 1:
         traj = unmerged[0]
         if "merged_ids" not in traj:
             traj["merged_ids"] = [traj["_id"]]
         
         return traj
+    
+    last_timestamps = [traj["last_timestamp"] for traj in unmerged]
+    smallest_index = last_timestamps.index(min(last_timestamps))
+    first_traj = unmerged[smallest_index]
     
     time_series_field = ["timestamp", "x_position", "y_position", "length", "width", "height"]
     dfs = []
@@ -181,19 +234,18 @@ def combine_merged_dict(unmerged):
 
     df_merged = pd.concat(dfs).groupby(level=0, as_index=True, sort=True).mean()
     # merged = df_merged.to_dict('list')
-    # overwrite traj with merged values
-    traj = unmerged[0]
+    # overwrite first_traj with merged values
     for key in df_merged.columns:
-        traj[key] = df_merged[key].values
+        first_traj[key] = df_merged[key].values
 
-    traj["merged_ids"] = merged_ids
-    traj["timestamp"] = df_merged.index.values.astype('datetime64[ns]').astype('int64')*1e-9
-    traj["first_timestamp"] = traj["timestamp"][0]
-    traj["last_timestamp"] = traj["timestamp"][-1]
-    traj["starting_x"] = traj["x_position"][0]
-    traj["ending_x"] = traj["x_position"][-1]
+    first_traj["merged_ids"] = merged_ids
+    first_traj["timestamp"] = df_merged.index.values.astype('datetime64[ns]').astype('int64')*1e-9
+    first_traj["first_timestamp"] = first_traj["timestamp"][0]
+    first_traj["last_timestamp"] = first_traj["timestamp"][-1]
+    first_traj["starting_x"] = first_traj["x_position"][0]
+    first_traj["ending_x"] = first_traj["x_position"][-1]
 
-    return traj
+    return first_traj
 
 
 
@@ -434,8 +486,22 @@ def merge_fragments(direction, fragment_queue, merged_queue, parameters, name=No
         except (ConnectionResetError, BrokenPipeError, EOFError) as e:   
             merge_logger.warning("Connection error: {}".format(e))
             break
+        
+        # added 6/14/2023
+        except Exception as e: # other unknown exceptions are handled as error TODO UNTESTED CODE!
+            merge_logger.error("Other error: {}, push all merged trajs to queue".format(e))
             
-    sys.exit()
+            comps = nx.connected_components(G)
+            for comp in comps:
+                input_obj += len(comp)
+                output_obj += 1
+                unmerged = [ G.nodes[v]["data"] for v in list(comp)]
+                merged = combine_merged_dict(unmerged)
+                merged_queue.put(merged) 
+            merge_logger.info("Final flushing {} raw fragments --> {} merged fragments".format(input_obj, output_obj),extra = None)
+            break
+            
+    # sys.exit()
     
         
 
@@ -458,21 +524,23 @@ if __name__ == '__main__':
     with open(os.path.join(os.environ["USER_CONFIG_DIRECTORY"], "db_param.json")) as f:
         db_param = json.load(f)  
         
-    rec_collection = "tm_900_raw_v4.1__2"
-    raw_collection = "tm_900_raw_v4.1"
+    raw_collection = "wednesday_2d"
+    rec_collection = "wednesday_2d__2"
     
     dbc = DBClient(**db_param)
-    raw = dbc.client["transmodeler"][raw_collection]
+    raw = dbc.client["trajectories"][raw_collection]
     rec = dbc.client["reconciled"][rec_collection]
     temp = dbc.client["temp"][rec_collection]
     
-    RES_THRESH_X = parameters["residual_threshold_x"]
-    RES_THRESH_Y = parameters["residual_threshold_y"]
-    TIME_WIN = parameters["time_win"]
-    CONF_THRESH = parameters["conf_threshold"]
+    # RES_THRESH_X = parameters["stitcher_args"]["residual_threshold_x"]
+    # RES_THRESH_Y = parameters["residual_threshold_y"]
+    # TIME_WIN = parameters["time_win"]
+    # CONF_THRESH = parameters["conf_threshold"]
     parameters["merger_timeout"] = 0.1
     
-    f_ids = [ObjectId('63fe78c24ba74a0cb404e479'), ObjectId('63fe78c24ba74a0cb404e477')]
+    f_ids = [ObjectId("644c6f95c2c8fad0b2cf4232"),
+    # ObjectId("644c64cbae8899e271b5f9eb"),
+    ObjectId("644c6f58c2c8fad0b2cf4192")]
     
     fragment_queue = queue.Queue()
     merged_queue = queue.Queue()
@@ -487,7 +555,7 @@ if __name__ == '__main__':
     
 
     
-    merge_fragments("east", fragment_queue, merged_queue, parameters)
+    merge_fragments("west", fragment_queue, merged_queue, parameters)
     print("merged to ", merged_queue.qsize())
     # dummy_merge("west", fragment_queue, merged_queue, parameters)
     # from multi_opt import plot_track
